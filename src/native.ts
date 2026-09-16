@@ -280,8 +280,9 @@ export function nativeResolutionError(
           'it cannot resolve without failing the install.\n'
         : `No prebuilt binary is published for this platform. Published: ${published}.\n`) +
       'The published package carries no binary of its own, so a source build means ' +
-      'a checkout of https://github.com/flezha/flezha, a stable Rust toolchain, and:\n' +
-      '  cargo build -p flz_core_ffi --features napi --release\n' +
+      'a stable Rust toolchain and the wrapper crate this package ships:\n' +
+      '  cargo build --manifest-path native/Cargo.toml --release\n' +
+      '  node scripts/install-native.mjs\n' +
       'Set FLEZHA_NATIVE_BINARY to an already-built addon to skip resolution.\n' +
       `Tried:\n  ${attempts.join('\n  ')}`,
   );

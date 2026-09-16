@@ -16,6 +16,8 @@ import {
   toHostClassDecl,
 } from '../dist/esm/index.js';
 
+import { read } from './contract.mjs';
+
 const here = dirname(fileURLToPath(import.meta.url));
 const native = loadNative();
 
@@ -38,16 +40,19 @@ test('the addon exports exactly what its surface table names', () => {
 test('every export names a C ABI entry point or is host bookkeeping', () => {
   // The veneer adds no ABI surface: each entry either corresponds to an
   // existing C entry point, or reaches none at all.
-  // Two files, because the C ABI is two: the general entry points and the
-  // local-mode ones. Reading only the first passes a name the crate exports
-  // and fails one it exports from the other module.
-  const abi = ['lib.rs', 'local.rs']
-    .map((file) => readFileSync(resolve(here, `../../../flz_core_ffi/src/${file}`), 'utf8'))
-    .join('\n');
+  // The fixture, not the crate's source: a `flz_core_ffi` test holds the two
+  // equal in both directions, and reading the source would make this suite
+  // runnable only inside a checkout of it.
+  const abi = new Set(
+    read('test/fixtures/abi_surface.txt')
+      .split('\n')
+      .map((line) => line.trim())
+      .filter((line) => line && !line.startsWith('#')),
+  );
   for (const entry of native.nativeSurface()) {
     if (!entry.abi) continue;
     assert.ok(
-      abi.includes(`fn ${entry.abi}(`),
+      abi.has(entry.abi),
       `${entry.name} names ${entry.abi}, which flz_core_ffi does not export`,
     );
   }

@@ -1,0 +1,10 @@
+node_modules/
+dist/
+# The addon and the wrapper crate's build output. The wrapper's manifest and
+# source beside them are tracked.
+native/*.node
+native/target/
+# Fetched from a core release and checked against its manifest: the fake
+# controller, and the contract set the fixture tests resolve against.
+.core/
+contract/

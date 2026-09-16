@@ -4,9 +4,7 @@
 // spell fails here.
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { dirname, resolve } from 'node:path';
 import test from 'node:test';
-import { fileURLToPath } from 'node:url';
 
 import {
   ACTIVATION_SCHEMA_VERSION,
@@ -18,14 +16,13 @@ import {
   validate,
 } from '../dist/esm/index.js';
 
+import { member } from './contract.mjs';
+
 // The derived table below is the core's answer, so this file needs the process
 // context `validate` submits through.
 loadNative().contextNew(ACTIVATION_SCHEMA_VERSION);
 
-const FIXTURE = resolve(
-  dirname(fileURLToPath(import.meta.url)),
-  '../../../test/fixtures/host_class_decl_keys.txt',
-);
+const FIXTURE = member('test/fixtures/host_class_decl_keys.txt');
 
 function pinned(section) {
   return readFileSync(FIXTURE, 'utf8')
@@ -220,10 +217,7 @@ test('a stream class still declares every one of them', () => {
 // drifting: this builder declares both shapes in Node's spelling and the lines
 // must be the golden's, in order.
 
-const TOPOLOGIES = resolve(
-  dirname(fileURLToPath(import.meta.url)),
-  '../../../test/fixtures/reference_topologies.txt',
-);
+const TOPOLOGIES = member('test/fixtures/reference_topologies.txt');
 
 function goldenLines(topology) {
   return readFileSync(TOPOLOGIES, 'utf8')

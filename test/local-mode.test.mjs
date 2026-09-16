@@ -7,11 +7,12 @@
 // expectation instead of by inspection.
 
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
-import { dirname, resolve } from 'node:path';
+import { dirname } from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { LocalOperative, defineOperative, defineProcedure } from '../dist/esm/index.js';
+
+import { read } from './contract.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const utf8 = (bytes) => Buffer.from(bytes).toString('utf8');
@@ -56,10 +57,7 @@ const WordCount = defineOperative({
 
 /** The scenario every core runs: the lines to feed, and the sink values. */
 function scenario() {
-  const text = readFileSync(
-    resolve(here, '../../../test/fixtures/local_mode_word_count.txt'),
-    'utf8',
-  );
+  const text = read('test/fixtures/local_mode_word_count.txt');
   const lines = [];
   const totals = new Map();
   for (const row of text.split('\n')) {

@@ -17,10 +17,14 @@ import { dirname, resolve } from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 
+import { read } from './contract.mjs';
+
 const here = dirname(fileURLToPath(import.meta.url));
-const shape = readFileSync(resolve(here, '../../../flz_core_ffi/src/veneer/shape.rs'), 'utf8');
-const rust = readFileSync(resolve(here, '../../../flz_core_ffi/src/napi_glue.rs'), 'utf8');
-const host = readFileSync(resolve(here, '../../../flz_core_ffi/src/napi_host/mod.rs'), 'utf8');
+// Members of the contract set, so this suite runs from a vendored copy: the
+// veneer's key tables are still written as Rust, and `contract.txt` says so.
+const shape = read('flz_core_ffi/src/veneer/shape.rs');
+const rust = read('flz_core_ffi/src/napi_glue.rs');
+const host = read('flz_core_ffi/src/napi_host/mod.rs');
 const typescript = readFileSync(resolve(here, '../src/native.ts'), 'utf8');
 
 const camel = (snake) => snake.replace(/_([a-z])/g, (_m, c) => c.toUpperCase());

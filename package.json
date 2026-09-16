@@ -34,8 +34,8 @@
   ],
   "scripts": {
     "build": "node scripts/build.mjs",
-    "build:native": "cargo build -p flz_core_ffi --features napi --release && node scripts/install-native.mjs",
-    "build:native:debug": "cargo build -p flz_core_ffi --features napi && node scripts/install-native.mjs --debug",
+    "build:native": "cargo build --manifest-path native/Cargo.toml --release && node scripts/install-native.mjs",
+    "build:native:debug": "cargo build --manifest-path native/Cargo.toml && node scripts/install-native.mjs --debug",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "typecheck:expected-failures": "node scripts/expected-failures.mjs",
     "test": "node --test test/*.test.mjs",

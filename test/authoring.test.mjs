@@ -8,9 +8,7 @@
 // carry. `validate` is the call that submits, so it needs the process context.
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { dirname, resolve } from 'node:path';
 import test from 'node:test';
-import { fileURLToPath } from 'node:url';
 
 import {
   ACTIVATION_SCHEMA_VERSION,
@@ -25,6 +23,8 @@ import {
 } from '../dist/esm/index.js';
 import { ProcedureTestHarness } from '../dist/esm/testing.js';
 import { EmitError } from '../dist/esm/types.js';
+
+import { member } from './contract.mjs';
 
 loadNative().contextNew(ACTIVATION_SCHEMA_VERSION);
 
@@ -621,10 +621,7 @@ test('a workflow class carries its effectivelyOnce() declaration', () => {
 // dispatcher and the plugin frame already read. What every SDK sends alike is
 // `test/fixtures/channel_codecs.txt`; what is Node's own is asserted here.
 
-const CODEC_CASES = resolve(
-  dirname(fileURLToPath(import.meta.url)),
-  '../../../test/fixtures/channel_codecs.txt',
-);
+const CODEC_CASES = member('test/fixtures/channel_codecs.txt');
 
 const codecSpec = (input = [], sink = []) =>
   defineOperative({

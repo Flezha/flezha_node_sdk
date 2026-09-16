@@ -12,6 +12,7 @@ import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import {
   cpSync,
+  existsSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
@@ -29,7 +30,17 @@ import { NATIVE_PLATFORMS, SDK_PACKAGE_NAME, platformPackageName } from '../dist
 
 const here = dirname(fileURLToPath(import.meta.url));
 const sdkRoot = resolve(here, '..');
-const repoRoot = resolve(sdkRoot, '../..');
+// The workflow that builds this package's per-platform addons. It lives in
+// whichever repository's CI builds them: at the package root once this package
+// has one of its own, and at the enclosing tree's root while it sits inside the
+// core's. Found rather than counted, so the same test serves both layouts.
+const WORKFLOW = '.github/workflows/node-sdk.yml';
+const workflowPath = (() => {
+  for (let at = sdkRoot; ; at = dirname(at)) {
+    if (existsSync(resolve(at, WORKFLOW))) return resolve(at, WORKFLOW);
+    if (dirname(at) === at) return null;
+  }
+})();
 const manifest = JSON.parse(readFileSync(resolve(sdkRoot, 'package.json'), 'utf8'));
 
 const npm = (args, cwd) =>
@@ -85,7 +96,7 @@ test('an unsupported platform is told what a source build needs', () => {
   );
   const error = nativeResolutionError(candidates, 'sunos', 'sparc');
   assert.match(error.message, /No prebuilt binary is published/);
-  assert.match(error.message, /cargo build -p flz_core_ffi --features napi/);
+  assert.match(error.message, /cargo build --manifest-path native\/Cargo\.toml/);
   assert.match(error.message, /FLEZHA_NATIVE_BINARY/);
 });
 
@@ -129,7 +140,8 @@ test('every declared platform package has a build arm that produces it', () => {
   // The workflow's matrix is the build. A platform declared here with no arm
   // there is an optional dependency the release cannot publish, which npm then
   // skips in silence at install time.
-  const workflow = readFileSync(resolve(repoRoot, '.github/workflows/node-sdk.yml'), 'utf8');
+  assert.ok(workflowPath, `no ${WORKFLOW} above ${sdkRoot}; the build matrix is what this checks`);
+  const workflow = readFileSync(workflowPath, 'utf8');
   const arms = [...workflow.matchAll(/^\s+package:\s*(\S+)$/gm)].map((match) => match[1]);
   assert.deepEqual(
     arms.sort(),
@@ -258,7 +270,7 @@ test('an install that resolved nothing refuses, naming what is missing', { skip:
   assert.equal(answer.ok, false, 'a package with no binary must not appear to load');
   assert.match(answer.message, new RegExp(`${process.platform}-${process.arch}`));
   assert.ok(answer.message.includes(platformPackageName(host.suffix)));
-  assert.match(answer.message, /cargo build -p flz_core_ffi --features napi --release/);
+  assert.match(answer.message, /cargo build --manifest-path native\/Cargo\.toml --release/);
   assert.match(answer.message, /FLEZHA_NATIVE_BINARY/);
   assert.doesNotMatch(
     answer.message,

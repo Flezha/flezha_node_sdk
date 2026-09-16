@@ -1,7 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
 
 import {
   parsePositive,
@@ -12,9 +11,9 @@ import {
   envBool,
 } from '../dist/esm/env.js';
 
-const FIXTURE = fileURLToPath(
-  new URL('../../../test/fixtures/knob_parse_cases.txt', import.meta.url),
-);
+import { member } from './contract.mjs';
+
+const FIXTURE = member('test/fixtures/knob_parse_cases.txt');
 
 function cases() {
   return readFileSync(FIXTURE, 'utf8')

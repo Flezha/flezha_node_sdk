@@ -5,6 +5,6 @@
   "type": "module",
   "description": "The Node SDK's conformance test app",
   "dependencies": {
-    "@flezha/sdk": "file:../../../sdk/node"
+    "@flezha/sdk": "file:.."
   }
 }
