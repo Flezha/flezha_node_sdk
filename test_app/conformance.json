@@ -14,8 +14,8 @@
     ]
   },
   "build": {
-    "test": "cd .. && npm ci && npm run build && npm run build:native:debug",
-    "bench": "cd .. && npm ci && npm run build && npm run build:native"
+    "test": "scripts/build-node-sdk.sh",
+    "bench": "scripts/build-node-sdk.sh --release"
   },
   "connect_timeout_ms": 60000,
   "transports": [
