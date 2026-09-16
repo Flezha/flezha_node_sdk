@@ -23,7 +23,7 @@ import { LocalOperative } from '../dist/esm/index.js';
 import { declaredFixtures, testAppModule } from './test-app.mjs';
 
 const fixtures = await testAppModule('fixtures.mjs');
-const declared = await declaredFixtures();
+const declared = declaredFixtures();
 
 const utf8 = (bytes) => Buffer.from(bytes).toString('utf8');
 
@@ -53,12 +53,10 @@ function declares(capability, factoryId) {
 test('graph_builder: a declared graph is built and run with no controller', async () => {
   declares('graph_builder', 'sugar_do_nothing');
 
-  const released = await release(
-    fixtures.sugarDoNothing,
-    'input',
-    'sugar_do_nothing_echo',
-    ['alpha', 'beta'],
-  );
+  const released = await release(fixtures.sugarDoNothing, 'input', 'sugar_do_nothing_echo', [
+    'alpha',
+    'beta',
+  ]);
 
   assert.deepEqual(
     released.map((output) => utf8(output.payload)),
@@ -99,12 +97,12 @@ test('dynamic_entity: the declared filter runs before keying and nothing else is
   // asked to mint an Entity for it.
   declares('dynamic_entity', 'dynamic_entity');
 
-  const released = await release(
-    fixtures.dynamicEntity,
-    'input',
-    'kafka',
-    ['a:1', 'b:1', 'drop', 'a:2'],
-  );
+  const released = await release(fixtures.dynamicEntity, 'input', 'kafka', [
+    'a:1',
+    'b:1',
+    'drop',
+    'a:2',
+  ]);
 
   assert.deepEqual(
     released.map((output) => utf8(output.payload)),
@@ -156,8 +154,14 @@ test('entity_timers: a declared timer fires locally with its scheduled time', as
     else process.env.TIMER_TEST_TIMEOUT_MS = previous;
   }
 
-  const closed = released.map((output) => utf8(output.payload)).filter((p) => p.startsWith('closed@'));
-  assert.equal(closed.length, 1, `the timer fired exactly once: ${JSON.stringify(released.map((o) => utf8(o.payload)))}`);
+  const closed = released
+    .map((output) => utf8(output.payload))
+    .filter((p) => p.startsWith('closed@'));
+  assert.equal(
+    closed.length,
+    1,
+    `the timer fired exactly once: ${JSON.stringify(released.map((o) => utf8(o.payload)))}`,
+  );
   assert.match(closed[0], /^closed@\d+$/, 'the firing carries the timestamp it was scheduled for');
 });
 

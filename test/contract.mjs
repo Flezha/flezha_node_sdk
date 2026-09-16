@@ -24,16 +24,28 @@ const MANIFEST = 'test/fixtures/contract.txt';
 
 const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 
-/** The nearest ancestor of the package that carries the manifest. */
-function enclosingTree() {
-  for (let at = packageRoot; ; at = dirname(at)) {
-    if (existsSync(resolve(at, MANIFEST))) return at;
+/**
+ * The nearest directory at or above `from` that carries `marker`.
+ *
+ * Both of this suite's resolvers ask the same question: the contract set looks
+ * for its manifest, the test app for its `conformance.json`. Asking it by
+ * walking rather than by counting `..` segments is what lets one answer serve
+ * both layouts this package lives in, under `sdk/node` in the core's tree and
+ * at the root of its own repository.
+ */
+export function ascendTo(from, marker) {
+  for (let at = from; ; at = dirname(at)) {
+    if (existsSync(resolve(at, marker))) return at;
     if (dirname(at) === at) return null;
   }
 }
 
 function candidates() {
-  return [process.env.FLEZHA_CONTRACT_DIR || null, resolve(packageRoot, 'contract'), enclosingTree()];
+  return [
+    process.env.FLEZHA_CONTRACT_DIR || null,
+    resolve(packageRoot, 'contract'),
+    ascendTo(packageRoot, MANIFEST),
+  ];
 }
 
 let cached = null;
@@ -41,14 +53,13 @@ let cached = null;
 /** The directory the contract set's repository-relative paths hang off. */
 export function contractRoot() {
   if (cached) return cached;
-  const found = candidates().find((at) => at && existsSync(resolve(at, MANIFEST)));
+  const tried = candidates();
+  const found = tried.find((at) => at && existsSync(resolve(at, MANIFEST)));
   if (found) return (cached = found);
-  const tried = candidates()
-    .map((at) => at ?? '$FLEZHA_CONTRACT_DIR (unset)')
-    .join('\n  ');
   throw new Error(
-    `the contract set is nowhere this suite looked:\n  ${tried}\n` +
-      `Unpack flezha-fixtures-<version>.tar.gz at ${packageRoot}/contract, ` +
+    'the contract set is nowhere this suite looked:\n  ' +
+      tried.map((at) => at ?? '$FLEZHA_CONTRACT_DIR (unset)').join('\n  ') +
+      `\nUnpack flezha-fixtures-<version>.tar.gz at ${packageRoot}/contract, ` +
       'or set FLEZHA_CONTRACT_DIR.',
   );
 }

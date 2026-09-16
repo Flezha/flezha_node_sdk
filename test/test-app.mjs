@@ -9,20 +9,22 @@
 // this package has a repository of its own, and `test/apps/node_runner` in the
 // enclosing tree while it sits inside the core's.
 
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+
+import { ascendTo } from './contract.mjs';
+
+/** Where the app sits in the core's tree, relative to any ancestor. */
+const IN_TREE = 'test/apps/node_runner';
 
 const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 
 function locate() {
   const beside = resolve(packageRoot, 'test_app');
   if (existsSync(resolve(beside, 'conformance.json'))) return beside;
-  for (let at = packageRoot; ; at = dirname(at)) {
-    const inTree = resolve(at, 'test/apps/node_runner');
-    if (existsSync(resolve(inTree, 'conformance.json'))) return inTree;
-    if (dirname(at) === at) return null;
-  }
+  const tree = ascendTo(packageRoot, `${IN_TREE}/conformance.json`);
+  return tree && resolve(tree, IN_TREE);
 }
 
 const located = locate();
@@ -32,7 +34,7 @@ export function testAppRoot() {
   if (!located) {
     throw new Error(
       `no conformance test app beside ${packageRoot} (test_app/) or in any tree above it ` +
-        '(test/apps/node_runner); the local-mode suite runs the classes it declares',
+        `(${IN_TREE}); the local-mode suite runs the classes it declares`,
     );
   }
   return located;
@@ -44,7 +46,6 @@ export function testAppModule(file) {
 }
 
 /** The capability-to-fixture-class table `conformance.json` declares. */
-export async function declaredFixtures() {
-  const { readFileSync } = await import('node:fs');
+export function declaredFixtures() {
   return JSON.parse(readFileSync(resolve(testAppRoot(), 'conformance.json'), 'utf8')).fixtures;
 }
