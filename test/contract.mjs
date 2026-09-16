@@ -56,9 +56,14 @@ export function contractRoot() {
   const tried = candidates();
   const found = tried.find((at) => at && existsSync(resolve(at, MANIFEST)));
   if (found) return (cached = found);
+  const unresolved = [
+    '$FLEZHA_CONTRACT_DIR (unset)',
+    '',
+    `no directory above ${packageRoot} carries ${MANIFEST}`,
+  ];
   throw new Error(
     'the contract set is nowhere this suite looked:\n  ' +
-      tried.map((at) => at ?? '$FLEZHA_CONTRACT_DIR (unset)').join('\n  ') +
+      tried.map((at, i) => at ?? unresolved[i]).join('\n  ') +
       `\nUnpack flezha-fixtures-<version>.tar.gz at ${packageRoot}/contract, ` +
       'or set FLEZHA_CONTRACT_DIR.',
   );
