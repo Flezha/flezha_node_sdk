@@ -109,11 +109,20 @@ export class LocalOperative {
       return;
     }
     this.#closed = true;
-    this.#native.localStop();
     try {
       // The drain rethrows what a delivery died of, so the teardown below is
       // a `finally`: a failed delivery must not strand the context.
       await this.#draining;
+      // Stop the run first, then take what it released and the drain loop had
+      // not reached: a value can be queued for up to one poll interval, and
+      // ending the run while it sits there is how an author loses output the
+      // graph did produce. Dropping the run drops the sender, so this ends at
+      // the first empty read rather than waiting.
+      this.#native.localStop();
+      for (let output = await this.#native.localNextOutput(0); output !== null; ) {
+        this.#deliver(output);
+        output = await this.#native.localNextOutput(0);
+      }
     } finally {
       // Not `shutdown`: that stops the process-wide poll core, and a process
       // may start another local run after this one. The fetchers leave on
