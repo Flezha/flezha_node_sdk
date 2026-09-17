@@ -15,7 +15,7 @@ import { isDeepStrictEqual } from 'node:util';
 
 import { defineOperative, type ChannelSpec, type ClassSpec, type ProcNode } from './authoring.js';
 import { decodeValue } from './codec.js';
-import { Invocation } from './ctx.js';
+import { Invocation, type SpawnBridge } from './ctx.js';
 import { invocation } from './determinism.js';
 import { foldRestore, rawState, type RestoreBody } from './state.js';
 import type { Procedure, TimerKind, TimerFiring } from './types.js';
@@ -40,6 +40,30 @@ export class ReplayMismatch extends Error {
 
 function replacer(_key: string, value: unknown): unknown {
   return typeof value === 'bigint' ? `${value}n` : value;
+}
+
+const BASE32 = 'abcdefghijklmnopqrstuvwxyz234567';
+
+/**
+ * A harness has no controller, so a spawn answers at once as a new instance:
+ * under the id it gave, or under one shaped like a generated id, counted
+ * rather than drawn so a test reads the same ids every run.
+ */
+function resolvedSpawns(): SpawnBridge {
+  const answers: string[] = [];
+  const read = (handle: bigint): string | null => answers[Number(handle) - 1] ?? null;
+  return {
+    spawnRequest: (_token, factoryId, id) => {
+      const suffix = (answers.length + 1)
+        .toString(32)
+        .padStart(16, '0')
+        .replace(/./g, (digit) => BASE32[parseInt(digit, 32)] as string);
+      const answer = { id: id || `${factoryId}-${suffix}`, outcome: 'spawned' };
+      return BigInt(answers.push(JSON.stringify(answer)));
+    },
+    spawnTryResult: read,
+    spawnWait: async (handle) => read(handle),
+  };
 }
 
 export interface HarnessOptions<TState> {
@@ -75,6 +99,7 @@ export class ProcedureTestHarness<TIn, TOut, TState, TChange> {
   private readonly spec: ClassSpec;
   private readonly node: ProcNode;
   private readonly outgoing: ChannelSpec[];
+  private readonly spawns = resolvedSpawns();
 
   private constructor(
     private readonly procedure: Procedure<TIn, TOut, TState, TChange>,
@@ -149,9 +174,8 @@ export class ProcedureTestHarness<TIn, TOut, TState, TChange> {
       now,
       replay: false,
       state: this.state,
-      bridge: {
-        spawnWorkflow: async () => 'harness_no_controller',
-      },
+      token: 0n,
+      bridge: this.spawns,
     });
   }
 

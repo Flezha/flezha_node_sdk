@@ -205,12 +205,18 @@ export interface Native {
   workflowEmit(instanceId: string, payload: Uint8Array): void;
   workflowRecv(instanceId: string, timeoutMs: number): Promise<Buffer | null>;
   workflowCancelled(instanceId: string): boolean;
-  spawnWorkflow(
-    instanceId: string,
+  /** Request a spawn from the live activation `token`; answers its handle. Never waits. */
+  spawnRequest(
+    token: bigint,
     factoryId: string,
+    id: string,
     payload: Uint8Array,
     ifRunning: string,
-  ): Promise<string>;
+    replay: boolean,
+  ): bigint;
+  /** The handle's answer as JSON once it has arrived, `null` before. Never waits. */
+  spawnTryResult(handle: bigint): string | null;
+  spawnWait(handle: bigint, timeoutMs: number): Promise<string | null>;
   adminCall(verb: string, args: string): Promise<string>;
   monotonicNanos(): bigint;
   lastError(): string | null;

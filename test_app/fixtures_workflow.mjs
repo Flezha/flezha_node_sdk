@@ -10,7 +10,7 @@
 // the core derives that channel's journal codec from the channel's kind, so no
 // fixture declares one.
 
-import { defineProcedure, defineWorkflow } from '@flezha/sdk';
+import { defineOperative, defineProcedure, defineWorkflow } from '@flezha/sdk';
 
 // -- the release gate -------------------------------------------------------
 
@@ -441,6 +441,38 @@ export const statelessLoopWorkflow = defineWorkflow({
   ...loopKnobs,
   channels: (c) => {
     c.input('in', { codec: 'text' }).into(ChatReply).sink('out');
+  },
+});
+
+// -- spawn_requester --------------------------------------------------------
+//
+// On each input it spawns `stateless_loop_workflow` once with no id and once
+// under the input as its id, and prints both results, because a handle's answer
+// is observable nowhere but in the procedure that read it (workflow_loop.rs).
+
+const SpawnRequester = defineProcedure({
+  name: 'spawn_requester',
+  handle: async (input, ctx) => {
+    const factory = statelessLoopWorkflow.factoryId;
+    const handles = [
+      ['unnamed', ctx.spawnWorkflow(factory, input)],
+      ['named', ctx.spawnWorkflow(factory, input, { id: input })],
+    ];
+    for (const [label, handle] of handles) {
+      try {
+        const { id, outcome } = await handle.wait();
+        console.log(`spawn_result ${label} ${id} ${outcome}`);
+      } catch (error) {
+        console.log(`spawn_result ${label} error ${error.message}`);
+      }
+    }
+  },
+});
+
+export const spawnRequester = defineOperative({
+  factoryId: 'spawn_requester',
+  channels: (c) => {
+    c.input('in', { codec: 'text' }).into(SpawnRequester).sink('out');
   },
 });
 

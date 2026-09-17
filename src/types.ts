@@ -7,6 +7,7 @@
  */
 
 import type { Codec } from './codec.js';
+import type { SpawnHandle } from './ctx.js';
 
 export type OverflowPolicy = 'drop_nothing' | 'drop_newest' | 'drop_oldest';
 /** A payload format a channel names on `input` and `sink`. */
@@ -22,8 +23,24 @@ export type LoopMode = 'once' | 'per_input' | 'chained';
 export type RollbackMode = 'all_or_nothing' | 'keep_progress';
 export type IfRunning = 'deliver' | 'error';
 
-/** What the controller answered a spawn request with. */
-export type SpawnOutcome = string;
+/** How a spawn reached an instance. */
+export type SpawnOutcome = 'spawned' | 'delivered' | 'skipped_on_replay';
+
+/** A resolved spawn: the id it resolved to, given or generated, and how it got there. */
+export interface SpawnResult {
+  id: string;
+  outcome: SpawnOutcome;
+}
+
+/**
+ * The instance a spawn names. Without an `id` the controller generates one and
+ * always starts a new instance, so `ifRunning` needs an `id`, and defaults to
+ * `'deliver'` when one is given.
+ */
+export interface SpawnOptions {
+  id?: string;
+  ifRunning?: IfRunning;
+}
 
 /** A timer firing. `now` is the SCHEDULED time, never the wall clock. */
 export interface TimerFiring {
@@ -76,13 +93,22 @@ export interface Ctx<TOut = never, TState = void, TChange = never> {
   /** Close the open checkpoint interval (checkpoint ack-granularity classes). */
   checkpoint(): void;
 
-  /** Spawn or deliver to a workflow instance. */
-  spawnWorkflow(
-    instanceId: string,
-    factoryId: string,
-    payload: unknown,
-    options?: { ifRunning?: IfRunning },
-  ): Promise<SpawnOutcome>;
+  /**
+   * Ask the controller for a workflow instance of `factoryId` with `payload` as
+   * its first input, or as one more input of the running instance an `id` names
+   * under `ifRunning: 'deliver'`. Returns the handle at once: a failure comes out
+   * of its reads, never out of this call. `ifRunning` without an `id` throws a
+   * `TypeError` and sends nothing. A replayed invocation sends nothing and its
+   * handle answers `skipped_on_replay`. Read the handle inside this invocation
+   * or not at all.
+   *
+   * A spawn without an id always starts a new instance and can never deliver
+   * into a running one. Reissuing it after a lost or timed-out answer starts a
+   * second instance, and a replay of it answers an empty id, because the
+   * generated id exists only in the live run's answer. A caller who needs at
+   * most one instance, or the id on replay, passes its own `id`.
+   */
+  spawnWorkflow(factoryId: string, payload: unknown, options?: SpawnOptions): SpawnHandle;
 }
 
 /** The context a run-sugar workflow body receives. */
@@ -333,6 +359,35 @@ export interface WorkflowDefinition {
  * channel with no key, a value the channel's codec cannot send.
  */
 export class EmitError extends Error {}
+
+/**
+ * Why a spawn reached no instance, thrown by a handle's reads and never by the
+ * spawn call. `id` is the id the spawn named, empty when it named none.
+ */
+export class SpawnError extends Error {
+  constructor(
+    readonly id: string,
+    message: string,
+  ) {
+    super(message);
+    this.name = new.target.name;
+  }
+}
+
+/** The id is running and the spawn said `ifRunning: 'error'`. */
+export class SpawnAlreadyRunningError extends SpawnError {}
+
+/** No connected runner on any controller node registers the factory. */
+export class SpawnFactoryUnknownError extends SpawnError {}
+
+/** The controller refused the spawn: authorization, quota, shutdown or a failed start. */
+export class SpawnRefusedError extends SpawnError {}
+
+/** No answer arrived within the request's deadline. */
+export class SpawnTimeoutError extends SpawnError {}
+
+/** No control plane to request the spawn on. */
+export class SpawnUnavailableError extends SpawnError {}
 
 /** A registration refusal: names the offending handler and the defect. */
 export class DeclarationError extends Error {

@@ -170,3 +170,39 @@ test('an undeclared entry reads JSON and an undeclared sink follows the value', 
   }
   assert.deepEqual(released, ['a is 1', '{"a":1}']);
 });
+
+test('a spawn with no controller anywhere is unavailable, from either read', async () => {
+  const Spawner = defineProcedure({
+    name: 'spawner',
+    handle: async (input, ctx) => {
+      let tried;
+      try {
+        ctx.spawnWorkflow('worker', input).tryResult();
+      } catch (error) {
+        tried = error;
+      }
+      const waited = await ctx
+        .spawnWorkflow('worker', input, { id: 'w1' })
+        .wait()
+        .catch((error) => error);
+      ctx.emit(`${tried?.name} ${waited.name} ${waited.id}: ${waited.message}`);
+    },
+  });
+  const released = [];
+  const run = LocalOperative.start(
+    defineOperative({
+      factoryId: 'local_spawner_node',
+      channels: (c) => c.input('in', { codec: 'text' }).into(Spawner).sink('out'),
+    }),
+  );
+  try {
+    run.onSink('out', (output) => released.push(utf8(output.payload)));
+    await run.feed('in', 'p');
+    await run.runUntilIdle(5_000);
+  } finally {
+    await run.close();
+  }
+  assert.deepEqual(released, [
+    'SpawnUnavailableError SpawnUnavailableError w1: no control plane to request a spawn on',
+  ]);
+});

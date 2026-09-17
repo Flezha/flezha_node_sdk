@@ -1,7 +1,7 @@
 // The builders the dispatch-shaped suites share: what one operative's dispatch
 // depends on, and the activation the core hands out.
-import { validate } from '../dist/esm/index.js';
-import { Registry } from '../dist/esm/dispatch.js';
+import { defineOperative, defineProcedure, validate } from '../dist/esm/index.js';
+import { Registry, answer } from '../dist/esm/dispatch.js';
 
 /**
  * The dispatch dependencies over `specs`, registered in the order given.
@@ -16,7 +16,53 @@ export function depsFor(...specs) {
     validate(spec);
     registry.add(spec);
   }
-  return { registry, bridge: { spawnWorkflow: async () => 'spawned' }, workflowCtx: () => ({}) };
+  return { registry, bridge: spawnBridge(), workflowCtx: () => ({}) };
+}
+
+/**
+ * The addon's three spawn entries, answering the JSON the core does.
+ * `answerFor(request)` is what a read of that request's handle answers, `null`
+ * while pending; by default a spawn under the id it named, or a generated one.
+ * As in the core, a handle's first answer is what every later read answers,
+ * and no read waits. Every request and every read (`try` or `wait`) is recorded.
+ */
+export function spawnBridge(
+  answerFor = (request) => ({ id: request.id || 'worker-k7m2qzxw4pd3fn2a', outcome: 'spawned' }),
+) {
+  const answers = [];
+  const bridge = {
+    requests: [],
+    reads: [],
+    spawnRequest: (token, factoryId, id, payload, ifRunning, replay) =>
+      BigInt(bridge.requests.push({ token, factoryId, id, payload, ifRunning, replay })),
+    spawnTryResult: (handle) => read('try', handle),
+    spawnWait: async (handle) => read('wait', handle),
+  };
+  const read = (kind, handle) => {
+    bridge.reads.push(kind);
+    const at = Number(handle) - 1;
+    answers[at] ??= answerFor(bridge.requests[at]);
+    return answers[at] === null ? null : JSON.stringify(answers[at]);
+  };
+  return bridge;
+}
+
+/**
+ * Run `handle(input, ctx)` as a procedure on one input, `'p'`, under activation
+ * token 7 with `bridge` for its spawns; answers that input's effect.
+ */
+export async function handleOnce(bridge, handle, item = {}) {
+  const spec = defineOperative({
+    factoryId: 'once',
+    channels: (c) =>
+      c
+        .input('in')
+        .into(defineProcedure({ name: 'once', handle }))
+        .sink('out'),
+  });
+  const work = activationFor('once')({ token: 7n, items: [inputItem('p', item)] });
+  const result = await answer(work, { ...depsFor(spec), bridge });
+  return result.effects[0];
 }
 
 /** An activation builder bound to one factory; `overrides` names what varies. */

@@ -10,21 +10,88 @@
 import { encodeValue } from './codec.js';
 import { applyTransforms, isStructuredWorkflow } from './authoring.js';
 import type { ChannelSpec, ClassSpec, ConsumerEdge, ProcNode } from './authoring.js';
-import type { NativeItemEffect, NativeMeta, NativeOutput, NativeTimerOp } from './native.js';
+import type {
+  Native,
+  NativeItemEffect,
+  NativeMeta,
+  NativeOutput,
+  NativeTimerOp,
+} from './native.js';
 import { entityIdentity, stableId } from './identity.js';
 import { readOnlyState } from './state.js';
-import { EmitError, type Ctx, type EmitOptions, type IfRunning, type TimerKind } from './types.js';
+import {
+  EmitError,
+  SpawnAlreadyRunningError,
+  SpawnFactoryUnknownError,
+  SpawnRefusedError,
+  SpawnTimeoutError,
+  SpawnUnavailableError,
+  type Ctx,
+  type EmitOptions,
+  type SpawnOptions,
+  type SpawnOutcome,
+  type SpawnResult,
+  type TimerKind,
+} from './types.js';
 
 /** Metadata keys the runtime owns. A handler that sets one is refused. */
 const RESERVED_PREFIX = 'flz.';
 
-export interface SpawnBridge {
-  spawnWorkflow(
-    instanceId: string,
-    factoryId: string,
-    payload: Uint8Array,
-    ifRunning: string,
-  ): Promise<string>;
+/** The addon entries a spawn reads. */
+export type SpawnBridge = Pick<Native, 'spawnRequest' | 'spawnTryResult' | 'spawnWait'>;
+
+/** The core ends a read at the request's own deadline, so a read this long always answers. */
+const WAIT_MS = 0xffff_ffff;
+
+const FAILURES = {
+  already_running: SpawnAlreadyRunningError,
+  factory_unknown: SpawnFactoryUnknownError,
+  refused: SpawnRefusedError,
+  timeout: SpawnTimeoutError,
+  unavailable: SpawnUnavailableError,
+};
+
+/** What the core answers a resolved read with. */
+type SpawnAnswer =
+  | { id: string; outcome: SpawnOutcome }
+  | { id: string; error: keyof typeof FAILURES; message: string };
+
+/**
+ * A spawn's answer, read inside the invocation that made it. Every read asks
+ * the core, which answers a resolved handle the same way until that invocation
+ * ends. Nothing is awaited until `wait()` is called, so a handle nobody reads
+ * leaves no promise to reject unobserved: the core logs its failure once instead.
+ */
+export class SpawnHandle {
+  readonly #bridge: SpawnBridge;
+  readonly #handle: bigint;
+
+  constructor(bridge: SpawnBridge, handle: bigint) {
+    this.#bridge = bridge;
+    this.#handle = handle;
+  }
+
+  /** The result once the answer has arrived, `null` while pending. Throws the failure. */
+  tryResult(): SpawnResult | null {
+    const json = this.#bridge.spawnTryResult(this.#handle);
+    return json === null ? null : resultOf(json);
+  }
+
+  /** Resolves to the result, or rejects with the failure. The wait runs off the event loop. */
+  async wait(): Promise<SpawnResult> {
+    let json: string | null = null;
+    while (json === null) {
+      json = await this.#bridge.spawnWait(this.#handle, WAIT_MS);
+    }
+    return resultOf(json);
+  }
+}
+
+/** The result a resolved answer carries, or its failure thrown. */
+function resultOf(json: string): SpawnResult {
+  const answer = JSON.parse(json) as SpawnAnswer;
+  if ('outcome' in answer) return { id: answer.id, outcome: answer.outcome };
+  throw new FAILURES[answer.error](answer.id, answer.message);
 }
 
 export interface InvocationInput {
@@ -38,6 +105,8 @@ export interface InvocationInput {
   now: bigint;
   replay: boolean;
   state: unknown;
+  /** The activation this invocation runs under, which a spawn it makes belongs to. */
+  token: bigint;
   bridge: SpawnBridge;
 }
 
@@ -285,23 +354,26 @@ export class Invocation implements Ctx<unknown, unknown, unknown> {
     this.checkpointed = true;
   }
 
-  async spawnWorkflow(
-    instanceId: string,
-    factoryId: string,
-    payload: unknown,
-    options?: { ifRunning?: IfRunning },
-  ): Promise<string> {
-    if (this.input.replay) {
-      // A spawn is an external side effect. A replayed invocation must not
-      // issue it twice, and a timer must — a timer is internal state.
-      return 'skipped_on_replay';
+  spawnWorkflow(factoryId: string, payload: unknown, options: SpawnOptions = {}): SpawnHandle {
+    const { id, ifRunning } = options;
+    if (ifRunning !== undefined && !id) {
+      throw new TypeError(
+        `${this.input.node.name}: spawnWorkflow was given ifRunning without an id; a spawn ` +
+          'without an id always starts a new instance, so pass an id or leave ifRunning out',
+      );
     }
-    return this.input.bridge.spawnWorkflow(
-      instanceId,
+    // The replay flag goes to the core, which sends nothing for a replayed
+    // invocation: a spawn is an external side effect, where a timer is
+    // internal state and is registered again.
+    const handle = this.input.bridge.spawnRequest(
+      this.input.token,
       factoryId,
+      id ?? '',
       encodeValue(payload),
-      options?.ifRunning ?? 'deliver',
+      ifRunning ?? '',
+      this.input.replay,
     );
+    return new SpawnHandle(this.input.bridge, handle);
   }
 
   /** The effect record for this item, as the core folds it. */

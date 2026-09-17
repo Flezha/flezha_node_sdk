@@ -21,7 +21,7 @@ await runner.run();
 // terminal:
 //
 // const admin = runner.admin();
-// await admin.startOperative({ id: 'my_echo', factory_id: 'echo' });
+// await admin.startOperative('echo', { id: 'my_echo' });
 // await admin.enablePlugin('writer', {
 //   id: 'writer',
 //   provider: 'operative_file_sink',

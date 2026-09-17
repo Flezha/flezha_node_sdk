@@ -118,7 +118,7 @@ export interface DispatchDeps {
  *
  * Both loops build it the same way — that is what "one dispatch path" means at
  * this level — so a third kind of loop gets it by calling this rather than by
- * copying eight lines.
+ * copying it.
  */
 export function dispatchDeps(
   native: Native,
@@ -127,10 +127,7 @@ export function dispatchDeps(
 ): DispatchDeps {
   return {
     registry,
-    bridge: {
-      spawnWorkflow: (instanceId, factoryId, payload, ifRunning) =>
-        native.spawnWorkflow(instanceId, factoryId, payload, ifRunning),
-    },
+    bridge: native,
     workflowCtx: (instanceId) => session(native, instanceId),
   };
 }
@@ -234,6 +231,7 @@ async function invoke(
     now: at.now,
     replay: at.replay,
     state: registered.stateOf(node, activation.entityKey),
+    token: activation.token,
     bridge: deps.bridge,
   });
   try {

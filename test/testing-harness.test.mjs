@@ -194,3 +194,22 @@ test('a string and an object output are reported exactly as emitted', async () =
   const harness = ProcedureTestHarness.of(Emitter);
   assert.deepEqual((await harness.input('hi')).emits, [{ said: 'hi' }, 'echo: hi']);
 });
+
+test('a spawn answers a handle already resolved to a new instance', async () => {
+  const Spawner = defineProcedure({
+    name: 'spawner',
+    handle: async (input, ctx) => [
+      ctx.spawnWorkflow('worker', input).tryResult(),
+      ctx.spawnWorkflow('worker', input).tryResult(),
+      await ctx.spawnWorkflow('worker', input, { id: 'w1' }).wait(),
+    ],
+  });
+  const { emits } = await ProcedureTestHarness.of(Spawner).input('p');
+  assert.deepEqual(emits, [
+    [
+      { id: 'worker-aaaaaaaaaaaaaaab', outcome: 'spawned' },
+      { id: 'worker-aaaaaaaaaaaaaaac', outcome: 'spawned' },
+      { id: 'w1', outcome: 'spawned' },
+    ],
+  ]);
+});

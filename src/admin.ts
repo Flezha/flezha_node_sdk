@@ -17,10 +17,14 @@
  */
 import type { Native } from './native.js';
 
-/** What an operative start takes, which is what `flz operative start` takes. */
-export interface OperativeSpec {
-  id: string;
-  factory_id: string;
+/** What an operative start takes beside its factory, which is what `flz operative start` takes. */
+export interface StartOptions {
+  /**
+   * The operative's own id. Without one, every start runs a new operative
+   * under a generated id, so a start retried after a lost answer starts a
+   * second one; with one, a second start leaves the running operative untouched.
+   */
+  id?: string;
   /** `'stream'` (the default) or `'workflow'`. */
   kind?: string;
   /** The values the factory is seeded with, keyed by procedure. */
@@ -29,12 +33,25 @@ export interface OperativeSpec {
   opts?: unknown;
 }
 
+/** What a start did: `already_running` only for an id given while it runs. */
+export type StartOutcome = 'started' | 'already_running';
+
+/** A start's answer: the id the operative runs under, given or generated. */
+export interface StartResult {
+  id: string;
+  outcome: StartOutcome;
+}
+
 export class Admin {
   constructor(private readonly native: Native) {}
 
-  /** Start an operative. Answers the controller's own result. */
-  async startOperative(spec: OperativeSpec): Promise<unknown> {
-    return this.call('Operative.start', spec);
+  /** Start an operative of `factoryId`. */
+  async startOperative(factoryId: string, options: StartOptions = {}): Promise<StartResult> {
+    const { id, outcome } = (await this.call('Operative.start', {
+      ...options,
+      factory_id: factoryId,
+    })) as StartResult;
+    return { id, outcome };
   }
 
   /** Stop an operative, or the whole partition group it names. */

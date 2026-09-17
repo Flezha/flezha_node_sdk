@@ -20,7 +20,14 @@ import {
 } from '../dist/esm/index.js';
 import { answer } from '../dist/esm/dispatch.js';
 
-import { activationFor, depsFor, inputItem, jsonOf } from './dispatch-fixtures.mjs';
+import {
+  activationFor,
+  depsFor,
+  handleOnce,
+  inputItem,
+  jsonOf,
+  spawnBridge,
+} from './dispatch-fixtures.mjs';
 
 // `depsFor` submits each spec, so this file needs the process context too.
 loadNative().contextNew(ACTIVATION_SCHEMA_VERSION);
@@ -146,6 +153,53 @@ test('polling does not consume the shared I/O threadpool', async () => {
   const elapsedMs = Number(process.hrtime.bigint() - started) / 1e6;
   await Promise.all(parked);
   assert.ok(elapsedMs < 500, `libuv work waited ${elapsedMs.toFixed(0)}ms behind native parks`);
+});
+
+test('a spawn returns on the event loop, and its wait runs off it', async () => {
+  // The addon's own table says which entries can wait, and `native.test.mjs`
+  // holds every one that can to a promise.
+  const blocking = new Map(
+    loadNative()
+      .nativeSurface()
+      .map((entry) => [entry.name, entry.blocking]),
+  );
+  assert.deepEqual(
+    ['spawnRequest', 'spawnTryResult', 'spawnWait'].map((name) => blocking.get(name)),
+    [false, false, true],
+  );
+
+  // A controller slow to answer: every wait parks until this test lets it read.
+  const parked = [];
+  let answer = null;
+  const bridge = spawnBridge(() => answer);
+  const read = bridge.spawnWait;
+  bridge.spawnWait = (handle) => new Promise((resolve) => parked.push(() => resolve(read(handle))));
+  const seen = {};
+  const effect = handleOnce(bridge, (input, ctx) => {
+    seen.handle = ctx.spawnWorkflow('worker', input, { id: 'w1' });
+    seen.before = seen.handle.tryResult();
+    const waited = seen.handle.wait();
+    seen.during = seen.handle.tryResult();
+    return waited.then((result) => {
+      seen.result = result;
+    });
+  });
+  const turn = () => new Promise((resolve) => setImmediate(resolve));
+
+  await turn();
+  assert.equal(typeof seen.handle.then, 'undefined', 'the spawn returned a handle, not a promise');
+  assert.equal(seen.before, null);
+  assert.equal(seen.during, null);
+  assert.deepEqual(bridge.reads, ['try', 'try'], 'a read while a wait is parked answers at once');
+
+  // A wait that comes back pending is made again, and the loop turns meanwhile.
+  parked.shift()();
+  await turn();
+  assert.equal(parked.length, 1);
+  answer = { id: 'w1', outcome: 'spawned' };
+  parked.shift()();
+  assert.equal((await effect).verdict, 'ok');
+  assert.deepEqual(seen.result, { id: 'w1', outcome: 'spawned' });
 });
 
 test('the documented delay threshold is below the controller stall verdict', async () => {

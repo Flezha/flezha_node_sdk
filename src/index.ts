@@ -8,9 +8,10 @@
  */
 
 export { Admin } from './admin.js';
-export type { OperativeSpec } from './admin.js';
+export type { StartOptions, StartOutcome, StartResult } from './admin.js';
 export { defineOperative, defineProcedure, defineWorkflow } from './authoring.js';
 export type { ChannelSpec, ClassSpec, Link, ProcNode } from './authoring.js';
+export type { SpawnHandle } from './ctx.js';
 export {
   assertRepresentable,
   decodeValue,
@@ -30,7 +31,15 @@ export type { Native } from './native.js';
 export { ACTIVATION_SCHEMA_VERSION, createRunner, Runner } from './runner.js';
 export { StateMutationError } from './state.js';
 export { DELAY_WARN_MS } from './loop-watch.js';
-export { DeclarationError } from './types.js';
+export {
+  DeclarationError,
+  SpawnAlreadyRunningError,
+  SpawnError,
+  SpawnFactoryUnknownError,
+  SpawnRefusedError,
+  SpawnTimeoutError,
+  SpawnUnavailableError,
+} from './types.js';
 export type {
   BeyondWindowPolicy,
   ChannelBuilder,
@@ -49,7 +58,9 @@ export type {
   ProcedureDefinition,
   RollbackMode,
   RoutedDocument,
+  SpawnOptions,
   SpawnOutcome,
+  SpawnResult,
   StaticEntities,
   Stream,
   TimerFiring,
