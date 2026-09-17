@@ -10,7 +10,7 @@
  */
 
 import { applyTransforms, isStructuredWorkflow } from './authoring.js';
-import type { ChannelSpec, ClassSpec, ProcNode } from './authoring.js';
+import type { ChannelSpec, ClassSpec, ConsumerEdge, ProcNode } from './authoring.js';
 import { decodeValue, encodeValue, fromStateJson, toStateJson } from './codec.js';
 import { Invocation, type SpawnBridge } from './ctx.js';
 import { invocation } from './determinism.js';
@@ -23,7 +23,7 @@ import type {
   NativePrepareAnswer,
 } from './native.js';
 import { foldRestore, rawState } from './state.js';
-import { DROPPED, type WorkflowCtx } from './types.js';
+import type { WorkflowCtx } from './types.js';
 
 /** A declared class, with the lookups dispatch needs on the hot path. */
 export class RegisteredClass {
@@ -223,7 +223,7 @@ async function invoke(
   deps: DispatchDeps,
   at: { now: bigint; replay: boolean },
   body: (ctx: Invocation) => Promise<unknown>,
-): Promise<{ ctx: Invocation; returned: unknown }> {
+): Promise<Invocation> {
   const ctx = new Invocation({
     spec: registered.spec,
     node,
@@ -237,8 +237,8 @@ async function invoke(
     bridge: deps.bridge,
   });
   try {
-    const returned = await invocation.run({ procedure: node.name }, () => body(ctx));
-    return { ctx, returned };
+    await invocation.run({ procedure: node.name }, () => body(ctx));
+    return ctx;
   } finally {
     registered.setState(node, activation.entityKey, rawState(ctx.currentState));
   }
@@ -256,7 +256,7 @@ async function runWork(
   for (const item of activation.items ?? []) {
     const now = item.now ?? 0n;
     try {
-      const { ctx, returned } = await invoke(
+      const ctx = await invoke(
         activation,
         registered,
         node,
@@ -274,12 +274,9 @@ async function runWork(
               { kind: item.timerKind ?? 'processing_time', scheduledAt: item.scheduledAt ?? now },
               ctx as never,
             );
-            return undefined;
+            return;
           }
           const channel = registered.spec.channels[item.channel ?? 0] as ChannelSpec | undefined;
-          const decoded = channel?.decode
-            ? channel.decode(item.payload ?? Buffer.alloc(0))
-            : decodeValue(item.payload ?? Buffer.alloc(0));
           // This node's own edge off the channel: a transform chain declared
           // before one `into` belongs to that consumer and to no other. It is
           // evaluated here only for a payload that reached us untransformed —
@@ -294,18 +291,16 @@ async function runWork(
           const edge = untransformed
             ? channel?.consumers.find((each) => each.procedure === node.index)
             : undefined;
-          const input = applyTransforms(edge?.transforms ?? [], decoded);
-          // A filtered value is consumed and reaches no handler. It still
-          // produces an effect, so its offset advances and nothing is retried.
-          if (input === DROPPED) return undefined;
-          return await definition.handle(input as never, ctx as never);
+          const values = edgeValues(channel, edge, item.payload ?? Buffer.alloc(0));
+          // A filtered value is consumed and reaches no handler, and a fanned
+          // one reaches it once per value. Either way the input produces one
+          // effect, so its offset advances once and nothing is retried.
+          for (const input of valuesForEntity(edge, definition, activation.entityKey, values)) {
+            await ctx.handle(input);
+          }
         },
       );
 
-      // A returned value is emitted; `undefined` emits nothing, which is the
-      // warmup gate. A handler that emits through the context returns nothing,
-      // so the two spellings compose rather than conflict.
-      if (returned !== undefined) ctx.emit(returned);
       effects.push(ctx.effect(item.consumedOffset));
     } catch (error) {
       // The stack is a host diagnostic, not a record: the verdict below
@@ -324,6 +319,53 @@ async function runWork(
   }
 
   return { token: activation.token, outcome: 'work', effects };
+}
+
+/**
+ * What one payload becomes on `edge`: decoded as its channel reads it, then run
+ * through the edge's transforms. The crossing and the delivery both start here,
+ * so an entity keeps exactly the values the crossing keyed.
+ */
+function edgeValues(
+  channel: ChannelSpec | undefined,
+  edge: ConsumerEdge | undefined,
+  payload: Uint8Array,
+): unknown[] {
+  const decoded = channel?.decode ? channel.decode(payload) : decodeValue(payload);
+  return applyTransforms(edge?.transforms ?? [], decoded);
+}
+
+/**
+ * The entity keys one value routes to: the edge's key, else the procedure's
+ * static fan-out, else null for a consumer that routes by neither.
+ */
+function keysOf(
+  edge: ConsumerEdge | undefined,
+  definition: ProcNode['procedure']['definition'] | undefined,
+  value: unknown,
+): string[] | null {
+  if (edge?.keyBy) return [edge.keyBy(value)];
+  const entitiesFor = definition?.entities?.entitiesFor;
+  return entitiesFor ? entitiesFor(value) : null;
+}
+
+/**
+ * The values of one delivered payload that belong to this entity. The core
+ * hands the whole payload to every key its crossing answered, so each entity
+ * keeps the values the crossing keyed to it. With no edge evaluated here, the
+ * producer already keyed the payload to this entity.
+ */
+function valuesForEntity(
+  edge: ConsumerEdge | undefined,
+  definition: ProcNode['procedure']['definition'],
+  entityKey: string | undefined,
+  values: unknown[],
+): unknown[] {
+  if (edge === undefined || entityKey === undefined) return values;
+  return values.filter((value) => {
+    const keys = keysOf(edge, definition, value);
+    return keys === null || keys.includes(entityKey);
+  });
 }
 
 function restoreFold(
@@ -375,23 +417,19 @@ function prepare(
 
   const answers: NativePrepareAnswer[] = request.payloads.map((payload) => {
     try {
-      const decoded = channel?.decode ? channel.decode(payload) : decodeValue(payload);
-      const value = applyTransforms(edge?.transforms ?? [], decoded);
+      const values = edgeValues(channel, edge, payload);
       // A filtered payload answers no key. For a dynamic consumer that is what
       // tells the core not to route it at all — the drop happens before an
       // entity is minted rather than inside one.
-      if (value === DROPPED) return { keys: [] };
+      if (values.length === 0) return { keys: [] };
 
+      // A fanned payload reaches every entity one of its values keys to.
       const keys = request.wantKeys
-        ? edge?.keyBy
-          ? [edge.keyBy(value)]
-          : definition?.entities?.entitiesFor
-            ? definition.entities.entitiesFor(value as never)
-            : []
+        ? [...new Set(values.flatMap((value) => keysOf(edge, definition, value) ?? []))]
         : [];
       const eventTime =
         request.wantEventTime && definition?.eventTime
-          ? BigInt(definition.eventTime(value as never))
+          ? BigInt(definition.eventTime(values[0] as never))
           : undefined;
       return { keys, eventTime };
     } catch (error) {
@@ -440,7 +478,7 @@ async function compensate(
     return failed(activation.token, `${node.name} declares no compensate hook`, true);
   }
   const outputs = (activation.outputs ?? []).map((bytes) => decodeValue(bytes));
-  const { ctx } = await invoke(
+  const ctx = await invoke(
     activation,
     registered,
     node,

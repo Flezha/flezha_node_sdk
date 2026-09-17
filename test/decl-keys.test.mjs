@@ -289,3 +289,35 @@ test('the structured workflow topology is the reference, channel for channel', (
     goldenLines('commit_block_chain'),
   );
 });
+
+// A merge is no declaration key: each source is a chain the core reads, closed
+// by the `merge` link `flz_core::host::decl` deserializes.
+test('a merge source serialises as the core’s merge link, keyed after its mapping', () => {
+  const merged = (name) => defineProcedure({ name, dynamicEntities: {}, handle: (i) => i });
+  const decl = toHostClassDecl(
+    defineOperative({
+      factoryId: 'node_decl_merge',
+      channels: (c) => {
+        for (const [first, second, into] of [
+          ['a', 'b', 'first_merge'],
+          ['c', 'd', 'second_merge'],
+        ]) {
+          c.merge()
+            .from(c.input(first), (value) => value)
+            .from(c.input(second), (value) => value)
+            .keyBy(String)
+            .into(merged(into));
+        }
+      },
+    }),
+  );
+  const source = (procedure, group) => [
+    { link: 'transform' },
+    { link: 'key' },
+    { link: 'merge', procedure, group },
+  ];
+  assert.deepEqual(
+    decl.channels.map((channel) => channel.chains),
+    [[source(0, 0)], [source(0, 0)], [source(1, 1)], [source(1, 1)]],
+  );
+});

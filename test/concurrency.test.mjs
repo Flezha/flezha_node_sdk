@@ -33,7 +33,7 @@ const Accumulate = defineProcedure({
     state.seen.push(change.value);
   },
   handle: (input, ctx) => {
-    ctx.change({ value: input });
+    ctx.change({ value: input.value });
     return [...ctx.state.seen];
   },
 });
@@ -57,7 +57,7 @@ const work = (token, key, values) =>
     token,
     entityKey: key,
     changeSeq: BigInt(token),
-    items: values.map((value) => inputItem(value, { now: 0n })),
+    items: values.map((value) => inputItem({ key, value }, { now: 0n })),
   });
 
 test('inputs for one entity are processed in enqueue order', async () => {

@@ -25,10 +25,14 @@ import { ProcedureTestHarness } from '../dist/esm/testing.js';
 import { EmitError } from '../dist/esm/types.js';
 
 import { member } from './contract.mjs';
+import { testAppModule } from './test-app.mjs';
 
 loadNative().contextNew(ACTIVATION_SCHEMA_VERSION);
 
-const echo = (name) => defineProcedure({ name, handle: (input) => input });
+const fixtures = await testAppModule('fixtures.mjs');
+
+const echo = (name, options = {}) =>
+  defineProcedure({ name, ...options, handle: (input) => input });
 
 const refusal = (build) => {
   try {
@@ -735,4 +739,149 @@ test('a codec and a callable together are refused', () => {
     const { message } = refusal(build);
     assert.ok(message.includes(`codecs: ${channel}: names both a codec`), message);
   }
+});
+
+// -- merge and the latest-document router ------------------------------------
+//
+// A merge records each source as an ordinary chain closed by the core's
+// `merge` link; which edges it derives and every refusal are the core's answer.
+
+const identity = (value) => value;
+
+test('two sources merge into one node, each edge applying its own mapping', () => {
+  const spec = fixtures.mergedInput;
+  assert.deepEqual(derivedChannels(spec), [
+    ['ticks', 'entry', null, [0]],
+    ['quotes', 'entry', null, [0]],
+    ['merged', 'plugin', 0, []],
+  ]);
+  // The key is evaluated on the value the source's own mapping produced.
+  assert.deepEqual(
+    spec.channels.slice(0, 2).map(({ consumers: [edge] }) => {
+      const mapped = edge.transforms.reduce((value, transform) => transform(value), 'AAPL:1');
+      return [mapped.source, edge.keyBy(mapped)];
+    }),
+    [
+      ['ticks', 'AAPL'],
+      ['quotes', 'AAPL'],
+    ],
+  );
+});
+
+test('a procedure output and an entry are both merge sources', () => {
+  const spec = defineOperative({
+    factoryId: 'merged_hop',
+    channels: (c) => {
+      const parsed = c.input('raw').into(echo('parse'));
+      c.merge()
+        .from(parsed, (value) => ({ parsed: value }))
+        .from(c.input('direct'), (value) => ({ direct: value }))
+        .into(echo('join'))
+        .sink();
+    },
+  });
+  assert.deepEqual(derivedChannels(spec), [
+    ['raw', 'entry', null, [0]],
+    ['parse', 'inter_proc', 0, [1]],
+    ['direct', 'entry', null, [1]],
+    ['join', 'plugin', 1, []],
+  ]);
+});
+
+test('a merge is refused by the core’s names', () => {
+  const target = echo('target');
+  const refused = (channels) =>
+    refusal(() => defineOperative({ factoryId: 'merge_refused', channels })).refusals;
+
+  assert.deepEqual(
+    refused((c) => c.merge().from(c.input('in'), identity).into(target)),
+    ['MergeTooFewSources'],
+  );
+  assert.ok(
+    refused((c) => {
+      const entry = c.input('in');
+      c.merge().from(entry, identity).from(entry, identity).into(target);
+    }).includes('DuplicateMergeSource'),
+  );
+  assert.deepEqual(
+    refused((c) => {
+      const entry = c.input('in');
+      entry.into(target);
+      c.merge().from(entry, identity).from(c.input('other'), identity).into(target);
+    }),
+    ['EdgeAlreadyWired'],
+  );
+  const keyed = echo('keyed', { dynamicEntities: {} });
+  assert.deepEqual(
+    refused((c) =>
+      c
+        .merge()
+        .from(c.input('in'), identity)
+        .from(c.input('other'), identity)
+        .keyBy(String)
+        .keyBy(String)
+        .into(keyed),
+    ),
+    ['DuplicateKeyBy', 'DuplicateKeyBy'],
+  );
+});
+
+test('the router is a merge into the route_latest node, and a named one is its own node', () => {
+  const spec = defineOperative({
+    factoryId: 'routers',
+    channels: (c) => {
+      const trades = c.input('trades');
+      const bySymbol = (trade) => trade.symbol;
+      c.routeLatest(c.input('config'), trades, bySymbol).into(echo('detector'));
+      c.routeLatestNamed(c.input('limits'), trades, bySymbol, 'limits_router').into(echo('guard'));
+    },
+  });
+  assert.deepEqual(derivedChannels(spec), [
+    ['trades', 'entry', null, [0, 2]],
+    ['config', 'entry', null, [0]],
+    ['route_latest', 'inter_proc', 0, [1]],
+    ['limits', 'entry', null, [2]],
+    ['limits_router', 'inter_proc', 2, [3]],
+  ]);
+  assert.deepEqual(
+    spec.procedures.map((node) => node.name),
+    ['route_latest', 'detector', 'limits_router', 'guard'],
+  );
+});
+
+test('the router hands each key each document once, on that key’s own traffic', async () => {
+  const spec = defineOperative({
+    factoryId: 'routed',
+    channels: (c) => {
+      c.routeLatest(c.input('config'), c.input('trades'), (trade) => trade.symbol).into(
+        echo('detector'),
+      );
+    },
+  });
+  const router = spec.procedures.find((node) => node.name === 'route_latest');
+  const harness = ProcedureTestHarness.of(router.procedure);
+  const document = { limit: 5 };
+
+  // Traffic before any document has nothing to hand on.
+  assert.deepEqual((await harness.input({ key: 'A' })).emits, []);
+
+  const emits = [];
+  for (const input of [
+    { document },
+    { key: 'A' },
+    { key: 'B' },
+    // An equal document is inert, whichever object carries it.
+    { document: { limit: 5 } },
+    { key: 'A' },
+  ]) {
+    emits.push((await harness.input(input)).emits);
+  }
+  assert.deepEqual(emits, [[], [{ key: 'A', document }], [{ key: 'B', document }], [], []]);
+  assert.deepEqual(harness.currentState, { document, version: 1, delivered: { A: 1, B: 1 } });
+
+  const changed = { limit: 7 };
+  assert.deepEqual((await harness.input({ document: changed })).emits, []);
+  assert.deepEqual((await harness.input({ key: 'A' })).emits, [{ key: 'A', document: changed }]);
+  assert.equal(harness.currentState.version, 2);
+  harness.replayEquals();
 });

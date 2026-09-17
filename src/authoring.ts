@@ -15,17 +15,19 @@ import {
   channelEncoder,
   type Codec,
 } from './codec.js';
+import { latestRouter, type RouterInput } from './route-latest.js';
 import {
   DeclarationError,
-  DROPPED,
   type BeyondWindowPolicy,
   type ChannelBuilder,
   type ChannelCodec,
   type CodecOptions,
+  type Merge,
   type OperativeDefinition,
   type OverflowPolicy,
   type Procedure,
   type ProcedureDefinition,
+  type RoutedDocument,
   type Stream,
   type WorkflowDefinition,
 } from './types.js';
@@ -66,7 +68,11 @@ export type Link =
   | { link: 'named'; name: string }
   | { link: 'sink'; name?: string }
   | { link: 'into'; procedure: number }
+  | { link: 'merge'; procedure: number; group: number }
   | { link: 'branch'; arms: number };
+
+/** The links that close a chain onto a consumer edge. */
+type EdgeLink = Extract<Link, { link: 'into' | 'merge' }>;
 
 /** A channel as the graph holds it. Its position in the list IS its id. */
 export interface ChannelSpec {
@@ -188,6 +194,9 @@ export function defineProcedure<TIn, TOut = never, TState = void, TChange = neve
   } as Procedure<TIn, TOut, TState, TChange>;
 }
 
+/** One procedure for every router, so two unnamed routers are one node. */
+const LatestRouter = defineProcedure(latestRouter);
+
 /** One pending edge's declared options, accumulated by the fluent calls. */
 interface PendingEdge {
   /** Overrides the derived channel name, never the consuming node's identity. */
@@ -216,6 +225,8 @@ class Builder implements ChannelBuilder {
   beyondWindowPolicyValue: BeyondWindowPolicy = 'process_as_arrival';
   compactAfterBytesValue?: number;
   syncDurabilityFlag = false;
+  /** The next merge's group id, which ties its sources together across channels. */
+  mergeGroups = 0;
 
   constructor(readonly factoryId: string) {}
 
@@ -285,6 +296,37 @@ class Builder implements ChannelBuilder {
     channel.decode = decode ?? channelDecoder(codec, channel);
     this.channels.push(channel);
     return new EdgeStream<T>(this, { source: 'entry', channel }, { transforms: [] });
+  }
+
+  merge<I>(): Merge<I> {
+    return new MergeHandle<I>(this);
+  }
+
+  routeLatest<D, T>(
+    documents: Stream<D>,
+    traffic: Stream<T>,
+    key: (value: T) => string,
+  ): Stream<RoutedDocument<D>> {
+    return this.routeLatestNamed(documents, traffic, key);
+  }
+
+  // The key replaces the traffic item on its own edge, so the router holds no
+  // application value but the document.
+  routeLatestNamed<D, T>(
+    documents: Stream<D>,
+    traffic: Stream<T>,
+    key: (value: T) => string,
+    nodeName?: string,
+  ): Stream<RoutedDocument<D>> {
+    return this.merge<RouterInput>()
+      .from(documents, (document) => ({ document }))
+      .from(traffic.map(key), (trafficKey) => ({ key: trafficKey }))
+      .into(LatestRouter, nodeName) as Stream<RoutedDocument<D>>;
+  }
+
+  /** The handle a node's output is wired from. */
+  outputOf<T>(node: ProcNode): Stream<T> {
+    return new EdgeStream<T>(this, { source: 'procedure', node }, { transforms: [] });
   }
 
   /**
@@ -450,6 +492,18 @@ class EdgeStream<T> implements Stream<T> {
     );
   }
 
+  flatMap<U>(transform: (value: T) => Iterable<U>): Stream<U> {
+    return this.relink<U>(
+      {
+        transforms: [
+          ...this.pending.transforms,
+          (value: unknown) => new Fanned([...transform(value as T)]),
+        ],
+      },
+      { link: 'transform' },
+    );
+  }
+
   keyBy(key: (value: T) => string): Stream<T> {
     return this.relink<T>({ keyBy: key as (value: unknown) => string }, { link: 'key' });
   }
@@ -508,8 +562,14 @@ class EdgeStream<T> implements Stream<T> {
       procedure as unknown as Procedure<unknown, unknown, unknown, unknown>,
       nodeName,
     );
+    this.close(node, { link: 'into', procedure: node.index });
+    return this.builder.outputOf<TOut>(node);
+  }
+
+  /** Close this handle's chain on `node` with `link`: an `into`, or one merge source. */
+  close(node: ProcNode, link: EdgeLink): void {
     const channel = this.channel();
-    const { chain } = this.record(channel, { link: 'into', procedure: node.index });
+    const { chain } = this.record(channel, link);
     // The transforms and the key belong to this edge, not to the channel: one
     // channel may feed several procedures, and a chain declared before one
     // `into` must not reach another. The edge is held under the chain that
@@ -520,8 +580,6 @@ class EdgeStream<T> implements Stream<T> {
       transforms: this.pending.transforms,
       keyBy: this.pending.keyBy,
     });
-
-    return new EdgeStream<TOut>(this.builder, { source: 'procedure', node }, { transforms: [] });
   }
 
   sink(
@@ -562,6 +620,51 @@ class EdgeStream<T> implements Stream<T> {
       channel.sinkEncode = serialize ?? channelEncoder(codec, channel);
     }
     return this;
+  }
+}
+
+/**
+ * A merge under construction. It records and never judges: each source is an
+ * ordinary chain ending in its mapping, and the core reads the group, the
+ * arity and any repeated source off the `merge` links that close them.
+ */
+class MergeHandle<I> implements Merge<I> {
+  private readonly sources: Stream<I>[] = [];
+  /** Every `keyBy` declared, so a second one reaches the core as a second link. */
+  private readonly keys: Array<(value: I) => string> = [];
+
+  constructor(private readonly builder: Builder) {}
+
+  from<S>(source: Stream<S>, map: (value: S) => I): Merge<I> {
+    // The mapping composes after the source's own transforms, so a key
+    // declared on the source is a transform after a key, refused by the core.
+    this.sources.push(source.map(map));
+    return this;
+  }
+
+  keyBy(key: (value: I) => string): Merge<I> {
+    this.keys.push(key);
+    return this;
+  }
+
+  into<TOut, TState, TChange>(
+    procedure: Procedure<I, TOut, TState, TChange>,
+    nodeName?: string,
+  ): Stream<TOut> {
+    const node = this.builder.nodeFor(
+      procedure as unknown as Procedure<unknown, unknown, unknown, unknown>,
+      nodeName,
+    );
+    const link: EdgeLink = {
+      link: 'merge',
+      procedure: node.index,
+      group: this.builder.mergeGroups++,
+    };
+    for (const source of this.sources) {
+      const keyed = this.keys.reduce((edge, key) => edge.keyBy(key), source);
+      (keyed as EdgeStream<I>).close(node, link);
+    }
+    return this.builder.outputOf<TOut>(node);
   }
 }
 
@@ -645,22 +748,45 @@ export function defineWorkflow(definition: WorkflowDefinition): ClassSpec {
 export type { Codec };
 
 /**
- * Run an edge's transform chain, stopping at the first drop.
+ * What a `flatMap` yields: the values one input became. A marker rather than
+ * the array itself, so a `map` that returns an array is not mistaken for a fan.
+ */
+class Fanned {
+  constructor(readonly values: readonly unknown[]) {}
+}
+
+/**
+ * What a `filter` yields for a value it rejects: a fan of nothing. The item is
+ * consumed without reaching a handler, and at the prepare crossing it answers
+ * no key, which is how the core learns not to route it.
+ */
+const DROPPED = new Fanned([]);
+
+/**
+ * Run an edge's transform chain over one value, answering the values that
+ * survive it.
  *
  * One implementation for the three places a chain runs — an entry payload
  * before its handler, a payload at the prepare crossing, and an emit on its way
  * out — so a filter cannot mean one thing on one path and another elsewhere.
+ * A list because that is the shape every transform shares: a drop is empty, a
+ * mapped value is one, a fan is many, and each later link runs over them all.
  */
 export function applyTransforms(
   transforms: Array<(value: unknown) => unknown>,
   value: unknown,
-): unknown {
-  let current = value;
+): unknown[] {
+  let values = [value];
   for (const transform of transforms) {
-    current = transform(current);
-    if (current === DROPPED) return DROPPED;
+    const next: unknown[] = [];
+    for (const current of values) {
+      const yielded = transform(current);
+      if (yielded instanceof Fanned) next.push(...yielded.values);
+      else next.push(yielded);
+    }
+    values = next;
   }
-  return current;
+  return values;
 }
 
 /**

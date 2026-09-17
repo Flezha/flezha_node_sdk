@@ -28,14 +28,19 @@ import {
   validate,
 } from '@flezha/sdk';
 
+import { ascendTo } from '../test/contract.mjs';
+import { manifest } from '../test/test-app.mjs';
 import { hybridChannel } from './fixtures.mjs';
 import { tierCommitBlockWorkflow } from './fixtures_workflow.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
-const FIXTURE = resolve(HERE, '../../fixtures/reference_topologies.txt');
+// Walked up to rather than counted: this module runs from its real path, and
+// the tree that carries the table sits a different depth above each layout.
+const TABLE = 'test/fixtures/reference_topologies.txt';
+const FIXTURE = resolve(ascendTo(HERE, TABLE) ?? HERE, TABLE);
 
-/** The authoring surfaces this builder carries — `conformance.json` states it. */
-const SURFACES = ['branch', 'sync_durability', 'workflow'];
+/** The authoring surfaces this builder carries, as the manifest declares them. */
+const SURFACES = manifest().topology_surfaces;
 
 /**
  * The two rows the fixture cites rather than re-spells. They are this app's own
@@ -193,6 +198,12 @@ function specOf(row) {
           case 'map':
             stream = stream.map((value) => value);
             break;
+          case 'filter':
+            stream = stream.filter(() => true);
+            break;
+          case 'flat_map':
+            stream = stream.flatMap((value) => [value]);
+            break;
           case 'key':
             stream = stream.keyBy((value) => String(value));
             break;
@@ -234,6 +245,15 @@ function specOf(row) {
           // Each arm wires itself off this same handle; the fixture's arms are
           // empty, so the arity is all the row states.
           handles.set(id, handle(id).branch(Array.from({ length: Number(arms) }, () => () => {})));
+          continue;
+        }
+        if (verb === 'merge') {
+          const [role, ...sources] = arg.split(',').map((part) => part.trim());
+          const merge = sources.reduce(
+            (pending, id) => pending.from(handle(id), (value) => value),
+            c.merge(),
+          );
+          handles.set(role, merge.into(procedureFor(role)));
           continue;
         }
         throw new Error(`the fixture spells a step this interpreter does not map: ${step}`);

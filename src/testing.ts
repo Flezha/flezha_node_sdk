@@ -155,8 +155,7 @@ export class ProcedureTestHarness<TIn, TOut, TState, TChange> {
     });
   }
 
-  private collect(ctx: Invocation, returned: unknown): Invoked<TOut, TChange> {
-    if (returned !== undefined) ctx.emit(returned);
+  private collect(ctx: Invocation): Invoked<TOut, TChange> {
     this.state = rawState(ctx.currentState) as TState;
 
     const emits = ctx.outputs.map((output) => decodeValue<TOut>(output.payload));
@@ -184,10 +183,8 @@ export class ProcedureTestHarness<TIn, TOut, TState, TChange> {
    */
   async input(value: TIn): Promise<Invoked<TOut, TChange>> {
     const ctx = this.context(this.clock);
-    const returned = await invocation.run({ procedure: this.procedure.name }, () =>
-      this.procedure.definition.handle(value, ctx as never),
-    );
-    return this.collect(ctx, returned);
+    await invocation.run({ procedure: this.procedure.name }, () => ctx.handle(value));
+    return this.collect(ctx);
   }
 
   /** Fire a timer. `ctx.now()` inside the callback is the scheduled time. */
@@ -202,7 +199,7 @@ export class ProcedureTestHarness<TIn, TOut, TState, TChange> {
     const firing: TimerFiring = { kind, scheduledAt };
     const ctx = this.context(scheduledAt);
     await invocation.run({ procedure: this.procedure.name }, () => onTimer(firing, ctx as never));
-    return this.collect(ctx, undefined);
+    return this.collect(ctx);
   }
 
   /** Move the clock the next input is served at. */

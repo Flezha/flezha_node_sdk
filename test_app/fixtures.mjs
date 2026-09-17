@@ -78,7 +78,8 @@ const staticEntry = (name) =>
     },
   });
 
-const passThrough = (name) => defineProcedure({ name, handle: (input) => input });
+const passThrough = (name, options = {}) =>
+  defineProcedure({ name, ...options, handle: (input) => input });
 
 const StaticEntry = staticEntry('static_entry_procedure');
 const StaticDownstream = passThrough('static_downstream_procedure');
@@ -201,6 +202,54 @@ export const hybridChannel = defineOperative({
             return out;
           }),
       ]);
+  },
+});
+
+// -- merged_input -----------------------------------------------------------
+//
+// Two entry channels merged into one procedure. Each source's mapping tags the
+// value with the channel it came from, the merge keys on the symbol the mapping
+// read, and the emitted line is `<source>:<payload>`.
+
+const tagged = (source) => (payload) => ({ source, symbol: prefix(payload), payload });
+
+const MergeLabel = defineProcedure({
+  name: 'merge_label_procedure',
+  dynamicEntities: {},
+  handle: (input) => `${input.source}:${input.payload}`,
+});
+
+export const mergedInput = defineOperative({
+  factoryId: 'merged_input',
+  channels: (c) => {
+    c.merge()
+      .from(c.input('ticks', { codec: 'text' }), tagged('ticks'))
+      .from(c.input('quotes', { codec: 'text' }), tagged('quotes'))
+      .keyBy((value) => value.symbol)
+      .into(MergeLabel)
+      .keyed()
+      .sink('merged');
+  },
+});
+
+// -- transform_chain --------------------------------------------------------
+//
+// Every value transform on one edge: `drop` is filtered out, a comma list fans
+// out into one value per element, each is upper-cased and keyed on its prefix.
+
+const TransformLabel = passThrough('transform_label_procedure', { dynamicEntities: {} });
+
+export const transformChain = defineOperative({
+  factoryId: 'transform_chain',
+  channels: (c) => {
+    c.input('trades', { codec: 'text' })
+      .filter((trade) => trade !== 'drop')
+      .flatMap((trade) => trade.split(','))
+      .map((trade) => trade.toUpperCase())
+      .keyBy(prefix)
+      .into(TransformLabel)
+      .keyed()
+      .sink('transformed');
   },
 });
 

@@ -99,6 +99,28 @@ export const refusals = defineOperative({
 
     // And a change the fold does not accept.
     c.input<Trade>('i').into(Count);
+
+    // A merge's mappings lift every source into the input its procedure reads.
+    c.merge<Trade>()
+      .from(c.input<Trade>('r'), (trade) => trade)
+      .from(c.input('s', { codec: 'text' }), (line) => ({ symbol: line, price: 0 }))
+      .keyBy((trade) => trade.symbol)
+      .into(Ohlc)
+      .into(Publish);
+
+    // @ts-expect-error a merge of Trade does not feed a procedure reading Candle
+    c.merge<Trade>().from(c.input<Trade>('t'), (trade) => trade).into(Publish);
+
+    // @ts-expect-error the mapping answers a string, not the merged Trade
+    c.merge<Trade>().from(c.input('u', { codec: 'text' }), (line) => line);
+
+    // A fan yields the element type, and the router hands on the document.
+    c.input('v', { codec: 'text' })
+      .flatMap((line) => line.split(','))
+      .map((word) => word.length);
+    c.routeLatest(c.input<Candle>('w'), c.input<Trade>('x'), (trade) => trade.symbol).map(
+      (routed): Candle => routed.document,
+    );
   },
 });
 

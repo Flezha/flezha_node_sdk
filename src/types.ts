@@ -8,17 +8,6 @@
 
 import type { Codec } from './codec.js';
 
-/**
- * What a `filter` yields for a value it rejects.
- *
- * A dropped value is not `undefined` or `null` — both are values a handler may
- * legitimately carry — so the marker is a symbol nothing else can produce. It
- * stops the transform chain: the item is consumed without reaching a handler,
- * and at the prepare crossing it answers no key, which is how the core learns
- * not to route it.
- */
-export const DROPPED: unique symbol = Symbol('flezha.dropped');
-
 export type OverflowPolicy = 'drop_nothing' | 'drop_newest' | 'drop_oldest';
 /** A payload format a channel names on `input` and `sink`. */
 export type ChannelCodec = 'bytes' | 'text' | 'json' | 'msgpack';
@@ -191,6 +180,11 @@ export interface Stream<T> {
    * A dropped value is consumed and reaches no handler.
    */
   filter(predicate: (value: T) => boolean): Stream<T>;
+  /**
+   * Replace every value on this edge with the values an iterable yields, each
+   * reaching the consumer on its own. An empty iterable drops the value.
+   */
+  flatMap<U>(transform: (value: T) => Iterable<U>): Stream<U>;
   /** Route by a computed key: the consumer becomes a dynamic keyed procedure. */
   keyBy(key: (value: T) => string): Stream<T>;
   onFull(policy: OverflowPolicy): Stream<T>;
@@ -236,6 +230,29 @@ export interface Stream<T> {
   sink(): Stream<T>;
 }
 
+/**
+ * Several streams feeding one procedure, each lifted into its input `I` by a
+ * mapping of its own. A source is an entry stream or a procedure's output
+ * declared on the same builder.
+ */
+export interface Merge<I> {
+  /** Add a source: its values reach the procedure as `map` answers them. */
+  from<S>(source: Stream<S>, map: (value: S) => I): Merge<I>;
+  /** Route every source by a key computed on the mapped value. */
+  keyBy(key: (value: I) => string): Merge<I>;
+  /** Close the merge on a procedure, as `Stream.into` does, and answer its output. */
+  into<TOut, TState, TChange>(
+    procedure: Procedure<I, TOut, TState, TChange>,
+    nodeName?: string,
+  ): Stream<TOut>;
+}
+
+/** What `routeLatest` hands on: the retained document, for the key that earned it. */
+export interface RoutedDocument<D> {
+  key: string;
+  document: D;
+}
+
 export interface ChannelBuilder {
   /** Effectively-once delivery tier. */
   effectivelyOnce(): ChannelBuilder;
@@ -266,6 +283,25 @@ export interface ChannelBuilder {
   input(name: string, options: { codec: 'bytes' }): Stream<Uint8Array>;
   input<T = unknown>(name: string, options: { codec: 'json' | 'msgpack' }): Stream<T>;
   input<T>(name: string, decode?: (bytes: Uint8Array) => T): Stream<T>;
+  /** Start a merge of several streams into one procedure. */
+  merge<I = unknown>(): Merge<I>;
+  /**
+   * Hand the latest document to each key on that key's own next traffic item,
+   * once per distinct document. A document equal to the retained one is inert,
+   * and a key no traffic names receives nothing. The node is `route_latest`.
+   */
+  routeLatest<D, T>(
+    documents: Stream<D>,
+    traffic: Stream<T>,
+    key: (value: T) => string,
+  ): Stream<RoutedDocument<D>>;
+  /** `routeLatest` under a node name of its own, for a second router in one operative. */
+  routeLatestNamed<D, T>(
+    documents: Stream<D>,
+    traffic: Stream<T>,
+    key: (value: T) => string,
+    nodeName: string,
+  ): Stream<RoutedDocument<D>>;
 }
 
 export interface OperativeDefinition {

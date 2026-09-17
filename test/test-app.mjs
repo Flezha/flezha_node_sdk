@@ -45,7 +45,7 @@ export function testAppModule(file) {
   return import(pathToFileURL(resolve(testAppRoot(), file)).href);
 }
 
-/** The capability-to-fixture-class table `conformance.json` declares. */
-export function declaredFixtures() {
-  return JSON.parse(readFileSync(resolve(testAppRoot(), 'conformance.json'), 'utf8')).fixtures;
+/** The app's manifest, `conformance.json`. */
+export function manifest() {
+  return JSON.parse(readFileSync(resolve(testAppRoot(), 'conformance.json'), 'utf8'));
 }

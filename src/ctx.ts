@@ -13,14 +13,7 @@ import type { ChannelSpec, ClassSpec, ConsumerEdge, ProcNode } from './authoring
 import type { NativeItemEffect, NativeMeta, NativeOutput, NativeTimerOp } from './native.js';
 import { entityIdentity, stableId } from './identity.js';
 import { readOnlyState } from './state.js';
-import {
-  DROPPED,
-  EmitError,
-  type Ctx,
-  type EmitOptions,
-  type IfRunning,
-  type TimerKind,
-} from './types.js';
+import { EmitError, type Ctx, type EmitOptions, type IfRunning, type TimerKind } from './types.js';
 
 /** Metadata keys the runtime owns. A handler that sets one is refused. */
 const RESERVED_PREFIX = 'flz.';
@@ -133,6 +126,17 @@ export class Invocation implements Ctx<unknown, unknown, unknown> {
     definition.applyChange(this.live, change);
   }
 
+  /**
+   * Hand one input to the handler. A returned value is emitted; `undefined`
+   * emits nothing, which is the warmup gate. A handler that emits through the
+   * context returns nothing, so the two spellings compose rather than conflict.
+   */
+  async handle(value: unknown): Promise<void> {
+    const definition = this.input.node.procedure.definition;
+    const returned = await definition.handle(value as never, this as never);
+    if (returned !== undefined) this.emit(returned);
+  }
+
   emit(value: unknown, options?: EmitOptions): void {
     const targets = options?.channel
       ? this.input.outgoing.filter((channel) => channel.name === options.channel)
@@ -155,8 +159,7 @@ export class Invocation implements Ctx<unknown, unknown, unknown> {
         if (edge) this.outputs.push(this.workflowOutput(channel, edge, value));
       } else {
         for (const edge of channel.consumers) {
-          const output = this.edgeOutput(channel, edge, value, options);
-          if (output) this.outputs.push(output);
+          this.outputs.push(...this.edgeOutputs(channel, edge, value, options));
         }
       }
       if (channel.sink !== undefined) this.outputs.push(this.pluginOutput(channel, value, options));
@@ -180,33 +183,30 @@ export class Invocation implements Ctx<unknown, unknown, unknown> {
     this.emit(value, { ...options, channel });
   }
 
-  /** One consumer's frame: its own transforms, its own key, its own clock. */
-  private edgeOutput(
+  /**
+   * One consumer's frames, one per value its transforms leave: its own key,
+   * its own clock. A dropped value leaves none.
+   */
+  private edgeOutputs(
     channel: ChannelSpec,
     edge: ConsumerEdge,
     value: unknown,
     options: EmitOptions | undefined,
-  ): NativeOutput | null {
-    // Producer-side, in declaration order: the core routes on `(edge, key)`
-    // and never evaluates a host closure.
-    const transformed = applyTransforms(edge.transforms, value);
-    if (transformed === DROPPED) return null;
-
-    const key =
-      options?.key ?? (edge.keyBy ? edge.keyBy(transformed) : undefined) ?? this.input.entityKey;
-
+  ): NativeOutput[] {
     const extractor = this.input.spec.procedures[edge.procedure]?.procedure.definition.eventTime;
 
-    return {
+    // Producer-side, in declaration order: the core routes on `(edge, key)`
+    // and never evaluates a host closure.
+    return applyTransforms(edge.transforms, value).map((transformed): NativeOutput => ({
       target: 'edge',
       channel: channel.index,
       consumer: edge.procedure,
       pluginChannel: undefined,
-      key,
+      key: options?.key ?? edge.keyBy?.(transformed) ?? this.input.entityKey,
       eventTime: extractor ? BigInt(extractor(transformed)) : undefined,
       metadata: metaList(options?.metadata, this.input.node.name),
       payload: encodeValue(transformed),
-    };
+    }));
   }
 
   /**

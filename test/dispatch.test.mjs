@@ -20,6 +20,7 @@ import { Registry, answer, dispatch } from '../dist/esm/dispatch.js';
 import { importModule, loadRegistry, specsFrom } from '../dist/esm/runner.js';
 
 import { activationFor, depsFor, inputItem, jsonOf } from './dispatch-fixtures.mjs';
+import { testAppModule } from './test-app.mjs';
 
 // The handout-contract tests below answer against the core itself, so the
 // refusal they assert is the core's own. Nothing starts a runner, so no
@@ -27,6 +28,8 @@ import { activationFor, depsFor, inputItem, jsonOf } from './dispatch-fixtures.m
 const native = loadNative();
 native.contextNew(ACTIVATION_SCHEMA_VERSION);
 after(() => native.contextFree());
+
+const fixtures = await testAppModule('fixtures.mjs');
 
 /**
  * What the SDK says while `run` executes.
@@ -76,7 +79,11 @@ const fixture = () => depsFor(Spec);
 const activation = activationFor('counters');
 
 test('a work batch answers one effect per item, in order', async () => {
-  const result = await answer(activation({ items: [inputItem(2), inputItem(3)] }), fixture());
+  // One entity's batch: every item carries the key that routed it here.
+  const result = await answer(
+    activation({ entityKey: '2', items: [inputItem(2), inputItem(2)] }),
+    fixture(),
+  );
   assert.equal(result.outcome, 'work');
   assert.equal(result.effects.length, 2);
   assert.deepEqual(
@@ -85,11 +92,11 @@ test('a work batch answers one effect per item, in order', async () => {
   );
   assert.deepEqual(
     result.effects.flatMap((effect) => effect.outputs.map((o) => jsonOf(o.payload))),
-    [2, 5],
+    [2, 4],
   );
   assert.equal(result.effects[0].outputs[0].target, 'plugin');
   assert.equal(result.effects[0].outputs[0].pluginChannel, 'out');
-  assert.equal(result.effects[0].outputs[0].key, 'k');
+  assert.equal(result.effects[0].outputs[0].key, '2');
   assert.equal(result.effects[0].eventTime, 1_000n);
 });
 
@@ -229,25 +236,27 @@ test('the JSON handover carries a bigint and a byte array without narrowing', as
   assert.deepEqual([...state.blob], [9]);
 });
 
-test('a prepare crossing answers one key per payload, in order', async () => {
+/** The keys a prepare crossing on `channel` answers, one set per text payload. */
+async function keysAt(spec, channel, ...payloads) {
   const result = await answer(
-    activation({
+    activationFor(spec.factoryId)({
       kind: 'key_request',
       entityKey: undefined,
       keyRequest: {
-        channel: 0,
-        payloads: ['7', '8'].map((text) => Buffer.from(text)),
+        channel,
+        payloads: payloads.map((text) => Buffer.from(text)),
         wantKeys: true,
         wantEventTime: false,
       },
     }),
-    fixture(),
+    depsFor(spec),
   );
   assert.equal(result.outcome, 'prepared');
-  assert.deepEqual(
-    result.prepared.map((answerFor) => answerFor.keys),
-    [['7'], ['8']],
-  );
+  return result.prepared.map((answerFor) => answerFor.keys);
+}
+
+test('a prepare crossing answers one key per payload, in order', async () => {
+  assert.deepEqual(await keysAt(Spec, 0, '7', '8'), [['7'], ['8']]);
 });
 
 test('one payload failing its prepare does not fail the others', async () => {
@@ -604,13 +613,22 @@ const WorkflowProducer = defineProcedure({
 /** What a consumer of the `handoff` channel was handed, in delivery order. */
 const DELIVERED = [];
 
-const record = (name) =>
+/** A procedure that records what it is handed; `entities` declares how it is keyed. */
+const record = (name, entities = {}) =>
   defineProcedure({
     name,
+    ...entities,
     handle: (input) => {
       DELIVERED.push(input);
     },
   });
+
+/** Answer one work activation on `spec`: its effects, and what its handlers were handed. */
+async function ran(spec, overrides) {
+  DELIVERED.length = 0;
+  const { effects } = await answer(activationFor(spec.factoryId)(overrides), depsFor(spec));
+  return { effects, handed: [...DELIVERED] };
+}
 
 const workflowGraph = (c) => {
   const edge = c.input('in').into(WorkflowProducer).named('handoff');
@@ -686,16 +704,12 @@ test('the same graph on a stream class releases one output per consumer', async 
 
 /** Hand `payload` to `procedure` on the `handoff` channel and answer what it saw. */
 async function delivered(spec, procedure, payload) {
-  DELIVERED.length = 0;
-  const result = await answer(
-    activationFor(spec.factoryId)({
-      procedure,
-      items: [inputItem(0, { channel: 1, payload })],
-    }),
-    depsFor(spec),
-  );
-  assert.equal(result.effects[0].verdict, 'ok');
-  return [...DELIVERED];
+  const { effects, handed } = await ran(spec, {
+    procedure,
+    items: [inputItem(0, { channel: 1, payload })],
+  });
+  assert.equal(effects[0].verdict, 'ok');
+  return handed;
 }
 
 test('a stream inter-proc edge applies its map exactly once', async () => {
@@ -728,18 +742,144 @@ test('plain text into an entry naming no codec never reaches the handler', async
       c.input('in').into(record('json_entry_procedure'));
     },
   });
-  DELIVERED.length = 0;
-  const result = await answer(
-    activationFor('json_entry')({
-      entityKey: undefined,
-      items: [inputItem({ a: 1 }), inputItem(0, { payload: Buffer.from('hello') })],
-    }),
-    depsFor(spec),
-  );
+  const { effects, handed } = await ran(spec, {
+    entityKey: undefined,
+    items: [inputItem({ a: 1 }), inputItem(0, { payload: Buffer.from('hello') })],
+  });
   assert.deepEqual(
-    result.effects.map((effect) => effect.verdict),
+    effects.map((effect) => effect.verdict),
     ['ok', 'retryable'],
   );
-  assert.match(result.effects[1].message, /not valid JSON/);
-  assert.deepEqual(DELIVERED, [{ a: 1 }]);
+  assert.match(effects[1].message, /not valid JSON/);
+  assert.deepEqual(handed, [{ a: 1 }]);
+});
+
+// --- merged sources ---------------------------------------------------------
+//
+// Where the test app's own `merged_input` and `transform_chain` carry the shape,
+// they are what runs. Both sink, as text, what their procedure returned for
+// each value it ran.
+
+const textItem = (channel, text) => inputItem(0, { channel, payload: Buffer.from(text) });
+
+/** One text payload on channel 0 handed to `entityKey`; `item` overrides the item's fields. */
+const ranText = (spec, entityKey, text, item = {}) =>
+  ran(spec, { entityKey, items: [{ ...textItem(0, text), ...item }] });
+
+/** The text each output of `effects` carried, in order. */
+const sunk = (effects) =>
+  effects.flatMap((effect) =>
+    effect.outputs.map((output) => Buffer.from(output.payload).toString()),
+  );
+
+test('each merged source reaches the handler under its own mapping, in the order handed', async () => {
+  const { effects } = await ran(fixtures.mergedInput, {
+    entityKey: 'AAPL',
+    items: [textItem(0, 'AAPL:1'), textItem(1, 'AAPL:2'), textItem(0, 'AAPL:3')],
+  });
+  assert.equal(effects.length, 3);
+  assert.deepEqual(sunk(effects), ['ticks:AAPL:1', 'quotes:AAPL:2', 'ticks:AAPL:3']);
+});
+
+test('every merged source is keyed on its mapped value at the crossing', async () => {
+  for (const channel of [0, 1]) {
+    assert.deepEqual(await keysAt(fixtures.mergedInput, channel, 'MSFT:9'), [['MSFT']]);
+  }
+});
+
+test('a procedure merged with an entry releases its mapped value to the merged node', async () => {
+  const spec = defineOperative({
+    factoryId: 'merged_hop',
+    channels: (c) => {
+      const produced = c.input('raw').into(WorkflowProducer);
+      c.merge()
+        .from(produced, (value) => ({ produced: value }))
+        .from(c.input('direct'), (value) => ({ direct: value }))
+        .into(record('merged_hop_record'));
+    },
+  });
+  const { effects } = await ran(spec, { entityKey: undefined, items: [inputItem(7)] });
+  assert.deepEqual(
+    effects[0].outputs.map((output) => [output.consumer, decodeValue(output.payload)]),
+    [[1, { produced: 7 }]],
+  );
+});
+
+// --- flatMap ----------------------------------------------------------------
+//
+// One input, several values: the handler runs once per value under the one
+// input, the crossing answers every value's key, and a producer releases one
+// frame per value.
+
+const FanSpec = defineOperative({
+  factoryId: 'fan',
+  channels: (c) => {
+    c.input('lines', { codec: 'text' })
+      .flatMap((line) => line.split(',').filter(Boolean))
+      .into(record('fan_record'));
+  },
+});
+
+test('a fan of three runs the handler three times under one effect', async () => {
+  const { effects, handed } = await ranText(FanSpec, undefined, 'a,b,c', { consumedOffset: 4n });
+  assert.deepEqual(handed, ['a', 'b', 'c']);
+  assert.deepEqual(
+    effects.map((effect) => [effect.verdict, effect.consumedOffset]),
+    [['ok', 4n]],
+  );
+});
+
+test('a fan of none is a drop: the input is consumed and reaches no handler', async () => {
+  const { effects, handed } = await ranText(FanSpec, undefined, '', { consumedOffset: 5n });
+  assert.deepEqual(handed, []);
+  assert.deepEqual(
+    effects.map((effect) => [effect.verdict, effect.consumedOffset]),
+    [['ok', 5n]],
+  );
+});
+
+test('a fan followed by keyBy answers every key at the crossing, once each', async () => {
+  assert.deepEqual(await keysAt(fixtures.transformChain, 0, 'a:1,b:2,c:3,a:4'), [['A', 'B', 'C']]);
+});
+
+// The core hands the whole payload to every key the crossing answered.
+test('an entity handed a fanned payload runs only the values keyed to it', async () => {
+  const { effects } = await ranText(fixtures.transformChain, 'A', 'a:1,b:2,c:3,a:4');
+  assert.deepEqual(sunk(effects), ['A:1', 'A:4']);
+});
+
+test('a fan into a static consumer runs each value on the entities it names, and [] on none', async () => {
+  const keys = ['a', 'b'];
+  const entitiesFor = (trade) => keys.filter((key) => trade.startsWith(`${key}:`));
+  const spec = defineOperative({
+    factoryId: 'static_fan',
+    channels: (c) => {
+      c.input('trades', { codec: 'text' })
+        .flatMap((line) => line.split(','))
+        .into(record('static_fan_record', { entities: { keys, entitiesFor } }));
+    },
+  });
+  const payload = 'a:1,b:2,z:3,a:4';
+  assert.deepEqual((await ranText(spec, 'a', payload)).handed, ['a:1', 'a:4']);
+  assert.deepEqual((await ranText(spec, 'b', payload)).handed, ['b:2']);
+  assert.deepEqual(await keysAt(spec, 0, payload), [['a', 'b']]);
+});
+
+test('a producer releases one frame per fanned value, and an array from map is one value', async () => {
+  const released = async (factoryId, reshape) => {
+    const spec = defineOperative({
+      factoryId,
+      channels: (c) =>
+        reshape(c.input('in').into(WorkflowProducer)).into(record(`${factoryId}_record`)),
+    });
+    const { effects } = await ran(spec, { entityKey: undefined, items: [inputItem(10)] });
+    return effects[0].outputs.map((output) => decodeValue(output.payload));
+  };
+  assert.deepEqual(
+    await released('fanned', (edge) => edge.flatMap((value) => [value, value + 1])),
+    [10, 11],
+  );
+  assert.deepEqual(await released('mapped', (edge) => edge.map((value) => [value, value + 1])), [
+    [10, 11],
+  ]);
 });

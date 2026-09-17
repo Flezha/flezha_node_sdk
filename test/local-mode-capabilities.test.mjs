@@ -20,10 +20,10 @@ import test from 'node:test';
 
 import { LocalOperative } from '../dist/esm/index.js';
 
-import { declaredFixtures, testAppModule } from './test-app.mjs';
+import { manifest, testAppModule } from './test-app.mjs';
 
 const fixtures = await testAppModule('fixtures.mjs');
-const declared = declaredFixtures();
+const declared = manifest().fixtures;
 
 const utf8 = (bytes) => Buffer.from(bytes).toString('utf8');
 
