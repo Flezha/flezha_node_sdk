@@ -153,6 +153,7 @@ export interface ClassSpec {
 export function defineProcedure<TIn, TOut = never, TState = void, TChange = never>(
   definition: ProcedureDefinition<TIn, TOut, TState, TChange>,
 ): Procedure<TIn, TOut, TState, TChange> {
+  refuseShortForm(definition);
   if (!definition.name || !definition.name.trim()) {
     throw new DeclarationError('<procedure>', null, 'a procedure declares a non-empty name');
   }
@@ -188,10 +189,82 @@ export function defineProcedure<TIn, TOut = never, TState = void, TChange = neve
   if (definition.initialState && !definition.stateCodec) {
     assertRepresentable(`${definition.name}.state`, definition.initialState(undefined));
   }
-  return {
+  const procedure = {
     definition,
     name: definition.name,
   } as Procedure<TIn, TOut, TState, TChange>;
+  if (definition.sink !== undefined) {
+    // Built here, not at registration: a malformed short form is refused while
+    // the module loads, as a `dup_node` graph already is.
+    (procedure as { spec?: ClassSpec }).spec = shortFormSpec(definition, procedure);
+  }
+  return procedure;
+}
+
+/**
+ * Every rule about what a `sink` needs and what needs a `sink`. Each refusal
+ * carries the contract's name (`authoring_contract.md` §5.2) in `refusals` and
+ * at the start of the message.
+ *
+ * `SinkWithoutOutput` is not among them: a `.mjs` author runs no type checker
+ * and the SDK ships no build step, so a handler that returns nothing cannot be
+ * seen here. The Node manifest does not list `shorthand_typed_output` and the
+ * row skips by name.
+ */
+function refuseShortForm<TIn, TOut, TState, TChange>(
+  definition: ProcedureDefinition<TIn, TOut, TState, TChange>,
+): void {
+  if (definition.sink === undefined) {
+    const keys = (['kind', 'input', 'codec'] as const).filter(
+      (key) => definition[key] !== undefined,
+    );
+    if (keys.length > 0) {
+      throw new DeclarationError(
+        '<procedure>',
+        definition.name ?? null,
+        `ShorthandKeyWithoutSink: \`${keys.join('`, `')}\` name(s) of the operative a \`sink\` ` +
+          'generates; this procedure declares no `sink`, so there is nothing for them to describe',
+        ['ShorthandKeyWithoutSink'],
+      );
+    }
+    return;
+  }
+  if (!definition.name || !definition.name.trim()) {
+    throw new DeclarationError(
+      '<procedure>',
+      null,
+      'SinkWithoutId: a `sink` makes this procedure a whole operative, whose factory id is an ' +
+        'address an operator types; write it as `name`',
+      ['SinkWithoutId'],
+    );
+  }
+  if (definition.kind !== 'stream' && definition.kind !== 'workflow') {
+    throw new DeclarationError(
+      '<procedure>',
+      definition.name,
+      "SinkWithoutKind: a `sink` makes this procedure a whole operative; write `kind: 'stream'` " +
+        "or `kind: 'workflow'`",
+      ['SinkWithoutKind'],
+    );
+  }
+}
+
+/** The operative a short form generates, on the same builder path a full form uses. */
+function shortFormSpec<TIn, TOut, TState, TChange>(
+  definition: ProcedureDefinition<TIn, TOut, TState, TChange>,
+  procedure: Procedure<TIn, TOut, TState, TChange>,
+): ClassSpec {
+  const entry = definition.input ?? 'input';
+  const sink = definition.sink as string;
+  const channels = (c: ChannelBuilder): void => {
+    const stream = definition.codec
+      ? c.input(entry, { codec: definition.codec } as { codec: 'json' })
+      : c.input(entry);
+    stream.into(procedure as unknown as Procedure<unknown, unknown>).sink(sink);
+  };
+  return definition.kind === 'workflow'
+    ? defineWorkflow({ factoryId: definition.name, channels })
+    : defineOperative({ factoryId: definition.name, channels });
 }
 
 /** One procedure for every router, so two unnamed routers are one node. */

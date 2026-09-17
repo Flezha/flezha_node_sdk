@@ -64,21 +64,28 @@ export async function importModule(specifier: string): Promise<unknown> {
   }
 }
 
-/** The class declarations a handler module exports. */
+/**
+ * The class declarations a handler module exports: every `ClassSpec`, and the
+ * one a short-form procedure carries.
+ */
 export function specsFrom(specifier: string, module: unknown): ClassSpec[] {
   const record = module as Record<string, unknown>;
   const candidates = [record.default, ...Object.values(record)].filter(Boolean);
   const specs: ClassSpec[] = [];
-  for (const candidate of candidates) {
-    const spec = candidate as ClassSpec;
+  const take = (spec: ClassSpec | undefined): void => {
     if (spec && typeof spec === 'object' && typeof spec.factoryId === 'string' && spec.channels) {
       if (!specs.includes(spec)) specs.push(spec);
     }
+  };
+  for (const candidate of candidates) {
+    take(candidate as ClassSpec);
+    take((candidate as { spec?: ClassSpec }).spec);
   }
   if (specs.length === 0) {
     throw new Error(
       `handler module \`${specifier}\` exports no operative; export the value ` +
-        '`defineOperative(...)` or `defineWorkflow(...)` returned',
+        '`defineOperative(...)`, `defineWorkflow(...)` or a short-form ' +
+        '`defineProcedure(...)` returned',
     );
   }
   return specs;
@@ -141,21 +148,50 @@ export class Runner {
 
   constructor(readonly namespace: string) {}
 
-  /** Register a stream operative by module specifier. */
-  defineStream(specifier: string): this {
-    this.specifiers.push(specifier);
-    return this;
+  /**
+   * Register a module's operatives, of either kind — the kind is read from what
+   * each export declares, never named by the call.
+   *
+   * Awaited, because registering imports a module. Before `run()` the import
+   * happens here, so a module that fails to load or exports no operative
+   * rejects at the line that registers it rather than inside `run()`; after
+   * `run()` it also declares every export against the running core and every
+   * worker.
+   */
+  async registerFactory(specifier: string): Promise<void> {
+    const specs = specsFrom(specifier, await importModule(specifier));
+    if (!this.native || !this.registry) {
+      this.specifiers.push(specifier);
+      return;
+    }
+    for (const spec of specs) {
+      validate(spec);
+      this.registry.add(spec);
+      this.native.declareClass(Buffer.from(JSON.stringify(toHostClassDecl(spec))));
+    }
+    await this.pool?.declare(specifier);
   }
 
   /**
-   * Register a workflow operative by module specifier.
+   * Undo a registration made before `run()` — the inverse of
+   * {@link registerFactory}, taking what it took.
    *
-   * The same registration as a stream, and deliberately the same code: what a
-   * module declares is read from what it exports, so the two names are for the
-   * reader rather than for the runner.
+   * After `run()` it rejects: a started Node runner serves its declarations
+   * from a registry the dispatch loops and every worker already hold, and it
+   * cannot stop serving one. Rejecting says so rather than ignoring the call.
    */
-  defineWorkflow(specifier: string): this {
-    return this.defineStream(specifier);
+  async unregisterFactory(specifier: string): Promise<void> {
+    if (this.native || this.registry) {
+      throw new Error(
+        `\`${specifier}\` cannot be unregistered: a running Node runner cannot stop serving a ` +
+          'started declaration',
+      );
+    }
+    const at = this.specifiers.indexOf(specifier);
+    if (at < 0) {
+      throw new Error(`\`${specifier}\` is not registered on this runner`);
+    }
+    this.specifiers.splice(at, 1);
   }
 
   /**
@@ -197,24 +233,6 @@ export class Runner {
    */
   admin(): Admin {
     return new Admin(this.native ?? loadNative());
-  }
-
-  /**
-   * Declare one more class while the runner is up. The chainable
-   * `defineStream` records a specifier for `run()`; this is the form that
-   * takes effect against a running core, and it is the one to await.
-   */
-  async declare(specifier: string): Promise<void> {
-    if (!this.native || !this.registry) {
-      this.specifiers.push(specifier);
-      return;
-    }
-    for (const spec of specsFrom(specifier, await importModule(specifier))) {
-      validate(spec);
-      this.registry.add(spec);
-      this.native.declareClass(Buffer.from(JSON.stringify(toHostClassDecl(spec))));
-    }
-    await this.pool?.declare(specifier);
   }
 
   async run(): Promise<void> {
@@ -334,7 +352,15 @@ export class Runner {
   }
 }
 
-/** Start here: `createRunner('default').defineStream('./candle.js').run()`. */
+/**
+ * Start here:
+ *
+ * ```js
+ * const runner = createRunner('default');
+ * await runner.registerFactory('./candle.js');
+ * await runner.run();
+ * ```
+ */
 export function createRunner(namespace: string): Runner {
   if (!log()) setLogger(consoleLogger());
   return new Runner(namespace);

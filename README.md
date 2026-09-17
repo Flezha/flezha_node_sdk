@@ -86,7 +86,9 @@ export default defineOperative({
 ```
 
 ```ts
-await createRunner('default').defineStream('./candles.js').run();
+const runner = createRunner('default');
+await runner.registerFactory('./candles.js');
+await runner.run();
 ```
 
 State is mutated only through declared changes: declared state is rebuilt from

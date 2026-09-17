@@ -63,7 +63,8 @@ export class Registry {
   add(spec: ClassSpec): RegisteredClass {
     if (this.classes.has(spec.factoryId)) {
       throw new Error(
-        `duplicate factory id \`${spec.factoryId}\`: a runner declares each factory once`,
+        `DuplicateFactoryId: \`${spec.factoryId}\` is already declared on this runner; a ` +
+          'runner declares each factory id once',
       );
     }
     const registered = new RegisteredClass(spec);

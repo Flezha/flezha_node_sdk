@@ -25,6 +25,7 @@ import {
   defineProcedure,
   defineWorkflow,
   loadNative,
+  Registry,
   validate,
 } from '@flezha/sdk';
 
@@ -307,9 +308,84 @@ function derivedOf(declaration) {
   }));
 }
 
+// ---------------------------------------------------------------------------
+// The §5 short form. Node refuses a malformed declaration where `defineProcedure`
+// runs and a duplicate factory id where the registry takes the second spec, so
+// every row this SDK can write boots for real.
+
+/** The `shorthand(<id>|-, <kind>|-, <sink>|-, <input>|-)` steps of a row. */
+function shorthandSteps(row) {
+  const parsed = [];
+  for (const raw of row.steps.split(';')) {
+    const step = raw.trim();
+    const noout = step.endsWith('.noout');
+    const body = noout ? step.slice(0, -'.noout'.length) : step;
+    const [verb, args] = call(body);
+    if (verb !== 'shorthand') continue;
+    const fields = String(args)
+      .split(',')
+      .map((field) => field.trim());
+    if (fields.length !== 4) {
+      throw new Error(`a shorthand step declares four fields: read \`${step}\``);
+    }
+    const written = (field) => (field === '-' ? undefined : field);
+    parsed.push({
+      name: written(fields[0]),
+      kind: written(fields[1]),
+      sink: written(fields[2]),
+      input: written(fields[3]),
+    });
+  }
+  return parsed;
+}
+
+/** Declare one short form exactly as an author writes it. */
+function declareShorthand(declaration) {
+  return defineProcedure({
+    name: declaration.name,
+    kind: declaration.kind,
+    sink: declaration.sink,
+    input: declaration.input,
+    handle: (input) => input,
+  });
+}
+
+/** The leading refusal name of a message the contract requires to begin with one. */
+function refusalName(message) {
+  return message.split(':', 1)[0].trim();
+}
+
+/** A short-form row's verdict: what declaring and registering it answered. */
+function judgeShorthand(row, declarations) {
+  try {
+    const registry = new Registry();
+    for (const declaration of declarations) {
+      registry.add(declareShorthand(declaration).spec);
+    }
+  } catch (error) {
+    if (error instanceof DeclarationError) {
+      return {
+        topology: row.topology,
+        outcome: 'refused',
+        names: [...error.refusals],
+        defect: error.message,
+      };
+    }
+    return {
+      topology: row.topology,
+      outcome: 'refused',
+      names: [refusalName(error.message)],
+      defect: error.message,
+    };
+  }
+  return { topology: row.topology, outcome: 'accepted' };
+}
+
 /** Drive one row: skipped, refused with the core's own names, or accepted. */
 function judge(row) {
   if (skipped(row)) return { topology: row.topology, outcome: 'skipped', needs: row.needs };
+  const declarations = shorthandSteps(row);
+  if (declarations.length > 0) return judgeShorthand(row, declarations);
   try {
     return {
       topology: row.topology,
@@ -350,6 +426,22 @@ export function writeConformanceReport(path) {
  * With `FLEZHA_REFUSAL_FIXTURE` set, the ONE topology this process registers.
  * `undefined` otherwise, so the runner's registry scan ignores this module.
  */
-export const refusalFixture = process.env.FLEZHA_REFUSAL_FIXTURE
-  ? specForTopology(process.env.FLEZHA_REFUSAL_FIXTURE)
+const refusalRow = process.env.FLEZHA_REFUSAL_FIXTURE
+  ? rows().find((row) => row.topology === process.env.FLEZHA_REFUSAL_FIXTURE)
   : undefined;
+
+/**
+ * A short-form row's declarations, made here so a malformed one is refused
+ * while this module loads — which is where an author's own would be refused.
+ */
+const refusalShorthand = refusalRow ? shorthandSteps(refusalRow).map(declareShorthand) : [];
+
+export const refusalFixture =
+  refusalShorthand.length > 0
+    ? refusalShorthand[0]
+    : process.env.FLEZHA_REFUSAL_FIXTURE
+      ? specForTopology(process.env.FLEZHA_REFUSAL_FIXTURE)
+      : undefined;
+
+/** The duplicate row's second declaration, under the first's factory id. */
+export const refusalFixtureTwin = refusalShorthand[1];

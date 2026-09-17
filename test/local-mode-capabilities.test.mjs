@@ -50,10 +50,10 @@ function declares(capability, factoryId) {
   );
 }
 
-test('graph_builder: a declared graph is built and run with no controller', async () => {
-  declares('graph_builder', 'sugar_do_nothing');
+test('shorthand: a short form is built and run with no controller', async () => {
+  declares('shorthand', 'sugar_do_nothing');
 
-  const released = await release(fixtures.sugarDoNothing, 'input', 'sugar_do_nothing_echo', [
+  const released = await release(fixtures.sugarDoNothing.spec, 'input', 'sugar_do_nothing_echo', [
     'alpha',
     'beta',
   ]);

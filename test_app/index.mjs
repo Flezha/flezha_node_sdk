@@ -51,9 +51,10 @@ if (refusalFixture) {
   // ONE row of the refusal table, in place of every fixture: the drill reads
   // this process's exit status and output, because a runner whose class the
   // core refuses never reaches a controller.
-  runner.defineStream(conformance);
+  await runner.registerFactory(conformance);
 } else {
-  runner.defineStream(fixtures).defineWorkflow(workflows);
+  await runner.registerFactory(fixtures);
+  await runner.registerFactory(workflows);
 }
 
 try {

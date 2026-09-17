@@ -20,6 +20,10 @@ export {
   UnrepresentableValueError,
 } from './codec.js';
 export type { Codec } from './codec.js';
+// The runner's declared-class registry. Exported because it owns "a runner
+// declares each factory id once", and the conformance run drives that rule
+// rather than restating it.
+export { Registry } from './dispatch.js';
 export { FORMAT_ID_MSGPACK, SDK_LANG_NODE, toHostClassDecl, validate } from './graph.js';
 export type { DerivedChannel, DerivedDecl, DerivedEdge } from './graph.js';
 export { LocalOperative } from './local.js';

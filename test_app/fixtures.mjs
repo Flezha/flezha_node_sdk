@@ -124,19 +124,25 @@ export const mixedOperative = defineOperative({
   },
 });
 
-// -- sugar_do_nothing / sugar_store_input -----------------------------------
+// -- the §5 short forms -----------------------------------------------------
+//
+// One declaration each: the `sink` makes the procedure a whole operative of its
+// `kind`, and `specsFrom` registers the spec it carries. No hand-written
+// operative stands beside them.
 
-const SugarDoNothing = passThrough('sugar_do_nothing');
-
-export const sugarDoNothing = defineOperative({
-  factoryId: 'sugar_do_nothing',
-  channels: (c) => {
-    c.input('input', { codec: 'text' }).into(SugarDoNothing).sink('sugar_do_nothing_echo');
-  },
+export const sugarDoNothing = defineProcedure({
+  name: 'sugar_do_nothing',
+  kind: 'stream',
+  sink: 'sugar_do_nothing_echo',
+  codec: 'text',
+  handle: (input) => input,
 });
 
-const SugarStoreInput = defineProcedure({
+export const sugarStoreInput = defineProcedure({
   name: 'sugar_store_input',
+  kind: 'stream',
+  sink: 'sugar_store_sink',
+  codec: 'text',
   initialState: () => ({ text_inputs: [] }),
   applyChange: (state, change) => {
     state.text_inputs.push(change.push);
@@ -147,11 +153,22 @@ const SugarStoreInput = defineProcedure({
   },
 });
 
-export const sugarStoreInput = defineOperative({
-  factoryId: 'sugar_store_input',
-  channels: (c) => {
-    c.input('input', { codec: 'text' }).into(SugarStoreInput).sink('sugar_store_sink');
-  },
+export const sugarNamedInput = defineProcedure({
+  name: 'sugar_named_input',
+  kind: 'stream',
+  sink: 'sugar_named_input_sink',
+  input: 'prices',
+  codec: 'text',
+  handle: (input) => input,
+});
+
+export const sugarWorkflow = defineProcedure({
+  name: 'sugar_workflow',
+  kind: 'workflow',
+  sink: 'sugar_workflow_placed',
+  input: 'order',
+  codec: 'text',
+  handle: (input) => input,
 });
 
 // -- hybrid_channel ---------------------------------------------------------

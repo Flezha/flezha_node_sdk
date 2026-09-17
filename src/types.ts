@@ -6,6 +6,9 @@
  * mismatched edge is a compile error rather than a registration-time one.
  */
 
+// Type-only, and erased at run time: `ClassSpec` is the authoring module's
+// shape, and a short-form procedure carries one.
+import type { ClassSpec } from './authoring.js';
 import type { Codec } from './codec.js';
 import type { SpawnHandle } from './ctx.js';
 
@@ -141,6 +144,19 @@ export interface ProcedureDefinition<TIn, TOut, TState, TChange> {
   /** The procedure's node identity within its operative. */
   name: string;
 
+  /**
+   * The §5 short form: a `sink` makes this one procedure a whole operative,
+   * wiring an entry channel into it and it to that plugin channel. With a
+   * `sink`, `kind` is required and `name` is the operative's factory id.
+   */
+  sink?: string;
+  /** Which operative kind a `sink` generates. Required with one, refused without. */
+  kind?: 'stream' | 'workflow';
+  /** The generated entry channel's name. Defaults to `input`. */
+  input?: string;
+  /** The generated entry channel's codec, as `c.input(name, { codec })` takes it. */
+  codec?: ChannelCodec;
+
   /** Fixed key set. Dynamic keying is declared on the wiring with `keyBy`. */
   entities?: StaticEntities<TIn>;
   /** Lazy entities. The key comes from the wiring's `keyBy`. */
@@ -188,6 +204,12 @@ export interface ProcedureDefinition<TIn, TOut, TState, TChange> {
 export interface Procedure<TIn, TOut = never, TState = void, TChange = never> {
   readonly definition: ProcedureDefinition<TIn, TOut, TState, TChange>;
   readonly name: string;
+  /**
+   * The operative this procedure's `sink` generates, absent without one. Built
+   * at definition time, so a malformed short form is refused while the module
+   * loads rather than inside `run()`.
+   */
+  readonly spec?: ClassSpec;
   /** Present only to carry the input and output types; never read. */
   readonly __types?: { input: TIn; output: TOut };
 }

@@ -7,10 +7,13 @@ import { createRunner } from '@flezha/sdk';
  * An operative is registered by module specifier rather than as an imported
  * value, because every dispatch loop imports the module itself. That is what
  * lets `.workers(n)` move dispatch onto worker threads without a rewrite.
+ * Registering therefore imports, which is asynchronous, so each one is its own
+ * `await` and a module that fails to load says so at the line that names it.
  */
 const namespace = process.argv[2] ?? 'default';
 
-const runner = createRunner(namespace).defineStream('./echo_operative.mjs');
+const runner = createRunner(namespace);
+await runner.registerFactory('./echo_operative.mjs');
 
 // Resolves once the runner is connected and serving. The process then keeps
 // running until a SIGTERM, or until standard input closes.

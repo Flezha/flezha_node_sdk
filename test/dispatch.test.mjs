@@ -17,7 +17,7 @@ import {
   loadNative,
 } from '../dist/esm/index.js';
 import { Registry, answer, dispatch } from '../dist/esm/dispatch.js';
-import { importModule, loadRegistry, specsFrom } from '../dist/esm/runner.js';
+import { createRunner, importModule, loadRegistry, specsFrom } from '../dist/esm/runner.js';
 
 import { activationFor, depsFor, inputItem, jsonOf } from './dispatch-fixtures.mjs';
 import { testAppModule } from './test-app.mjs';
@@ -357,7 +357,7 @@ test('a module specifier is imported and its operatives registered', async () =>
 });
 
 // Each build is its own compile of `importModule`, so each loads a handler by a
-// relative path, the spelling an author passes to `defineStream`.
+// relative path, the spelling an author passes to `registerFactory`.
 for (const [build, load, file, bind, exporting] of [
   [
     'esm',
@@ -446,7 +446,7 @@ test('a duplicate factory id fails at the second declaration, naming it', () => 
   registry.add(Spec);
   assert.throws(
     () => registry.add(Spec),
-    (error) => error.message.includes('duplicate factory id') && error.message.includes('counters'),
+    (error) => error.message.startsWith('DuplicateFactoryId') && error.message.includes('counters'),
   );
 });
 
@@ -882,4 +882,85 @@ test('a producer releases one frame per fanned value, and an array from map is o
   assert.deepEqual(await released('mapped', (edge) => edge.map((value) => [value, value + 1])), [
     [10, 11],
   ]);
+});
+
+// --- registering a factory --------------------------------------------------
+
+test('a short form the module exports is registered by the spec it carries', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'flezha-short-'));
+  const module = join(dir, 'short.mjs');
+  writeFileSync(
+    module,
+    `import { defineProcedure } from '${new URL('../dist/esm/index.js', import.meta.url).pathname}';\n` +
+      `export const upcase = defineProcedure({ name: 'short_form', kind: 'stream', sink: 'out', handle: (i) => i });\n`,
+  );
+  const registry = await loadRegistry([module]);
+  assert.ok(registry.get('short_form'), "the short form's operative was registered");
+});
+
+test('registerFactory rejects at the line that names a module which cannot load', async () => {
+  const runner = createRunner('register_factory_ns');
+  await assert.rejects(
+    () => runner.registerFactory('./no_such_module_anywhere.mjs'),
+    (error) => error.message.includes('no_such_module_anywhere'),
+  );
+});
+
+test('registerFactory rejects a module exporting no operative, before run()', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'flezha-empty-register-'));
+  const module = join(dir, 'empty.mjs');
+  writeFileSync(module, 'export const nothing = 1;\n');
+  const runner = createRunner('register_factory_empty_ns');
+  await assert.rejects(
+    () => runner.registerFactory(module),
+    (error) => error.message.includes(module) && error.message.includes('exports no operative'),
+  );
+});
+
+test('unregisterFactory undoes a pre-run registration and names an unknown one', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'flezha-unregister-'));
+  const module = join(dir, 'one.mjs');
+  writeFileSync(
+    module,
+    `import { defineProcedure } from '${new URL('../dist/esm/index.js', import.meta.url).pathname}';\n` +
+      `export const one = defineProcedure({ name: 'unregister_me', kind: 'stream', sink: 'out', handle: (i) => i });\n`,
+  );
+  const runner = createRunner('unregister_ns');
+  await runner.registerFactory(module);
+  await runner.unregisterFactory(module);
+  await assert.rejects(
+    () => runner.unregisterFactory(module),
+    (error) => error.message.includes(module) && error.message.includes('not registered'),
+  );
+});
+
+test('a post-start registerFactory declares against the core and the workers', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'flezha-late-'));
+  const module = join(dir, 'late.mjs');
+  writeFileSync(
+    module,
+    `import { defineProcedure } from '${new URL('../dist/esm/index.js', import.meta.url).pathname}';\n` +
+      `export const late = defineProcedure({ name: 'late_form', kind: 'stream', sink: 'out', handle: (i) => i });\n`,
+  );
+
+  // A started runner is one that holds a core and a registry. Standing those in
+  // is what lets the post-start branch run with no controller anywhere.
+  const declared = [];
+  const runner = createRunner('late_ns');
+  runner.registry = new Registry();
+  runner.native = {
+    declareClass(bytes) {
+      declared.push(JSON.parse(Buffer.from(bytes).toString()).factory_id);
+    },
+  };
+
+  await runner.registerFactory(module);
+
+  assert.deepEqual(declared, ['late_form'], 'the class reached the core');
+  assert.ok(runner.registry.get('late_form'), 'and the registry the dispatch loops serve from');
+
+  await assert.rejects(
+    () => runner.unregisterFactory(module),
+    (error) => error.message.includes('cannot stop serving a started declaration'),
+  );
 });

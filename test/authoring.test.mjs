@@ -885,3 +885,93 @@ test('the router hands each key each document once, on that key’s own traffic'
   assert.equal(harness.currentState.version, 2);
   harness.replayEquals();
 });
+
+// --- the §5 short form ------------------------------------------------------
+//
+// A `sink` makes one procedure declaration a whole operative of its `kind`,
+// built on the same graph path a hand-written one is built on. `SinkWithoutOutput`
+// is not among the refusals: a `.mjs` author runs no type checker and this SDK
+// ships no build step, so a handler that returns nothing cannot be seen here —
+// the manifest leaves `shorthand_typed_output` off and the row skips by name.
+
+test('a stream short form is its hand-written twin', () => {
+  const upcase = defineProcedure({
+    name: 'upcase',
+    kind: 'stream',
+    sink: 'out',
+    codec: 'text',
+    handle: (input) => input.toUpperCase(),
+  });
+
+  const twinProcedure = defineProcedure({
+    name: 'upcase_twin',
+    handle: (input) => input.toUpperCase(),
+  });
+  const twin = defineOperative({
+    factoryId: 'upcase_twin',
+    channels: (c) => {
+      c.input('input', { codec: 'text' }).into(twinProcedure).sink('out');
+    },
+  });
+
+  assert.equal(upcase.spec.kind, 'stream');
+  assert.equal(upcase.spec.factoryId, 'upcase');
+  assert.deepEqual(
+    upcase.spec.channels.map((channel) => [channel.name, channel.kind]),
+    twin.channels.map((channel) => [channel.name, channel.kind]),
+  );
+});
+
+test('a workflow short form is a once workflow wiring its entry to its sink', () => {
+  const place = defineProcedure({
+    name: 'place',
+    kind: 'workflow',
+    sink: 'placed',
+    input: 'order',
+    codec: 'text',
+    handle: (input) => input,
+  });
+
+  assert.equal(place.spec.kind, 'workflow');
+  assert.equal(place.spec.workflow.loopMode, 'once');
+  assert.deepEqual(
+    place.spec.channels.map((channel) => channel.name),
+    ['order', 'placed'],
+  );
+});
+
+test('a sink without a name is refused by the short form name', () => {
+  assert.throws(
+    () => defineProcedure({ kind: 'stream', sink: 'out', handle: (input) => input }),
+    (error) => error instanceof DeclarationError && error.refusals.includes('SinkWithoutId'),
+  );
+});
+
+test('a sink without a kind is refused', () => {
+  assert.throws(
+    () => defineProcedure({ name: 'upcase', sink: 'out', handle: (input) => input }),
+    (error) => error instanceof DeclarationError && error.refusals.includes('SinkWithoutKind'),
+  );
+});
+
+test('a short-form key without a sink is refused, naming the keys', () => {
+  assert.throws(
+    () =>
+      defineProcedure({
+        name: 'upcase',
+        kind: 'stream',
+        input: 'prices',
+        handle: (input) => input,
+      }),
+    (error) =>
+      error instanceof DeclarationError &&
+      error.refusals.includes('ShorthandKeyWithoutSink') &&
+      error.message.includes('`kind`') &&
+      error.message.includes('`input`'),
+  );
+});
+
+test('a procedure with no sink carries no operative', () => {
+  const plain = defineProcedure({ name: 'plain', handle: (input) => input });
+  assert.equal(plain.spec, undefined);
+});
