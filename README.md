@@ -61,13 +61,18 @@ interface Trade {
   price: number;
 }
 
+interface Candle {
+  symbol: string;
+  close: number;
+}
+
 const Ohlc = defineProcedure({
   name: 'ohlc',
   initialState: () => ({ close: 0 }),
   applyChange: (state, change: { close: number }) => {
     state.close = change.close;
   },
-  run: (trade: Trade, ctx) => {
+  run: (trade: Trade, ctx): Candle => {
     ctx.change({ close: trade.price });
     return { symbol: trade.symbol, close: ctx.state.close };
   },
