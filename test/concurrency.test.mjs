@@ -39,7 +39,7 @@ const Accumulate = defineProcedure({
   applyChange: (state, change) => {
     state.seen.push(change.value);
   },
-  handle: (input, ctx) => {
+  run: (input, ctx) => {
     ctx.change({ value: input.value });
     return [...ctx.state.seen];
   },

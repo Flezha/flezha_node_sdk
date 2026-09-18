@@ -12,7 +12,7 @@
  * at registration and covered by `test/authoring.test.mjs`.
  */
 
-import { defineOperative, defineProcedure } from '../src/index.js';
+import { defineOperative, defineProcedure, defineWorkflow } from '../src/index.js';
 
 interface Trade {
   symbol: string;
@@ -26,12 +26,12 @@ interface Candle {
 
 const Ohlc = defineProcedure({
   name: 'ohlc',
-  handle: (trade: Trade): Candle => ({ symbol: trade.symbol, close: trade.price }),
+  run: (trade: Trade): Candle => ({ symbol: trade.symbol, close: trade.price }),
 });
 
 const Publish = defineProcedure({
   name: 'publish',
-  handle: (candle: Candle): string => `${candle.symbol}:${candle.close}`,
+  run: (candle: Candle): string => `${candle.symbol}:${candle.close}`,
 });
 
 const Count = defineProcedure({
@@ -40,7 +40,7 @@ const Count = defineProcedure({
   applyChange: (state, change: { by: number }) => {
     state.total += change.by;
   },
-  handle: (_input: Trade, ctx) => {
+  run: (_input: Trade, ctx) => {
     ctx.change({ by: 1 });
   },
 });
@@ -130,7 +130,7 @@ const BadChange = defineProcedure({
   applyChange: (state, change: { by: number }) => {
     state.total += change.by;
   },
-  handle: (_input: Trade, ctx) => {
+  run: (_input: Trade, ctx) => {
     // @ts-expect-error the declared change carries `by`, not `amount`
     ctx.change({ amount: 1 });
   },
@@ -138,7 +138,7 @@ const BadChange = defineProcedure({
 
 const BadEmit = defineProcedure<Trade, Candle>({
   name: 'bad_emit',
-  handle: (trade, ctx) => {
+  run: (trade, ctx) => {
     // @ts-expect-error the declared output is Candle, not a string
     ctx.emit(trade.symbol);
   },
@@ -150,3 +150,43 @@ export const moreRefusals = defineOperative({
     c.input<Trade>('j').branch([(edge) => edge.into(BadChange), (edge) => edge.into(BadEmit)]);
   },
 });
+
+// The §5 short form: one procedure's fields and its `run` body in place of a
+// `channels` body, at the function whose name is its kind.
+export const shortForm = defineOperative({
+  factoryId: 'short_form',
+  sink: 'out',
+  codec: 'text',
+  run: (line: string) => line.toUpperCase(),
+});
+
+export const statefulShortForm = defineWorkflow({
+  factoryId: 'stateful_short_form',
+  initialState: () => ({ seen: [] as string[] }),
+  applyChange: (state, change: string) => {
+    state.seen.push(change);
+  },
+  run: (line: string, ctx) => {
+    ctx.change(line);
+    // @ts-expect-error the declared change is a string
+    ctx.change(1);
+  },
+});
+
+// @ts-expect-error a short form carries its body in place of a topology body, never beside one
+defineOperative({ factoryId: 'both', run: (line: string) => line, channels: () => {} });
+
+// @ts-expect-error the kind is the function's own name, never a field
+defineWorkflow({ factoryId: 'kinded', kind: 'workflow', run: (line: string) => line });
+
+// @ts-expect-error a short form's procedure is named after its `factoryId`
+defineOperative({ factoryId: 'named', name: 'other', run: (line: string) => line });
+
+// @ts-expect-error a class-level setting is the full form
+defineWorkflow({ factoryId: 'looped', loopMode: 'chained', run: (line: string) => line });
+
+// @ts-expect-error a procedure carries no sink; the short form is an operative
+defineProcedure({ name: 'sinking', sink: 'out', run: (line: string) => line });
+
+// @ts-expect-error a procedure's body is `run`
+defineProcedure({ name: 'old', handle: (line: string) => line });

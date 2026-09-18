@@ -60,28 +60,20 @@ export async function importModule(specifier: string): Promise<unknown> {
   }
 }
 
-/**
- * The class declarations a handler module exports: every `ClassSpec`, and the
- * one a short-form procedure carries.
- */
+/** The class declarations a handler module exports: every `ClassSpec`, short form or full. */
 export function specsFrom(specifier: string, module: unknown): ClassSpec[] {
   const record = module as Record<string, unknown>;
-  const candidates = [record.default, ...Object.values(record)].filter(Boolean);
   const specs: ClassSpec[] = [];
-  const take = (spec: ClassSpec | undefined): void => {
+  for (const candidate of [record.default, ...Object.values(record)]) {
+    const spec = candidate as ClassSpec | undefined;
     if (spec && typeof spec === 'object' && typeof spec.factoryId === 'string' && spec.channels) {
       if (!specs.includes(spec)) specs.push(spec);
     }
-  };
-  for (const candidate of candidates) {
-    take(candidate as ClassSpec);
-    take((candidate as { spec?: ClassSpec }).spec);
   }
   if (specs.length === 0) {
     throw new Error(
       `handler module \`${specifier}\` exports no operative; export the value ` +
-        '`defineOperative(...)`, `defineWorkflow(...)` or a short-form ' +
-        '`defineProcedure(...)` returned',
+        '`defineOperative(...)` or `defineWorkflow(...)` returned',
     );
   }
   return specs;

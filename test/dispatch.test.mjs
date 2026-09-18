@@ -58,7 +58,7 @@ const Counter = defineProcedure({
   applyChange: (state, change) => {
     state.total += change.by;
   },
-  handle: (input, ctx) => {
+  run: (input, ctx) => {
     ctx.change({ by: input });
     return ctx.state.total;
   },
@@ -103,7 +103,7 @@ test('a work batch answers one effect per item, in order', async () => {
 test('a throwing handler is a retryable verdict and stops the batch', async () => {
   const Throwing = defineProcedure({
     name: 'throwing',
-    handle: (input) => {
+    run: (input) => {
       if (input === 'boom') throw new Error('handler exploded');
       return input;
     },
@@ -128,7 +128,7 @@ test('a throwing handler is a retryable verdict and stops the batch', async () =
 test('a rejected promise is answered the same way a throw is', async () => {
   const Rejecting = defineProcedure({
     name: 'rejecting',
-    handle: async () => {
+    run: async () => {
       throw Object.assign(new Error('gave up'), { nonRetryable: true });
     },
   });
@@ -195,7 +195,7 @@ test('the JSON handover carries a bigint and a byte array without narrowing', as
       state.offset = change.offset;
       state.blob = change.blob;
     },
-    handle: () => undefined,
+    run: () => undefined,
   });
   const spec = defineOperative({
     factoryId: 'wide_op',
@@ -268,7 +268,7 @@ test('one payload failing its prepare does not fail the others', async () => {
       if (input.at === undefined) throw new Error('no event time on this payload');
       return BigInt(input.at);
     },
-    handle: (input) => input,
+    run: (input) => input,
   });
   const spec = defineOperative({
     factoryId: 'windowed_op',
@@ -345,7 +345,7 @@ test('a module specifier is imported and its operatives registered', async () =>
   writeFileSync(
     module,
     `import { defineOperative, defineProcedure } from '${new URL('../dist/esm/index.js', import.meta.url).pathname}';\n` +
-      `const Echo = defineProcedure({ name: 'echo', handle: (i) => i });\n` +
+      `const Echo = defineProcedure({ name: 'echo', run: (i) => i });\n` +
       `export default defineOperative({ factoryId: 'from_specifier', channels: (c) => c.input('in').into(Echo).sink() });\n`,
   );
   const registry = await loadRegistry([module]);
@@ -379,7 +379,7 @@ for (const [build, load, file, bind, exporting] of [
     writeFileSync(
       module,
       `${bind(new URL(`../dist/${build}/index.js`, import.meta.url).pathname)}\n` +
-        `const Echo = defineProcedure({ name: 'echo', handle: (i) => i });\n` +
+        `const Echo = defineProcedure({ name: 'echo', run: (i) => i });\n` +
         `${exporting} defineOperative({ factoryId: 'by_relative_path', channels: (c) => c.input('in').into(Echo).sink() });\n`,
     );
     const registry = await load([`./${relative(process.cwd(), module)}`]);
@@ -405,8 +405,8 @@ test('a refusal raised while a handler module is imported keeps its own name', a
   writeFileSync(
     module,
     `import { defineOperative, defineProcedure } from '${new URL('../dist/esm/index.js', import.meta.url).pathname}';\n` +
-      `const A = defineProcedure({ name: 'twin', handle: (i) => i });\n` +
-      `const B = defineProcedure({ name: 'twin', handle: (i) => i });\n` +
+      `const A = defineProcedure({ name: 'twin', run: (i) => i });\n` +
+      `const B = defineProcedure({ name: 'twin', run: (i) => i });\n` +
       `export default defineOperative({ factoryId: 'module_scope', channels: (c) => {\n` +
       `  const s = c.input('in'); s.into(A); s.into(B);\n` +
       `} });\n`,
@@ -457,7 +457,7 @@ test('a duplicate factory id fails at the second declaration, naming it', () => 
 
 const StampEmitter = defineProcedure({
   name: 'stamp_emitter',
-  handle: (input, ctx) => {
+  run: (input, ctx) => {
     if (input === 'twice') {
       ctx.emitTo('keyed_out', 'a');
       ctx.emitTo('keyed_out', 'b');
@@ -485,7 +485,7 @@ const StampSpec = defineOperative({
 // channel are two procedures. The unkeyed one carries no stamps at all.
 const PlainEmitter = defineProcedure({
   name: 'plain_emitter',
-  handle: (_input, ctx) => {
+  run: (_input, ctx) => {
     ctx.emitTo('plain_out', 'p');
   },
 });
@@ -557,7 +557,7 @@ test('a fresh work item restarts the emit ordinal', async () => {
 test('user metadata survives beside the stamps and cannot spoof one', async () => {
   const UserMeta = defineProcedure({
     name: 'stamp_user_meta',
-    handle: (input, ctx) => {
+    run: (input, ctx) => {
       if (input === 'spoof') {
         ctx.emit('v', { metadata: { 'flz.seq': '999.0' } });
         return;
@@ -605,7 +605,7 @@ test('user metadata survives beside the stamps and cannot spoof one', async () =
 
 const WorkflowProducer = defineProcedure({
   name: 'wf_producer',
-  handle: (input, ctx) => {
+  run: (input, ctx) => {
     ctx.emit(input);
   },
 });
@@ -618,7 +618,7 @@ const record = (name, entities = {}) =>
   defineProcedure({
     name,
     ...entities,
-    handle: (input) => {
+    run: (input) => {
       DELIVERED.push(input);
     },
   });
@@ -739,7 +739,7 @@ test('a workflow consumer applies its own edge exactly once, at delivery', async
 /** Completes with `first` and then with its input, except on `stay`; echoes every input. */
 const Completing = defineProcedure({
   name: 'completing',
-  handle: (input, ctx) => {
+  run: (input, ctx) => {
     if (input === 'stay') return input;
     ctx.complete('first');
     ctx.complete(input);
@@ -921,16 +921,18 @@ test('a producer releases one frame per fanned value, and an array from map is o
 
 // --- registering a factory --------------------------------------------------
 
-test('a short form the module exports is registered by the spec it carries', async () => {
+test('a module exporting short forms registers each, of the kind its function names', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'flezha-short-'));
   const module = join(dir, 'short.mjs');
   writeFileSync(
     module,
-    `import { defineProcedure } from '${new URL('../dist/esm/index.js', import.meta.url).pathname}';\n` +
-      `export const upcase = defineProcedure({ name: 'short_form', kind: 'stream', sink: 'out', handle: (i) => i });\n`,
+    `import { defineOperative, defineWorkflow } from '${new URL('../dist/esm/index.js', import.meta.url).pathname}';\n` +
+      `export const upcase = defineOperative({ factoryId: 'short_form', sink: 'out', run: (i) => i });\n` +
+      `export const place = defineWorkflow({ factoryId: 'short_workflow', sink: 'placed', input: 'order', run: (i) => i });\n`,
   );
   const registry = await loadRegistry([module]);
-  assert.ok(registry.get('short_form'), "the short form's operative was registered");
+  assert.equal(registry.get('short_form')?.spec.kind, 'stream');
+  assert.equal(registry.get('short_workflow')?.spec.kind, 'workflow');
 });
 
 test('registerFactory rejects at the line that names a module which cannot load', async () => {
@@ -957,8 +959,8 @@ test('unregisterFactory undoes a pre-run registration and names an unknown one',
   const module = join(dir, 'one.mjs');
   writeFileSync(
     module,
-    `import { defineProcedure } from '${new URL('../dist/esm/index.js', import.meta.url).pathname}';\n` +
-      `export const one = defineProcedure({ name: 'unregister_me', kind: 'stream', sink: 'out', handle: (i) => i });\n`,
+    `import { defineOperative } from '${new URL('../dist/esm/index.js', import.meta.url).pathname}';\n` +
+      `export const one = defineOperative({ factoryId: 'unregister_me', sink: 'out', run: (i) => i });\n`,
   );
   const runner = createRunner('unregister_ns');
   await runner.registerFactory(module);
@@ -974,8 +976,8 @@ test('a post-start registerFactory declares against the core and the workers', a
   const module = join(dir, 'late.mjs');
   writeFileSync(
     module,
-    `import { defineProcedure } from '${new URL('../dist/esm/index.js', import.meta.url).pathname}';\n` +
-      `export const late = defineProcedure({ name: 'late_form', kind: 'stream', sink: 'out', handle: (i) => i });\n`,
+    `import { defineOperative } from '${new URL('../dist/esm/index.js', import.meta.url).pathname}';\n` +
+      `export const late = defineOperative({ factoryId: 'late_form', sink: 'out', run: (i) => i });\n`,
   );
 
   // A started runner is one that holds a core and a registry. Standing those in

@@ -62,6 +62,7 @@ export type {
   ProcedureDefinition,
   RollbackMode,
   RoutedDocument,
+  ShortFormDefinition,
   SpawnOptions,
   SpawnOutcome,
   SpawnResult,

@@ -51,7 +51,7 @@ export const latestRouter: ProcedureDefinition<
       state.version += 1;
     }
   },
-  handle: (input, ctx) => {
+  run: (input, ctx) => {
     const { document, version, delivered } = ctx.state;
     if (!('key' in input)) {
       if (version === 0 || !sameDocument(document, input.document)) {

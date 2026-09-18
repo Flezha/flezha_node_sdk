@@ -15,14 +15,7 @@
   },
   "connect_timeout_ms": 60000,
   "transports": ["uds", "quic"],
-  "topology_surfaces": [
-    "branch",
-    "merge",
-    "workflow",
-    "sync_durability",
-    "shorthand",
-    "shorthand_omittable_sink"
-  ],
+  "topology_surfaces": ["branch", "merge", "workflow", "sync_durability", "shorthand"],
   "dispatch": {
     "model": "event-loop",
     "detail": "Activations run on JavaScript event loops; the veneer owns its executor rather than libuv's pool.",
@@ -45,7 +38,13 @@
       "entity_stress",
       "bench_keyed_nopersist"
     ],
-    "shorthand": ["sugar_do_nothing", "sugar_store_input", "sugar_named_input", "sugar_workflow"],
+    "shorthand": [
+      "sugar_do_nothing",
+      "sugar_store_input",
+      "sugar_named_input",
+      "sugar_workflow",
+      "sugar_state_only"
+    ],
     "liveness": ["wedge_probe"],
     "retry_ladder": [
       "poison_probe",

@@ -198,13 +198,14 @@ export class Invocation implements Ctx<unknown, unknown, unknown> {
   }
 
   /**
-   * Hand one input to the handler. A returned value is emitted; `undefined`
-   * emits nothing, which is the warmup gate. A handler that emits through the
-   * context returns nothing, so the two spellings compose rather than conflict.
+   * Hand one input to the procedure's `run` body. A returned value is emitted;
+   * `undefined` emits nothing, which is the warmup gate. A body that emits
+   * through the context returns nothing, so the two spellings compose rather
+   * than conflict.
    */
   async handle(value: unknown): Promise<void> {
     const definition = this.input.node.procedure.definition;
-    const returned = await definition.handle(value as never, this as never);
+    const returned = await definition.run(value as never, this as never);
     if (returned !== undefined) this.emit(returned);
   }
 

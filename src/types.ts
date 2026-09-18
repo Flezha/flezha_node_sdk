@@ -6,9 +6,6 @@
  * mismatched edge is a compile error rather than a registration-time one.
  */
 
-// Type-only, and erased at run time: `ClassSpec` is the authoring module's
-// shape, and a short-form procedure carries one.
-import type { ClassSpec } from './authoring.js';
 import type { Codec } from './codec.js';
 import type { SpawnHandle } from './ctx.js';
 
@@ -147,19 +144,6 @@ export interface ProcedureDefinition<TIn, TOut, TState, TChange> {
   /** The procedure's node identity within its operative. */
   name: string;
 
-  /**
-   * The §5 short form: a `sink` makes this one procedure a whole operative,
-   * wiring an entry channel into it and it to that plugin channel. With a
-   * `sink`, `kind` is required and `name` is the operative's factory id.
-   */
-  sink?: string;
-  /** Which operative kind a `sink` generates. Required with one, refused without. */
-  kind?: 'stream' | 'workflow';
-  /** The generated entry channel's name. Defaults to `input`. */
-  input?: string;
-  /** The generated entry channel's codec, as `c.input(name, { codec })` takes it. */
-  codec?: ChannelCodec;
-
   /** Fixed key set. Dynamic keying is declared on the wiring with `keyBy`. */
   entities?: StaticEntities<TIn>;
   /** Lazy entities. The key comes from the wiring's `keyBy`. */
@@ -187,11 +171,11 @@ export interface ProcedureDefinition<TIn, TOut, TState, TChange> {
   changeCodec?: Codec<TChange>;
 
   /**
-   * The handler. A returned value is emitted; `undefined` emits nothing, which
-   * is the warmup gate. A handler that emits more than once per input uses
+   * The body. A returned value is emitted; `undefined` emits nothing, which is
+   * the warmup gate. A body that emits more than once per input uses
    * `ctx.emit` and returns nothing.
    */
-  handle: (
+  run: (
     input: TIn,
     ctx: Ctx<TOut, TState, TChange>,
   ) => TOut | undefined | void | Promise<TOut | undefined | void>;
@@ -207,12 +191,6 @@ export interface ProcedureDefinition<TIn, TOut, TState, TChange> {
 export interface Procedure<TIn, TOut = never, TState = void, TChange = never> {
   readonly definition: ProcedureDefinition<TIn, TOut, TState, TChange>;
   readonly name: string;
-  /**
-   * The operative this procedure's `sink` generates, absent without one. Built
-   * at definition time, so a malformed short form is refused while the module
-   * loads rather than inside `run()`.
-   */
-  readonly spec?: ClassSpec;
   /** Present only to carry the input and output types; never read. */
   readonly __types?: { input: TIn; output: TOut };
 }
@@ -360,6 +338,27 @@ export interface OperativeDefinition {
   /** Whether change bytes are flushed to the per-entity WAL. Default true. */
   persistent?: boolean;
   channels: (builder: ChannelBuilder) => void;
+}
+
+/**
+ * The §5 short form, taken by `defineOperative` and `defineWorkflow`: one
+ * procedure's fields and its `run` body in place of a `channels` body. It
+ * generates an entry channel into a procedure named `factoryId`, and that
+ * procedure's output into the `sink` plugin channel when one is written. Every
+ * class-level setting stays at its default; a class-level setting is the full
+ * form.
+ */
+export interface ShortFormDefinition<TIn, TOut, TState, TChange> extends Omit<
+  ProcedureDefinition<TIn, TOut, TState, TChange>,
+  'name'
+> {
+  factoryId: string;
+  /** The plugin sink the procedure's output reaches. Absent declares none. */
+  sink?: string;
+  /** The generated entry channel's name. Defaults to `input`. */
+  input?: string;
+  /** The generated entry channel's codec, as `c.input(name, { codec })` takes it. */
+  codec?: ChannelCodec;
 }
 
 export interface WorkflowDefinition {

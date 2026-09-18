@@ -13,14 +13,14 @@ const asInt = (input) => (/^-?\d+$/.test(String(input)) ? Number(input) : 0);
 // `checkpoint_store` and `bench_checkpoint` are the same keyed upsert under
 // three acknowledgement postures; only the handler differs.
 
-const keyedUpsertProcedure = (name, handle) =>
+const keyedUpsertProcedure = (name, run) =>
   defineProcedure({
     name,
     initialState: () => ({ values: {} }),
     applyChange: (state, change) => {
       state.values[change.key] = change.value;
     },
-    handle,
+    run,
   });
 
 /** A `key:value` input as its two halves; the value keeps any later colon. */
@@ -145,7 +145,7 @@ const StoreInput = defineProcedure({
   applyChange: (state, change) => {
     state.text_inputs.push(change.push_text);
   },
-  handle: (input, ctx) => {
+  run: (input, ctx) => {
     ctx.change({ push_text: input });
     return input;
   },
@@ -162,7 +162,7 @@ export const storeInput = defineOperative({
 
 const CounterEntry = defineProcedure({
   name: 'counter_entry_procedure',
-  handle: (input) => asInt(input),
+  run: (input) => asInt(input),
 });
 
 const Counter = defineProcedure({
@@ -171,7 +171,7 @@ const Counter = defineProcedure({
   applyChange: (state, change) => {
     state.value += change.delta;
   },
-  handle: (input, ctx) => {
+  run: (input, ctx) => {
     ctx.change({ delta: input });
   },
 });
@@ -201,7 +201,7 @@ export const persistenceOffCounter = defineOperative({
 // Wire format: `<interval>:<ts>:<delta>`; a missing or unparsable part reads 0.
 const TickEntry = defineProcedure({
   name: 'tick_entry_procedure',
-  handle: (input) => {
+  run: (input) => {
     const [interval, ts, ...rest] = String(input).split(':');
     return { interval: asInt(interval), ts: asInt(ts), delta: asInt(rest.join(':')) };
   },
@@ -217,7 +217,7 @@ const Tick = defineProcedure({
   applyChange: (state, change) => {
     state.last = change.delta;
   },
-  handle: (input, ctx) => {
+  run: (input, ctx) => {
     ctx.change({ ...input });
   },
 });
@@ -239,7 +239,7 @@ const ResumeProbe = defineProcedure({
   applyChange: (state, change) => {
     state.total += change.add;
   },
-  handle: (input, ctx) => {
+  run: (input, ctx) => {
     const delta = asInt(input);
     const total = ctx.state.total + delta;
     ctx.change({ add: delta });
@@ -271,7 +271,7 @@ const EvolvingCartV1 = defineProcedure({
   applyChange: (state, change) => {
     state.total += change.add;
   },
-  handle: (input, ctx) => {
+  run: (input, ctx) => {
     const delta = asInt(input);
     const total = ctx.state.total + delta;
     ctx.change({ add: delta });
@@ -297,7 +297,7 @@ const EvolvingCartV2 = defineProcedure({
     const old = decodeValue(body) ?? {};
     return { add: old.add ?? 0, note: 'migrated' };
   },
-  handle: (input, ctx) => {
+  run: (input, ctx) => {
     const delta = asInt(input);
     const total = ctx.state.total + delta;
     const currency = ctx.state.currency || 'EUR';

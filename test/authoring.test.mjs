@@ -18,6 +18,7 @@ import {
   defineWorkflow,
   encodeValue,
   loadNative,
+  Registry,
   toHostClassDecl,
   validate,
 } from '../dist/esm/index.js';
@@ -31,8 +32,7 @@ loadNative().contextNew(ACTIVATION_SCHEMA_VERSION);
 
 const fixtures = await testAppModule('fixtures.mjs');
 
-const echo = (name, options = {}) =>
-  defineProcedure({ name, ...options, handle: (input) => input });
+const echo = (name, options = {}) => defineProcedure({ name, ...options, run: (input) => input });
 
 const refusal = (build) => {
   try {
@@ -94,7 +94,7 @@ test('keyBy declares a dynamic consumer and the key reaches the channel', () => 
     applyChange: (state, change) => {
       state.seen += change.by;
     },
-    handle: (input, ctx) => {
+    run: (input, ctx) => {
       ctx.change({ by: 1 });
       return input;
     },
@@ -126,7 +126,7 @@ test('a procedure that folds no change declares it, and a logical clock over it 
     channels: (c) =>
       c
         .input('in')
-        .into(defineProcedure({ name: 'ticker', clock: 'logical', handle: (i) => i }))
+        .into(defineProcedure({ name: 'ticker', clock: 'logical', run: (i) => i }))
         .sink(),
   });
   assert.equal(toHostClassDecl(spec).procedures[0].change_is_nochange, true);
@@ -211,8 +211,8 @@ test('a second mention under its own node name is a second node', () => {
 
 test('two procedures claiming one node identity are refused', () => {
   const refused = refusal(() => {
-    const first = defineProcedure({ name: 'same', handle: (i) => i });
-    const second = defineProcedure({ name: 'same', handle: (i) => i });
+    const first = defineProcedure({ name: 'same', run: (i) => i });
+    const second = defineProcedure({ name: 'same', run: (i) => i });
     return defineOperative({
       factoryId: 'collide',
       channels: (c) => {
@@ -225,7 +225,7 @@ test('two procedures claiming one node identity are refused', () => {
 
 test('an event-time clock without an extractor is refused', () => {
   const refused = refusal(() => {
-    const proc = defineProcedure({ name: 'windowed', clock: 'event_time', handle: (i) => i });
+    const proc = defineProcedure({ name: 'windowed', clock: 'event_time', run: (i) => i });
     return defineOperative({
       factoryId: 'no_extractor',
       channels: (c) => c.input('in').into(proc).sink(),
@@ -359,16 +359,6 @@ test('two channels naming one sink is refused as a duplicate sink name', () => {
   );
 });
 
-test('a workflow declaring no channels is refused, naming them', () => {
-  assert.throws(
-    () => defineWorkflow({ factoryId: 'bodiless' }),
-    (error) =>
-      error instanceof DeclarationError &&
-      error.factoryId === 'bodiless' &&
-      /declares no channels/.test(error.message),
-  );
-});
-
 test('a workflow declares its lifecycle knobs beside its procedures', () => {
   const spec = defineWorkflow({
     factoryId: 'saga',
@@ -396,7 +386,7 @@ test('state read but never folded is allowed; recording a change is not', async 
   const ReadOnly = defineProcedure({
     name: 'read_only',
     initialState: () => ({ comparable: 'default' }),
-    handle: (input, ctx) => (ctx.state.comparable === input ? input : undefined),
+    run: (input, ctx) => (ctx.state.comparable === input ? input : undefined),
   });
   const harness = ProcedureTestHarness.of(ReadOnly);
   assert.deepEqual((await harness.input('default')).emits, ['default']);
@@ -405,7 +395,7 @@ test('state read but never folded is allowed; recording a change is not', async 
   const Recording = defineProcedure({
     name: 'recording',
     initialState: () => ({ n: 0 }),
-    handle: (_input, ctx) => ctx.change({ by: 1 }),
+    run: (_input, ctx) => ctx.change({ by: 1 }),
   });
   await assert.rejects(
     () => ProcedureTestHarness.of(Recording).input(1),
@@ -415,7 +405,7 @@ test('state read but never folded is allowed; recording a change is not', async 
 
 test('applyChange with no state to fold into is refused at definition', () => {
   assert.throws(
-    () => defineProcedure({ name: 'nowhere', applyChange: () => {}, handle: () => {} }),
+    () => defineProcedure({ name: 'nowhere', applyChange: () => {}, run: () => {} }),
     (error) => /no initialState/.test(error.message),
   );
 });
@@ -427,7 +417,7 @@ test('a declared state that cannot be encoded is refused at definition', () => {
         name: 'unencodable',
         initialState: () => ({ pending: new Map() }),
         applyChange: () => {},
-        handle: () => {},
+        run: () => {},
       }),
     (error) => /unencodable\.state\.pending/.test(error.message),
   );
@@ -889,90 +879,211 @@ test('the router hands each key each document once, on that key’s own traffic'
 
 // --- the §5 short form ------------------------------------------------------
 //
-// A `sink` makes one procedure declaration a whole operative of its `kind`,
-// built on the same graph path a hand-written one is built on. `SinkWithoutOutput`
-// is not among the refusals: a `.mjs` author runs no type checker and this SDK
-// ships no build step, so a handler that returns nothing cannot be seen here —
-// the manifest leaves `shorthand_typed_output` off and the row skips by name.
+// An operative definition carrying one procedure's `run` body in place of a
+// `channels` body is a whole operative of the function's kind, built on the
+// same graph path a hand-written one is built on. `SinkWithoutOutput` is not
+// among the refusals: a `.mjs` author runs no type checker and this SDK ships
+// no build step, so a body that returns nothing cannot be seen here. The
+// manifest leaves `shorthand_typed_output` off and the row skips by name.
 
+const upper = (input) => input.toUpperCase();
+
+/** What the core is handed, and what it derives from it. */
+const declared = (spec) => ({ decl: toHostClassDecl(spec), derived: validate(spec) });
+
+// Each twin is the full form: a `channels` body still declares one.
 test('a stream short form is its hand-written twin', () => {
-  const upcase = defineProcedure({
-    name: 'upcase',
-    kind: 'stream',
-    sink: 'out',
-    codec: 'text',
-    handle: (input) => input.toUpperCase(),
-  });
-
-  const twinProcedure = defineProcedure({
-    name: 'upcase_twin',
-    handle: (input) => input.toUpperCase(),
-  });
+  const short = defineOperative({ factoryId: 'upcase', sink: 'out', codec: 'text', run: upper });
   const twin = defineOperative({
-    factoryId: 'upcase_twin',
+    factoryId: 'upcase',
     channels: (c) => {
-      c.input('input', { codec: 'text' }).into(twinProcedure).sink('out');
+      c.input('input', { codec: 'text' })
+        .into(defineProcedure({ name: 'upcase', run: upper }))
+        .sink('out');
     },
   });
 
-  assert.equal(upcase.spec.kind, 'stream');
-  assert.equal(upcase.spec.factoryId, 'upcase');
-  assert.deepEqual(
-    upcase.spec.channels.map((channel) => [channel.name, channel.kind]),
-    twin.channels.map((channel) => [channel.name, channel.kind]),
-  );
+  assert.equal(short.kind, 'stream');
+  assert.deepEqual(declared(short), declared(twin));
 });
 
-test('a workflow short form is a once workflow wiring its entry to its sink', () => {
-  const place = defineProcedure({
-    name: 'place',
-    kind: 'workflow',
+test('a workflow short form is its hand-written once workflow', () => {
+  const short = defineWorkflow({
+    factoryId: 'place',
     sink: 'placed',
     input: 'order',
     codec: 'text',
-    handle: (input) => input,
+    run: upper,
+  });
+  const twin = defineWorkflow({
+    factoryId: 'place',
+    channels: (c) => {
+      c.input('order', { codec: 'text' })
+        .into(defineProcedure({ name: 'place', run: upper }))
+        .sink('placed');
+    },
   });
 
-  assert.equal(place.spec.kind, 'workflow');
-  assert.equal(place.spec.workflow.loopMode, 'once');
+  assert.equal(short.kind, 'workflow');
+  assert.equal(short.workflow.loopMode, 'once');
+  assert.deepEqual(declared(short), declared(twin));
+});
+
+test('a short form with no sink wires its entry into the procedure and no plugin channel', async () => {
+  const stateOnly = fixtures.sugarStateOnly;
+
   assert.deepEqual(
-    place.spec.channels.map((channel) => channel.name),
-    ['order', 'placed'],
+    derivedChannels(stateOnly).map(([name, kind, , consumers]) => [name, kind, consumers]),
+    [['ticks', 'entry', [0]]],
   );
+  assert.deepEqual(
+    stateOnly.procedures.map((node) => node.name),
+    ['sugar_state_only'],
+  );
+  assert.equal(stateOnly.channels[0].decode(Buffer.from('tick')), 'tick', 'a codec needs no sink');
+
+  const harness = ProcedureTestHarness.of(stateOnly.procedures[0].procedure);
+  await harness.input('one');
+  assert.deepEqual(harness.currentState, { seen: ['one'] });
 });
 
-test('a sink without a name is refused by the short form name', () => {
+test('every procedure field a short form carries reaches its generated procedure', () => {
+  const codec = { encode: (value) => encodeValue(value), decode: () => ({ n: 0 }) };
+  const keyed = {
+    entities: { keys: ['a', 'b'], entitiesFor: () => ['a'] },
+    clock: 'logical',
+    mailboxCapacity: 7,
+    schemaVersion: 3,
+    minReadableSchemaVersion: 2,
+    migrateState: () => ({ n: 0 }),
+    migrateChange: () => 1,
+    initialState: () => ({ n: 0 }),
+    applyChange: (state, change) => {
+      state.n += change;
+    },
+    stateCodec: codec,
+    changeCodec: codec,
+    onTimer: () => {},
+    compensate: () => {},
+    run: upper,
+  };
+  const dynamic = {
+    dynamicEntities: { idleTtlMs: 60_000, maxEntities: 10 },
+    clock: 'event_time',
+    eventTime: () => 0n,
+    run: upper,
+  };
+
+  for (const [define, fields] of [
+    [defineWorkflow, keyed],
+    [defineOperative, dynamic],
+  ]) {
+    const node = define({ factoryId: 'fielded', sink: 'out', ...fields }).procedures[0];
+    assert.equal(node.name, 'fielded');
+    for (const [field, value] of Object.entries(fields)) {
+      assert.equal(node.procedure.definition[field], value, `${field} reached the procedure`);
+    }
+  }
+});
+
+test('a field a short form does not carry is refused under the operative, naming it and why', () => {
+  const kind = '`defineOperative` or `defineWorkflow`';
+  for (const [define, field, value, why] of [
+    [defineOperative, 'persistent', false, 'full form'],
+    [defineOperative, 'effectivelyOnce', true, 'full form'],
+    [defineOperative, 'correctionWindow', 5_000, 'full form'],
+    [defineWorkflow, 'loopMode', 'chained', 'full form'],
+    [defineWorkflow, 'retryAttempts', 3, 'full form'],
+    [defineWorkflow, 'maxDurationMs', 60_000, 'full form'],
+    [defineOperative, 'name', 'other', 'named after its `factoryId`'],
+    [defineWorkflow, 'name', 'other', 'named after its `factoryId`'],
+    [defineOperative, 'kind', 'stream', kind],
+    [defineWorkflow, 'kind', 'workflow', kind],
+  ]) {
+    const { factoryId, handler, message } = refusal(() =>
+      define({ factoryId: 'short', sink: 'out', run: upper, [field]: value }),
+    );
+    assert.deepEqual([factoryId, handler], ['short', null]);
+    assert.ok(message.includes(`\`${field}\``) && message.includes(why), message);
+  }
+});
+
+test('a short-form key or a procedure field beside a channels body is refused, naming it', () => {
+  for (const define of [defineOperative, defineWorkflow]) {
+    for (const [key, value] of [
+      ['sink', 'out'],
+      ['input', 'prices'],
+      ['codec', 'text'],
+      ['mailboxCapacity', 8],
+      ['initialState', () => ({ n: 0 })],
+      ['entities', { keys: ['a'] }],
+    ]) {
+      const { message } = refusal(() =>
+        define({ factoryId: 'full', [key]: value, channels: (c) => c.input('in').into(echo('p')) }),
+      );
+      assert.ok(message.includes(`\`${key}\``) && message.includes('full form wires'), message);
+    }
+  }
+});
+
+test('a run body beside a channels body is refused as ShortFormWithTopology', () => {
+  for (const define of [defineOperative, defineWorkflow]) {
+    const { refusals, message } = refusal(() =>
+      define({ factoryId: 'both', sink: 'out', run: upper, channels: () => {} }),
+    );
+    assert.ok(
+      refusals.includes('ShortFormWithTopology') && message.includes('ShortFormWithTopology'),
+      message,
+    );
+  }
+});
+
+test('a definition with neither body is refused, naming both', () => {
+  for (const define of [defineOperative, defineWorkflow]) {
+    const { factoryId, message } = refusal(() => define({ factoryId: 'bodiless' }));
+    assert.equal(factoryId, 'bodiless');
+    assert.ok(message.includes('`run`') && message.includes('`channels`'), message);
+  }
+});
+
+test('a definition with no factory id is refused, naming it', () => {
+  for (const factoryId of [undefined, '', '  ']) {
+    const { message } = refusal(() => defineOperative({ factoryId, sink: 'out', run: upper }));
+    assert.ok(message.includes('`factoryId`'), message);
+  }
+});
+
+test('an operative field on a procedure is refused, naming it and defineOperative', () => {
+  for (const [field, value] of [
+    ['kind', 'stream'],
+    ['sink', 'out'],
+    ['input', 'prices'],
+    ['codec', 'text'],
+  ]) {
+    const { message } = refusal(() =>
+      defineProcedure({ name: 'upcase', [field]: value, run: upper }),
+    );
+    assert.ok(message.includes(`\`${field}\``) && message.includes('`defineOperative`'), message);
+  }
+});
+
+test('a short form under a factory id already held is refused across kinds', () => {
+  const registry = new Registry();
+  registry.add(defineOperative({ factoryId: 'twice', sink: 'out', run: upper }));
   assert.throws(
-    () => defineProcedure({ kind: 'stream', sink: 'out', handle: (input) => input }),
-    (error) => error instanceof DeclarationError && error.refusals.includes('SinkWithoutId'),
+    () => registry.add(defineWorkflow({ factoryId: 'twice', sink: 'twin_sink', run: upper })),
+    (error) => error.message.startsWith('DuplicateFactoryId') && error.message.includes('twice'),
   );
 });
 
-test('a sink without a kind is refused', () => {
-  assert.throws(
-    () => defineProcedure({ name: 'upcase', sink: 'out', handle: (input) => input }),
-    (error) => error instanceof DeclarationError && error.refusals.includes('SinkWithoutKind'),
-  );
+// --- the procedure body -----------------------------------------------------
+
+test("a procedure's body is its run field", async () => {
+  const Upcase = defineProcedure({ name: 'upcase', run: upper });
+  assert.deepEqual((await ProcedureTestHarness.of(Upcase).input('abc')).emits, ['ABC']);
 });
 
-test('a short-form key without a sink is refused, naming the keys', () => {
-  assert.throws(
-    () =>
-      defineProcedure({
-        name: 'upcase',
-        kind: 'stream',
-        input: 'prices',
-        handle: (input) => input,
-      }),
-    (error) =>
-      error instanceof DeclarationError &&
-      error.refusals.includes('ShorthandKeyWithoutSink') &&
-      error.message.includes('`kind`') &&
-      error.message.includes('`input`'),
-  );
-});
-
-test('a procedure with no sink carries no operative', () => {
-  const plain = defineProcedure({ name: 'plain', handle: (input) => input });
-  assert.equal(plain.spec, undefined);
+test('a procedure carrying the old handle field is refused, naming run', () => {
+  const { message } = refusal(() => defineProcedure({ name: 'upcase', handle: upper }));
+  assert.ok(message.includes('`run`'), message);
 });

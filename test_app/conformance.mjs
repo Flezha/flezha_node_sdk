@@ -83,8 +83,7 @@ function splitHead(step) {
  * builder call, so it is read before the graph is declared.
  */
 function palette(role, mailbox) {
-  const handle = (value) => value;
-  const common = { mailboxCapacity: mailbox, handle };
+  const common = { mailboxCapacity: mailbox, run: (value) => value };
   switch (role) {
     case 'plain':
     case 'second':
@@ -309,74 +308,74 @@ function derivedOf(declaration) {
 }
 
 // ---------------------------------------------------------------------------
-// The §5 short form. Node refuses a malformed declaration where `defineProcedure`
-// runs and a duplicate factory id where the registry takes the second spec, so
-// every row this SDK can write boots for real.
+// The §5 short form. Node refuses a malformed declaration where `defineOperative`
+// or `defineWorkflow` runs and a duplicate factory id where the registry takes
+// the second spec, so every row this SDK can write boots for real.
 
-/** The `shorthand(<id>|-, <kind>|-, <sink>|-, <input>|-)` steps of a row. */
+/** The `shorthand(<id>|-, <sink>|-, <input>|-)[.noout|.topology]` steps of a row. */
 function shorthandSteps(row) {
   const parsed = [];
   for (const raw of row.steps.split(';')) {
     const step = raw.trim();
-    const noout = step.endsWith('.noout');
-    const body = noout ? step.slice(0, -'.noout'.length) : step;
-    const [verb, args] = call(body);
+    const modifier = ['noout', 'topology'].find((name) => step.endsWith(`.${name}`));
+    const [verb, args] = call(modifier ? step.slice(0, -`.${modifier}`.length) : step);
     if (verb !== 'shorthand') continue;
     const fields = String(args)
       .split(',')
       .map((field) => field.trim());
-    if (fields.length !== 4) {
-      throw new Error(`a shorthand step declares four fields: read \`${step}\``);
+    if (fields.length !== 3) {
+      throw new Error(`a shorthand step declares three fields: read \`${step}\``);
     }
     const written = (field) => (field === '-' ? undefined : field);
     parsed.push({
-      name: written(fields[0]),
-      kind: written(fields[1]),
-      sink: written(fields[2]),
-      input: written(fields[3]),
+      factoryId: written(fields[0]),
+      sink: written(fields[1]),
+      input: written(fields[2]),
+      noout: modifier === 'noout',
+      topology: modifier === 'topology',
     });
   }
   return parsed;
 }
 
-/** Declare one short form exactly as an author writes it. */
-function declareShorthand(declaration) {
-  return defineProcedure({
-    name: declaration.name,
-    kind: declaration.kind,
+/**
+ * Declare one short form exactly as an author writes it: the row's first as a
+ * stream, any later one as a workflow, so a collision crosses kinds.
+ */
+function declareShorthand(declaration, index) {
+  const define = index === 0 ? defineOperative : defineWorkflow;
+  return define({
+    factoryId: declaration.factoryId,
     sink: declaration.sink,
     input: declaration.input,
-    handle: (input) => input,
+    run: declaration.noout ? () => {} : (input) => input,
+    ...(declaration.topology ? { channels: () => {} } : {}),
   });
 }
 
-/** The leading refusal name of a message the contract requires to begin with one. */
-function refusalName(message) {
-  return message.split(':', 1)[0].trim();
+/**
+ * A refused row's verdict. The names are the error's own, never re-derived
+ * here: a `DeclarationError` carries the core's, or none for a refusal this SDK
+ * made on its own surface, and any other error is one the contract requires to
+ * begin with its name.
+ */
+function refused(row, error) {
+  const names =
+    error instanceof DeclarationError
+      ? [...error.refusals]
+      : [error.message.split(':', 1)[0].trim()];
+  return { topology: row.topology, outcome: 'refused', names, defect: error.message };
 }
 
 /** A short-form row's verdict: what declaring and registering it answered. */
 function judgeShorthand(row, declarations) {
   try {
     const registry = new Registry();
-    for (const declaration of declarations) {
-      registry.add(declareShorthand(declaration).spec);
+    for (const [index, declaration] of declarations.entries()) {
+      registry.add(declareShorthand(declaration, index));
     }
   } catch (error) {
-    if (error instanceof DeclarationError) {
-      return {
-        topology: row.topology,
-        outcome: 'refused',
-        names: [...error.refusals],
-        defect: error.message,
-      };
-    }
-    return {
-      topology: row.topology,
-      outcome: 'refused',
-      names: [refusalName(error.message)],
-      defect: error.message,
-    };
+    return refused(row, error);
   }
   return { topology: row.topology, outcome: 'accepted' };
 }
@@ -394,14 +393,7 @@ function judge(row) {
     };
   } catch (error) {
     if (!(error instanceof DeclarationError)) throw error;
-    // The names are the verdict's own, never re-derived here. A refusal this
-    // SDK made on its own surface carries none, and says so.
-    return {
-      topology: row.topology,
-      outcome: 'refused',
-      names: [...error.refusals],
-      defect: error.message,
-    };
+    return refused(row, error);
   }
 }
 

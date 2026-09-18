@@ -49,7 +49,7 @@ function fullyDeclaredStream() {
       state.seen += change.by;
     },
     compensate: () => {},
-    handle: (input, ctx) => {
+    run: (input, ctx) => {
       ctx.change({ by: 1 });
       return input;
     },
@@ -80,7 +80,7 @@ function fullyDeclaredStatic() {
   const statik = defineProcedure({
     name: 'full_static',
     entities: { keys: ['a', 'b'], entitiesFor: () => ['a'] },
-    handle: (input) => input,
+    run: (input) => input,
   });
   return defineOperative({
     factoryId: 'node_decl_static',
@@ -99,7 +99,7 @@ function fullyDeclaredWorkflow() {
     maxDurationMs: 120_000,
     wakeAfterMs: 30_000,
     syncDurability: true,
-    channels: (c) => c.input('in').into(defineProcedure({ name: 'step', handle: () => {} })),
+    channels: (c) => c.input('in').into(defineProcedure({ name: 'step', run: () => {} })),
   });
 }
 
@@ -253,9 +253,9 @@ const bytes = (value) => Buffer.from(String(value), 'utf8');
 function hybridChannel() {
   const producer = defineProcedure({
     name: 'hybrid_producer_procedure',
-    handle: (input, ctx) => ctx.emit(input),
+    run: (input, ctx) => ctx.emit(input),
   });
-  const consumer = defineProcedure({ name: 'hybrid_consumer_procedure', handle: () => {} });
+  const consumer = defineProcedure({ name: 'hybrid_consumer_procedure', run: () => {} });
   return defineOperative({
     factoryId: 'hybrid_channel',
     channels: (c) => {
@@ -267,9 +267,9 @@ function hybridChannel() {
 function commitBlockChain() {
   const commitA = defineProcedure({
     name: 'tier_commit_a',
-    handle: (input, ctx) => ctx.emit(input, { key: 'job' }),
+    run: (input, ctx) => ctx.emit(input, { key: 'job' }),
   });
-  const blockB = defineProcedure({ name: 'block_b', handle: () => {} });
+  const blockB = defineProcedure({ name: 'block_b', run: () => {} });
   return defineWorkflow({
     factoryId: 'commit_block_chain',
     channels: (c) => {
@@ -293,7 +293,7 @@ test('the structured workflow topology is the reference, channel for channel', (
 // A merge is no declaration key: each source is a chain the core reads, closed
 // by the `merge` link `flz_core::host::decl` deserializes.
 test('a merge source serialises as the core’s merge link, keyed after its mapping', () => {
-  const merged = (name) => defineProcedure({ name, dynamicEntities: {}, handle: (i) => i });
+  const merged = (name) => defineProcedure({ name, dynamicEntities: {}, run: (i) => i });
   const decl = toHostClassDecl(
     defineOperative({
       factoryId: 'node_decl_merge',

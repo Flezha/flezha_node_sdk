@@ -132,7 +132,7 @@ const checkpointClass = (factoryId, declare) =>
       c.effectivelyOnce();
       declare(c);
       c.input('input')
-        .into(defineProcedure({ name: `${factoryId}_procedure`, handle: (input) => input }))
+        .into(defineProcedure({ name: `${factoryId}_procedure`, run: (input) => input }))
         .keyed()
         .sink('sink');
     },

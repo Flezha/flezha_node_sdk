@@ -13,7 +13,7 @@ const Window = defineProcedure({
     if (change.push !== undefined) state.samples.push(change.push);
     if (change.popFront !== undefined) state.samples.splice(0, change.popFront);
   },
-  handle: (value, ctx) => {
+  run: (value, ctx) => {
     ctx.change({ push: value });
     const over = ctx.state.samples.length - 3;
     if (over > 0) ctx.change({ popFront: over });
@@ -30,7 +30,7 @@ test('a defined handler runs with no runner and no controller', async () => {
     change() {},
     now: () => 0n,
   };
-  const returned = await Window.definition.handle(3, {
+  const returned = await Window.definition.run(3, {
     ...ctx,
     state: { samples: [1, 2, 3] },
     change() {},
@@ -68,7 +68,7 @@ test('the replay gate reports both states when the fold does not rebuild one', a
       folds += 1;
       state.total += change.by * folds;
     },
-    handle: (value, ctx) => {
+    run: (value, ctx) => {
       ctx.change({ by: value });
       return undefined;
     },
@@ -93,7 +93,7 @@ test('a timer fires with ctx.now() at its scheduled time', async () => {
     applyChange: (state, change) => {
       state.closedAt = change.closedAt;
     },
-    handle: (_input, ctx) => {
+    run: (_input, ctx) => {
       ctx.timerAfter(5_000n);
     },
     onTimer: (firing, ctx) => {
@@ -112,7 +112,7 @@ test('a timer fires with ctx.now() at its scheduled time', async () => {
 });
 
 test('the clock the next input is served at can be advanced', async () => {
-  const Clocked = defineProcedure({ name: 'clocked', handle: (_i, ctx) => ctx.now() });
+  const Clocked = defineProcedure({ name: 'clocked', run: (_i, ctx) => ctx.now() });
   const harness = ProcedureTestHarness.of(Clocked, { now: 10n });
   assert.deepEqual((await harness.input(1)).emits, [10n]);
   harness.advanceBy(5n);
@@ -143,7 +143,7 @@ test('a payload stamped at an older version reaches the declared migration', () 
     applyChange: (state, change) => {
       state.items += change.by;
     },
-    handle: () => undefined,
+    run: () => undefined,
   });
   const harness = ProcedureTestHarness.withPayload(Migrating, {
     snapshot: new Uint8Array([1, 2, 3]),
@@ -156,7 +156,7 @@ test('stableId is distinct within an invocation and stable across a replay', asy
   const seen = [];
   const Ids = defineProcedure({
     name: 'ids',
-    handle: (_input, ctx) => {
+    run: (_input, ctx) => {
       seen.push(ctx.stableId(), ctx.stableId());
     },
   });
@@ -171,7 +171,7 @@ test('stableId is distinct within an invocation and stable across a replay', asy
 test('a reserved metadata key is refused naming the key', async () => {
   const Meta = defineProcedure({
     name: 'meta',
-    handle: (_input, ctx) => {
+    run: (_input, ctx) => {
       ctx.emit('v', { metadata: { 'flz.key': 'mine' } });
     },
   });
@@ -186,7 +186,7 @@ test('a string and an object output are reported exactly as emitted', async () =
   // string rather than the bytes a plugin would receive.
   const Emitter = defineProcedure({
     name: 'emitter',
-    handle: (input, ctx) => {
+    run: (input, ctx) => {
       ctx.emit({ said: input });
       return `echo: ${input}`;
     },
@@ -198,7 +198,7 @@ test('a string and an object output are reported exactly as emitted', async () =
 test('a spawn answers a handle already resolved to a new instance', async () => {
   const Spawner = defineProcedure({
     name: 'spawner',
-    handle: async (input, ctx) => [
+    run: async (input, ctx) => [
       ctx.spawnWorkflow('worker', input).tryResult(),
       ctx.spawnWorkflow('worker', input).tryResult(),
       await ctx.spawnWorkflow('worker', input, { id: 'w1' }).wait(),

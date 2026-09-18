@@ -48,16 +48,16 @@ export function spawnBridge(
 }
 
 /**
- * Run `handle(input, ctx)` as a procedure on one input, `'p'`, under activation
+ * Run `body(input, ctx)` as a procedure's `run` on one input, `'p'`, under activation
  * token 7 with `bridge` for its spawns; answers that input's effect.
  */
-export async function handleOnce(bridge, handle, item = {}) {
+export async function handleOnce(bridge, body, item = {}) {
   const spec = defineOperative({
     factoryId: 'once',
     channels: (c) =>
       c
         .input('in')
-        .into(defineProcedure({ name: 'once', handle }))
+        .into(defineProcedure({ name: 'once', run: body }))
         .sink('out'),
   });
   const work = activationFor('once')({ token: 7n, items: [inputItem('p', item)] });

@@ -67,7 +67,7 @@ const Ohlc = defineProcedure({
   applyChange: (state, change: { close: number }) => {
     state.close = change.close;
   },
-  handle: (trade: Trade, ctx) => {
+  run: (trade: Trade, ctx) => {
     ctx.change({ close: trade.price });
     return { symbol: trade.symbol, close: ctx.state.close };
   },

@@ -8,7 +8,7 @@
 
 import { BroadcastChannel } from 'node:worker_threads';
 
-import { defineOperative, defineProcedure } from '@flezha/sdk';
+import { defineOperative, defineProcedure, defineWorkflow } from '@flezha/sdk';
 
 import { prefix } from './fixture_support.mjs';
 
@@ -19,7 +19,7 @@ export * from './fixtures_state.mjs';
 
 const DoNothing = defineProcedure({
   name: 'do_nothing_procedure',
-  handle: (input) => input,
+  run: (input) => input,
 });
 
 export const doNothing = defineOperative({
@@ -46,7 +46,7 @@ export const benchEcho = defineOperative({
 const CompareFilter = defineProcedure({
   name: 'compare_filter_procedure',
   initialState: () => ({ comparable: 'default', inverted: false }),
-  handle: (input, ctx) => (ctx.state.comparable === input ? input : undefined),
+  run: (input, ctx) => (ctx.state.comparable === input ? input : undefined),
 });
 
 export const compareFilter = defineOperative({
@@ -72,14 +72,14 @@ const staticEntry = (name) =>
     applyChange: (state, change) => {
       state.seen.push(change.push);
     },
-    handle: (input, ctx) => {
+    run: (input, ctx) => {
       ctx.change({ push: input });
       return input;
     },
   });
 
 const passThrough = (name, options = {}) =>
-  defineProcedure({ name, ...options, handle: (input) => input });
+  defineProcedure({ name, ...options, run: (input) => input });
 
 const StaticEntry = staticEntry('static_entry_procedure');
 const StaticDownstream = passThrough('static_downstream_procedure');
@@ -126,49 +126,59 @@ export const mixedOperative = defineOperative({
 
 // -- the §5 short forms -----------------------------------------------------
 //
-// One declaration each: the `sink` makes the procedure a whole operative of its
-// `kind`, and `specsFrom` registers the spec it carries. No hand-written
-// operative stands beside them.
+// One operative declaration each, carrying its procedure's `run` body in place
+// of a `channels` body; the function's name is its kind. No procedure is
+// declared beside them.
 
-export const sugarDoNothing = defineProcedure({
-  name: 'sugar_do_nothing',
-  kind: 'stream',
+export const sugarDoNothing = defineOperative({
+  factoryId: 'sugar_do_nothing',
   sink: 'sugar_do_nothing_echo',
   codec: 'text',
-  handle: (input) => input,
+  run: (input) => input,
 });
 
-export const sugarStoreInput = defineProcedure({
-  name: 'sugar_store_input',
-  kind: 'stream',
+export const sugarStoreInput = defineOperative({
+  factoryId: 'sugar_store_input',
   sink: 'sugar_store_sink',
   codec: 'text',
   initialState: () => ({ text_inputs: [] }),
   applyChange: (state, change) => {
     state.text_inputs.push(change.push);
   },
-  handle: (input, ctx) => {
+  run: (input, ctx) => {
     ctx.change({ push: input });
     return input;
   },
 });
 
-export const sugarNamedInput = defineProcedure({
-  name: 'sugar_named_input',
-  kind: 'stream',
+export const sugarNamedInput = defineOperative({
+  factoryId: 'sugar_named_input',
   sink: 'sugar_named_input_sink',
   input: 'prices',
   codec: 'text',
-  handle: (input) => input,
+  run: (input) => input,
 });
 
-export const sugarWorkflow = defineProcedure({
-  name: 'sugar_workflow',
-  kind: 'workflow',
+export const sugarWorkflow = defineWorkflow({
+  factoryId: 'sugar_workflow',
   sink: 'sugar_workflow_placed',
   input: 'order',
   codec: 'text',
-  handle: (input) => input,
+  run: (input) => input,
+});
+
+// No sink: the entry feeds a procedure that only keeps state.
+export const sugarStateOnly = defineOperative({
+  factoryId: 'sugar_state_only',
+  input: 'ticks',
+  codec: 'text',
+  initialState: () => ({ seen: [] }),
+  applyChange: (state, change) => {
+    state.seen.push(change.push);
+  },
+  run: (input, ctx) => {
+    ctx.change({ push: input });
+  },
 });
 
 // -- hybrid_channel ---------------------------------------------------------
@@ -182,7 +192,7 @@ const HYBRID_SENTINEL = 0xdeadbeef;
 
 const HybridProducer = defineProcedure({
   name: 'hybrid_producer_procedure',
-  handle: (input, ctx) => {
+  run: (input, ctx) => {
     const parsed = Number.parseInt(String(input), 10);
     const value = Number.isSafeInteger(parsed) && parsed >= 0 && parsed <= 0xffffffff ? parsed : 0;
     try {
@@ -195,7 +205,7 @@ const HybridProducer = defineProcedure({
 
 const HybridConsumer = defineProcedure({
   name: 'hybrid_consumer_procedure',
-  handle: (input) => {
+  run: (input) => {
     console.log(`hybrid_consumer_procedure: received ${input}`);
   },
 });
@@ -233,7 +243,7 @@ const tagged = (source) => (payload) => ({ source, symbol: prefix(payload), payl
 const MergeLabel = defineProcedure({
   name: 'merge_label_procedure',
   dynamicEntities: {},
-  handle: (input) => `${input.source}:${input.payload}`,
+  run: (input) => `${input.source}:${input.payload}`,
 });
 
 export const mergedInput = defineOperative({
@@ -278,7 +288,7 @@ const stress = (name, entitiesFor) =>
   defineProcedure({
     name,
     entities: { keys: STRESS_KEYS, entitiesFor },
-    handle: (input) => input,
+    run: (input) => input,
   });
 
 const StressA = stress('stress_a', () => STRESS_KEYS);
@@ -307,7 +317,7 @@ let antidoteTaken = false;
 
 const PoisonProbe = defineProcedure({
   name: 'poison_probe_procedure',
-  handle: (input) => {
+  run: (input) => {
     if (input === 'antidote') antidoteTaken = true;
     if (input === 'poison' && !antidoteTaken) throw new Error('poison payload');
     return `ok:${input}`;
@@ -325,7 +335,7 @@ let wedgeAborted = false;
 
 const WedgeProbe = defineProcedure({
   name: 'wedge_probe_procedure',
-  handle: async (input) => {
+  run: async (input) => {
     // Holds the dispatch loop forever: the runner stays connected and
     // heartbeating while its dispatch counter freezes — the wedge signature.
     // Synchronous on purpose; an await would free the loop, which is the whole
@@ -367,7 +377,7 @@ const Candle = defineProcedure({
   applyChange: (state, change) => {
     state.folded.push(change.fold);
   },
-  handle: (input, ctx) => {
+  run: (input, ctx) => {
     // `ctx.now()` IS the extracted event time under an event-time clock.
     const eventTime = Number(ctx.now());
     ctx.change({ fold: eventTime });
@@ -400,7 +410,7 @@ const SessionTimeout = defineProcedure({
     if ('touched' in change) state.touched.push(change.touched);
     else state.closed_at.push(change.closed);
   },
-  handle: (input, ctx) => {
+  run: (input, ctx) => {
     ctx.change({ touched: input });
     // A processing-time timer, because the answer to "nothing has arrived"
     // cannot be an event-time one: nothing would advance the clock.
@@ -430,7 +440,7 @@ const boundedMailboxProcedure = (name) =>
     applyChange: (state) => {
       state.processed += 1;
     },
-    handle: (input, ctx) => {
+    run: (input, ctx) => {
       ctx.change({ processed: true });
       return input;
     },
@@ -466,7 +476,7 @@ const PartitionRelay = defineProcedure({
   applyChange: (state, change) => {
     state.seen.push(change.push);
   },
-  handle: (input, ctx) => {
+  run: (input, ctx) => {
     ctx.change({ push: input });
     ctx.emit(input, { key: prefix(input) });
   },
@@ -490,7 +500,7 @@ const DynamicEntity = defineProcedure({
   applyChange: (state, change) => {
     state.seen.push(change.push);
   },
-  handle: (input, ctx) => {
+  run: (input, ctx) => {
     ctx.change({ push: input });
     return input;
   },

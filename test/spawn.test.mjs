@@ -30,9 +30,9 @@ const caught = (read) => {
   }
 };
 
-/** Run `handle` on one input and require the input to have been handled cleanly. */
-async function handled(bridge, handle, item) {
-  const effect = await handleOnce(bridge, handle, item);
+/** Run `body` on one input and require the input to have been handled cleanly. */
+async function handled(bridge, body, item) {
+  const effect = await handleOnce(bridge, body, item);
   assert.equal(effect.verdict, 'ok', effect.message);
   return effect;
 }

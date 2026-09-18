@@ -12,7 +12,7 @@ const Counter = defineProcedure({
     if (change.kind === 'add') state.total += change.by;
     if (change.kind === 'tag') state.tags.last = change.value;
   },
-  handle: (input, ctx) => {
+  run: (input, ctx) => {
     ctx.change({ kind: 'add', by: input });
     return ctx.state.total;
   },
@@ -32,7 +32,7 @@ test('a direct assignment is refused naming the field and the change path', asyn
     applyChange: (state, change) => {
       state.total += change.by;
     },
-    handle: (_input, ctx) => {
+    run: (_input, ctx) => {
       ctx.state.total = 99;
     },
   });
@@ -53,7 +53,7 @@ test('the guard reaches a nested field, where the loss is the same', async () =>
     applyChange: (state, change) => {
       state.tags.last = change.value;
     },
-    handle: (_input, ctx) => {
+    run: (_input, ctx) => {
       ctx.state.tags.last = 'x';
     },
   });
@@ -78,7 +78,7 @@ test('deleting a field is refused too', async () => {
     applyChange: (state, change) => {
       state.total += change.by;
     },
-    handle: (_input, ctx) => {
+    run: (_input, ctx) => {
       delete ctx.state.total;
     },
   });

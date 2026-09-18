@@ -21,7 +21,7 @@ const bytes = (text) => Buffer.from(text, 'utf8');
 /** One line into its words: the hop to `Tally` is the runtime's job. */
 const Split = defineProcedure({
   name: 'split',
-  handle: (line, ctx) => {
+  run: (line, ctx) => {
     for (const word of line.split(/\s+/).filter(Boolean)) {
       ctx.emit(word.toLowerCase());
     }
@@ -36,7 +36,7 @@ const Tally = defineProcedure({
   applyChange: (state, change) => {
     state.seen = change.seen;
   },
-  handle: (word, ctx) => {
+  run: (word, ctx) => {
     const seen = ctx.state.seen + 1;
     ctx.change({ seen });
     ctx.emit(`${word} ${seen}`);
@@ -145,7 +145,7 @@ test('a channel the class does not declare is refused by name', async () => {
 /** Reads the map an undeclared entry decodes, and emits a string and a map. */
 const Defaults = defineProcedure({
   name: 'defaults',
-  handle: (value, ctx) => {
+  run: (value, ctx) => {
     ctx.emit(`a is ${value.a}`);
     ctx.emit({ a: value.a });
   },
@@ -174,7 +174,7 @@ test('an undeclared entry reads JSON and an undeclared sink follows the value', 
 test('a spawn with no controller anywhere is unavailable, from either read', async () => {
   const Spawner = defineProcedure({
     name: 'spawner',
-    handle: async (input, ctx) => {
+    run: async (input, ctx) => {
       let tried;
       try {
         ctx.spawnWorkflow('worker', input).tryResult();

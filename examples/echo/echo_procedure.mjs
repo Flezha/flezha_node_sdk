@@ -2,7 +2,7 @@ import { defineProcedure } from '@flezha/sdk';
 
 /**
  * A processing stage of the operative's graph, run once per message. This one
- * prefixes the input, and what the handler returns is emitted.
+ * prefixes the input, and what `run` returns is emitted.
  *
  * `name` is the procedure's stable identity. State is filed under it, so
  * renaming it later declares a different procedure rather than renaming this
@@ -14,5 +14,5 @@ import { defineProcedure } from '@flezha/sdk';
  */
 export const EchoProcedure = defineProcedure({
   name: 'echo',
-  handle: (input) => `echo: ${input}`,
+  run: (input) => `echo: ${input}`,
 });

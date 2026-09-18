@@ -26,7 +26,7 @@ test('an ambient clock read names the file, the line and the replacement', async
   try {
     const Ambient = defineProcedure({
       name: 'ambient_clock',
-      handle: () => {
+      run: () => {
         Date.now();
         return undefined;
       },
@@ -48,7 +48,7 @@ test('new Date() with no argument is reported, and with one is not', async () =>
   try {
     const Mixed = defineProcedure({
       name: 'mixed_clock',
-      handle: (_input, ctx) => {
+      run: (_input, ctx) => {
         const derived = new Date(Number(ctx.now()));
         assert.ok(derived instanceof Date);
         new Date();
@@ -68,7 +68,7 @@ test('random identifiers are reported and the invocation still completes', async
   try {
     const Random = defineProcedure({
       name: 'random_id',
-      handle: () => {
+      run: () => {
         Math.random();
         globalThis.crypto.randomUUID();
         return 'finished';
@@ -90,7 +90,7 @@ test('one site reports once, however hot the loop', async () => {
   try {
     const Hot = defineProcedure({
       name: 'hot_loop',
-      handle: () => {
+      run: () => {
         for (let i = 0; i < 50; i += 1) Math.random();
         return undefined;
       },

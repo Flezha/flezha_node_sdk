@@ -64,7 +64,7 @@ const durableStep = (name, { change, emit, compensate, gate } = {}) =>
     name,
     initialState: () => ({ items: [] }),
     applyChange: (state, recorded) => insertSorted(state.items, recorded.insert),
-    handle: async (input, ctx) => {
+    run: async (input, ctx) => {
       // A gated step waits BEFORE its change and its emit, so the kill window
       // always finds it as the uncommitted producer while its sibling arm has
       // committed.
@@ -82,7 +82,7 @@ const durableStep = (name, { change, emit, compensate, gate } = {}) =>
  * The reference's `stateless_step!` (workflow.rs:113-140): no state, no
  * change, the whole behaviour is the handler.
  */
-const statelessStep = (name, handle) => defineProcedure({ name, handle });
+const statelessStep = (name, run) => defineProcedure({ name, run });
 
 /** A terminal step that always fails, which is how a saga is made to unwind. */
 const failingStep = (name) =>
@@ -412,8 +412,8 @@ const recordTurn = durableStep('chat_turn', {
 
 const ChatTurn = defineProcedure({
   ...recordTurn,
-  handle: (input, ctx) => {
-    if (input !== CLOSING_TURN) return recordTurn.handle(input, ctx);
+  run: (input, ctx) => {
+    if (input !== CLOSING_TURN) return recordTurn.run(input, ctx);
     ctx.emit(input);
     ctx.complete(String(ctx.state.items.length));
   },
@@ -428,7 +428,7 @@ const ChatReplyUndoable = defineProcedure({
     if (change.said === undefined) state.said.pop();
     else state.said.push(change.said);
   },
-  handle: (input, ctx) => {
+  run: (input, ctx) => {
     ctx.change({ said: input });
     ctx.emit(`reply:${input}`);
   },
@@ -468,7 +468,7 @@ export const statelessLoopWorkflow = defineWorkflow({
 
 const SpawnRequester = defineProcedure({
   name: 'spawn_requester',
-  handle: async (input, ctx) => {
+  run: async (input, ctx) => {
     const factory = statelessLoopWorkflow.factoryId;
     const handles = [
       ['unnamed', ctx.spawnWorkflow(factory, input)],
@@ -549,7 +549,7 @@ const BenchTurn = defineProcedure({
     state.turns += 1;
     state.last = seen.turn;
   },
-  handle: (input, ctx) => {
+  run: (input, ctx) => {
     ctx.change({ turn: input });
     ctx.emit(input);
   },

@@ -28,6 +28,7 @@ import {
   type Procedure,
   type ProcedureDefinition,
   type RoutedDocument,
+  type ShortFormDefinition,
   type Stream,
   type WorkflowDefinition,
 } from './types.js';
@@ -144,20 +145,39 @@ export interface ClassSpec {
 /**
  * Define a procedure.
  *
- * The declaration's own shape carries the inference: the handler's first
- * parameter is the input type, its return type the output. A handler that
- * emits through the context returns nothing, and names its output type through
- * the definition's type arguments.
+ * The declaration's own shape carries the inference: the body's first
+ * parameter is the input type, its return type the output. A body that emits
+ * through the context returns nothing, and names its output type through the
+ * definition's type arguments.
  */
 export function defineProcedure<TIn, TOut = never, TState = void, TChange = never>(
   definition: ProcedureDefinition<TIn, TOut, TState, TChange>,
 ): Procedure<TIn, TOut, TState, TChange> {
-  refuseShortForm(definition);
+  const operativeFields = written(definition, ['kind', ...SHORT_FORM_KEYS]);
+  if (operativeFields) {
+    throw new DeclarationError(
+      '<procedure>',
+      definition.name ?? null,
+      `declares ${operativeFields}, which a procedure does not carry; the short form is declared ` +
+        'with `defineOperative` or `defineWorkflow`, whose name is its kind',
+    );
+  }
   if (!definition.name || !definition.name.trim()) {
     throw new DeclarationError('<procedure>', null, 'a procedure declares a non-empty name');
   }
-  if (typeof definition.handle !== 'function') {
-    throw new DeclarationError('<procedure>', definition.name, 'a procedure declares a handler');
+  if ((definition as { handle?: unknown }).handle !== undefined) {
+    throw new DeclarationError(
+      '<procedure>',
+      definition.name,
+      "declares `handle`; a procedure's body is named `run`",
+    );
+  }
+  if (typeof definition.run !== 'function') {
+    throw new DeclarationError(
+      '<procedure>',
+      definition.name,
+      'a procedure declares its body, `run`',
+    );
   }
   // State without a fold is legitimate: a value seeded at start and read but
   // never mutated has nothing to journal, and `ctx.change` already refuses at
@@ -188,82 +208,167 @@ export function defineProcedure<TIn, TOut = never, TState = void, TChange = neve
   if (definition.initialState && !definition.stateCodec) {
     assertRepresentable(`${definition.name}.state`, definition.initialState(undefined));
   }
-  const procedure = {
+  return {
     definition,
     name: definition.name,
   } as Procedure<TIn, TOut, TState, TChange>;
-  if (definition.sink !== undefined) {
-    // Built here, not at registration: a malformed short form is refused while
-    // the module loads, as a `dup_node` graph already is.
-    (procedure as { spec?: ClassSpec }).spec = shortFormSpec(definition, procedure);
-  }
-  return procedure;
+}
+
+type ShortForm = ShortFormDefinition<unknown, unknown, unknown, unknown>;
+
+/** The short form's own keys, which a full form wires in `channels` instead. */
+const SHORT_FORM_KEYS = ['sink', 'input', 'codec'] as const satisfies readonly (keyof ShortForm)[];
+
+/**
+ * A procedure definition's fields but its `name`, which a short form writes as
+ * `factoryId`, and `run`, which is what makes one. Keyed by the type, so a
+ * field the procedure definition gains is listed here or does not compile.
+ */
+const PROCEDURE_FIELDS = Object.keys({
+  entities: true,
+  dynamicEntities: true,
+  clock: true,
+  eventTime: true,
+  mailboxCapacity: true,
+  schemaVersion: true,
+  minReadableSchemaVersion: true,
+  migrateState: true,
+  migrateChange: true,
+  initialState: true,
+  applyChange: true,
+  stateCodec: true,
+  changeCodec: true,
+  onTimer: true,
+  compensate: true,
+} satisfies Record<
+  Exclude<keyof ProcedureDefinition<unknown, unknown, unknown, unknown>, 'name' | 'run'>,
+  true
+>);
+
+/**
+ * The full form's class-level settings: a workflow definition's options and the
+ * builder calls that set one on the class. The short form keeps each at its
+ * default.
+ */
+const CLASS_SETTINGS = [
+  'persistent',
+  'loopMode',
+  'rollbackMode',
+  'retryAttempts',
+  'retryBackoffMs',
+  'barrierRetryAttempts',
+  'maxDurationMs',
+  'wakeAfterMs',
+  'syncDurability',
+  'effectivelyOnce',
+  'checkpointAck',
+  'checkpointEvery',
+  'outputsAtCheckpoint',
+  'correctionWindow',
+  'beyondWindowPolicy',
+  'compactAfterBytes',
+] as const satisfies readonly (keyof WorkflowDefinition | keyof ChannelBuilder)[];
+
+/** The keys among `keys` a definition writes, quoted as a refusal names them, or `''`. */
+function written(definition: object, keys: readonly string[]): string {
+  const present = keys.filter((key) => (definition as Record<string, unknown>)[key] !== undefined);
+  return present.length === 0 ? '' : `\`${present.join('`, `')}\``;
 }
 
 /**
- * Every rule about what a `sink` needs and what needs a `sink`. Each refusal
- * carries the contract's name (`authoring_contract.md` §5.2) in `refusals` and
- * at the start of the message.
- *
- * `SinkWithoutOutput` is not among them: a `.mjs` author runs no type checker
- * and the SDK ships no build step, so a handler that returns nothing cannot be
- * seen here. The Node manifest does not list `shorthand_typed_output` and the
- * row skips by name.
+ * A definition as `defineOperative` and `defineWorkflow` read it: the full
+ * form's fields with `channels` optional, which a short form also is, since
+ * it carries `run` in place of `channels` and writes no class-level setting.
  */
-function refuseShortForm<TIn, TOut, TState, TChange>(
-  definition: ProcedureDefinition<TIn, TOut, TState, TChange>,
-): void {
-  if (definition.sink === undefined) {
-    const keys = (['kind', 'input', 'codec'] as const).filter(
-      (key) => definition[key] !== undefined,
+type EitherForm<D extends OperativeDefinition | WorkflowDefinition> = Omit<D, 'channels'> &
+  Partial<Pick<D, 'channels'>>;
+
+/**
+ * The channels body a definition wires: its own `channels`, or, for a §5 short
+ * form carrying one procedure's `run` body in their place, the body a
+ * hand-written single-procedure operative carries. `ShortFormWithTopology` is
+ * the one contract refusal (`authoring_contract.md` §5.2) raised here, and it
+ * carries its name in `refusals` and at the start of the message.
+ *
+ * `SinkWithoutOutput` is not raised: a `.mjs` author runs no type checker and
+ * the SDK ships no build step, so a body that returns nothing cannot be seen
+ * here. The Node manifest does not list `shorthand_typed_output` and the row
+ * skips by name.
+ */
+function channelsOf(
+  definition: EitherForm<OperativeDefinition | WorkflowDefinition>,
+): (builder: Builder) => void {
+  if (typeof definition.factoryId !== 'string' || !definition.factoryId.trim()) {
+    throw new DeclarationError(
+      '<operative>',
+      null,
+      'an operative declares a non-empty `factoryId`',
     );
-    if (keys.length > 0) {
+  }
+  const { channels } = definition;
+  const { run } = definition as { run?: unknown };
+  if (run !== undefined && channels !== undefined) {
+    throw new DeclarationError(
+      definition.factoryId,
+      null,
+      'ShortFormWithTopology: declares both `run` and `channels`; a short form carries its one ' +
+        "procedure's body in place of a topology body",
+      ['ShortFormWithTopology'],
+    );
+  }
+  if (run === undefined) {
+    if (typeof channels !== 'function') {
       throw new DeclarationError(
-        '<procedure>',
-        definition.name ?? null,
-        `ShorthandKeyWithoutSink: \`${keys.join('`, `')}\` name(s) of the operative a \`sink\` ` +
-          'generates; this procedure declares no `sink`, so there is nothing for them to describe',
-        ['ShorthandKeyWithoutSink'],
+        definition.factoryId,
+        null,
+        'declares no body; an operative wires its procedures in `channels`, or carries one ' +
+          "procedure's `run` body as the short form",
       );
     }
-    return;
+    const keys = written(definition, [...SHORT_FORM_KEYS, ...PROCEDURE_FIELDS]);
+    if (keys) {
+      throw new DeclarationError(
+        definition.factoryId,
+        null,
+        `declares ${keys} beside \`channels\`; a full form wires its entry channels, codecs ` +
+          "and sinks in `channels` itself, and declares each procedure's fields on its " +
+          '`defineProcedure`',
+      );
+    }
+    return channels;
   }
-  if (!definition.name || !definition.name.trim()) {
+  if (written(definition, ['kind'])) {
     throw new DeclarationError(
-      '<procedure>',
+      definition.factoryId,
       null,
-      'SinkWithoutId: a `sink` makes this procedure a whole operative, whose factory id is an ' +
-        'address an operator types; write it as `name`',
-      ['SinkWithoutId'],
+      'declares `kind` on a short form; the kind is the name of the function that declares it ' +
+        '(`defineOperative` or `defineWorkflow`), not a field',
     );
   }
-  if (definition.kind !== 'stream' && definition.kind !== 'workflow') {
+  if (written(definition, ['name'])) {
     throw new DeclarationError(
-      '<procedure>',
-      definition.name,
-      "SinkWithoutKind: a `sink` makes this procedure a whole operative; write `kind: 'stream'` " +
-        "or `kind: 'workflow'`",
-      ['SinkWithoutKind'],
+      definition.factoryId,
+      null,
+      "declares `name` on a short form; a short form's procedure is named after its `factoryId`",
     );
   }
-}
-
-/** The operative a short form generates, on the same builder path a full form uses. */
-function shortFormSpec<TIn, TOut, TState, TChange>(
-  definition: ProcedureDefinition<TIn, TOut, TState, TChange>,
-  procedure: Procedure<TIn, TOut, TState, TChange>,
-): ClassSpec {
-  const entry = definition.input ?? 'input';
-  const sink = definition.sink as string;
-  const channels = (c: ChannelBuilder): void => {
-    const stream = definition.codec
-      ? c.input(entry, { codec: definition.codec } as { codec: 'json' })
-      : c.input(entry);
-    stream.into(procedure as unknown as Procedure<unknown, unknown>).sink(sink);
+  const settings = written(definition, CLASS_SETTINGS);
+  if (settings) {
+    throw new DeclarationError(
+      definition.factoryId,
+      null,
+      `declares ${settings} on a short form; a class-level setting is the full form's, and the ` +
+        'short form keeps every one at its default',
+    );
+  }
+  const { factoryId, sink, input = 'input', codec, ...procedure } = definition as ShortForm;
+  // Named after the factory id, verbatim: the name is a component of every
+  // entity's state path, so growing into the full form keeps the state.
+  const node = defineProcedure({ ...procedure, name: factoryId });
+  return (builder) => {
+    const output = builder.input(input, codec === undefined ? undefined : { codec }).into(node);
+    if (sink !== undefined) output.sink(sink);
   };
-  return definition.kind === 'workflow'
-    ? defineWorkflow({ factoryId: definition.name, channels })
-    : defineOperative({ factoryId: definition.name, channels });
 }
 
 /** One procedure for every router, so two unnamed routers are one node. */
@@ -747,15 +852,22 @@ function applyPending(channel: ChannelSpec, pending: PendingEdge): void {
   if (pending.keyed) channel.keyed = true;
 }
 
-function buildGraph(factoryId: string, channels: OperativeDefinition['channels']): Builder {
-  const builder = new Builder(factoryId);
-  channels(builder);
+function buildGraph(definition: EitherForm<OperativeDefinition | WorkflowDefinition>): Builder {
+  const builder = new Builder(definition.factoryId);
+  channelsOf(definition)(builder);
   return builder;
 }
 
-/** Define a stream operative from its channels graph. */
-export function defineOperative(definition: OperativeDefinition): ClassSpec {
-  const builder = buildGraph(definition.factoryId, definition.channels);
+/**
+ * Define a stream operative from its channels graph, or, as the §5 short form,
+ * from one procedure's fields and `run` body.
+ */
+export function defineOperative(definition: OperativeDefinition): ClassSpec;
+export function defineOperative<TIn, TOut = never, TState = void, TChange = never>(
+  definition: ShortFormDefinition<TIn, TOut, TState, TChange>,
+): ClassSpec;
+export function defineOperative(definition: EitherForm<OperativeDefinition>): ClassSpec {
+  const builder = buildGraph(definition);
   return {
     factoryId: definition.factoryId,
     kind: 'stream',
@@ -774,16 +886,17 @@ export function defineOperative(definition: OperativeDefinition): ClassSpec {
   };
 }
 
-/** Define a workflow operative from the procedures its channels graph wires. */
-export function defineWorkflow(definition: WorkflowDefinition): ClassSpec {
-  if (typeof definition.channels !== 'function') {
-    throw new DeclarationError(
-      definition.factoryId,
-      null,
-      'declares no channels; a workflow runs procedures, wired in `channels`',
-    );
-  }
-  const builder = buildGraph(definition.factoryId, definition.channels);
+/**
+ * Define a workflow operative from the procedures its channels graph wires,
+ * or, as the §5 short form, a `once` workflow from one procedure's fields and
+ * `run` body.
+ */
+export function defineWorkflow(definition: WorkflowDefinition): ClassSpec;
+export function defineWorkflow<TIn, TOut = never, TState = void, TChange = never>(
+  definition: ShortFormDefinition<TIn, TOut, TState, TChange>,
+): ClassSpec;
+export function defineWorkflow(definition: EitherForm<WorkflowDefinition>): ClassSpec {
+  const builder = buildGraph(definition);
   return {
     factoryId: definition.factoryId,
     kind: 'workflow',
