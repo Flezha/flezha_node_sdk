@@ -69,6 +69,5 @@ export type {
   Stream,
   TimerFiring,
   TimerKind,
-  WorkflowCtx,
   WorkflowDefinition,
 } from './types.js';

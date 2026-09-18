@@ -359,32 +359,33 @@ test('two channels naming one sink is refused as a duplicate sink name', () => {
   );
 });
 
-test('a workflow declaring both a body and a graph is refused', () => {
+test('a workflow declaring no channels is refused, naming them', () => {
   assert.throws(
-    () =>
-      defineWorkflow({
-        factoryId: 'both',
-        run: async () => undefined,
-        channels: (c) => c.input('in').into(echo('p')),
-      }),
-    (error) => /one or the other/.test(error.message),
+    () => defineWorkflow({ factoryId: 'bodiless' }),
+    (error) =>
+      error instanceof DeclarationError &&
+      error.factoryId === 'bodiless' &&
+      /declares no channels/.test(error.message),
   );
 });
 
-test('a run-sugar workflow declares its lifecycle knobs', () => {
+test('a workflow declares its lifecycle knobs beside its procedures', () => {
   const spec = defineWorkflow({
     factoryId: 'saga',
     loopMode: 'chained',
     rollbackMode: 'keep_progress',
     maxDurationMs: 60_000,
-    run: async (_args, ctx) => ctx.complete('done'),
+    channels: (c) => c.input('in').into(echo('p')),
   });
   validate(spec);
   const decl = toHostClassDecl(spec);
   assert.equal(decl.workflow.loop_mode, 'chained');
   assert.equal(decl.workflow.rollback_mode, 'keep_progress');
   assert.equal(decl.workflow.max_duration_ms, 60_000);
-  assert.deepEqual(decl.procedures, []);
+  assert.deepEqual(
+    decl.procedures.map((p) => p.name),
+    ['p'],
+  );
 });
 
 test('state read but never folded is allowed; recording a change is not', async () => {

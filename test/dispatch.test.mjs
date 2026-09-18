@@ -733,6 +733,41 @@ test('a workflow consumer applies its own edge exactly once, at delivery', async
   assert.deepEqual(await delivered(WorkflowSpec, 2, released), [10]);
 });
 
+// `ctx.complete` rides the item's effect on either kind: which kind runs the
+// procedure is the core's to judge, so the effect is built the same way.
+
+/** Completes with `first` and then with its input, except on `stay`; echoes every input. */
+const Completing = defineProcedure({
+  name: 'completing',
+  handle: (input, ctx) => {
+    if (input === 'stay') return input;
+    ctx.complete('first');
+    ctx.complete(input);
+    return input;
+  },
+});
+
+const completingGraph = (c) => c.input('in').into(Completing).sink('out');
+
+for (const [kind, define] of [
+  ['workflow', defineWorkflow],
+  ['stream', defineOperative],
+]) {
+  test(`a ${kind} procedure's complete rides its effect, the last call winning`, async () => {
+    const spec = define({ factoryId: `complete_${kind}`, channels: completingGraph });
+    const { effects } = await answer(
+      activationFor(spec.factoryId)({ items: [inputItem('bye'), inputItem('stay')] }),
+      depsFor(spec),
+    );
+    assert.deepEqual(
+      effects.map((effect) => effect.verdict),
+      ['ok', 'ok'],
+    );
+    assert.deepEqual(effects[0].complete, Buffer.from('bye'), 'text rides as UTF-8');
+    assert.equal(effects[1].complete, undefined, 'an item that never completes carries none');
+  });
+}
+
 // An entry naming no codec reads JSON, so plain text fails its decode: the
 // item rides the retry ladder and the handler is never handed it.
 test('plain text into an entry naming no codec never reaches the handler', async () => {

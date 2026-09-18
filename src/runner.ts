@@ -16,13 +16,12 @@ import { Admin } from './admin.js';
 import { envPositive } from './env.js';
 import { toHostClassDecl, validate } from './graph.js';
 import { installDeterminismWarnings, uninstallDeterminismWarnings } from './determinism.js';
-import { Registry, dispatch, dispatchDeps, type WorkflowSession } from './dispatch.js';
+import { Registry, dispatch, dispatchDeps } from './dispatch.js';
 import { consoleLogger, levelFromNative, log, setLogger, type Logger } from './logger.js';
 import { loadNative, type Native } from './native.js';
 import { LoopWatch } from './loop-watch.js';
 import { importSpecifier } from './runtime-shim.js';
 import { WorkerPool } from './workers.js';
-import { encodeValue, decodeValue } from './codec.js';
 
 /**
  * The activation schema this package was built against. Passed at context
@@ -30,9 +29,6 @@ import { encodeValue, decodeValue } from './codec.js';
  * naming both versions before any controller connection is attempted.
  */
 export const ACTIVATION_SCHEMA_VERSION = 3;
-
-/** How long a workflow body's `recv` parks when the caller names no timeout. */
-const DEFAULT_RECV_TIMEOUT_MS = 1_000;
 
 /**
  * How long a drain has after end of file on standard input before the process
@@ -101,38 +97,6 @@ export async function loadRegistry(specifiers: string[]): Promise<Registry> {
     }
   }
   return registry;
-}
-
-/** The workflow context a run-sugar body receives, over the veneer. */
-export function workflowContext(native: Native, instanceId: string): WorkflowSession {
-  let completed = false;
-  let result: unknown;
-  return {
-    instanceId,
-    emit(value: unknown) {
-      native.workflowEmit(instanceId, encodeValue(value));
-    },
-    async recv(timeoutMs = DEFAULT_RECV_TIMEOUT_MS) {
-      const payload = await native.workflowRecv(instanceId, timeoutMs);
-      return payload === null ? null : decodeValue(payload);
-    },
-    isCancelled() {
-      return native.workflowCancelled(instanceId);
-    },
-    complete(value?: unknown) {
-      completed = true;
-      result = value;
-    },
-    now() {
-      return native.monotonicNanos();
-    },
-    get completed() {
-      return completed;
-    },
-    get result() {
-      return result;
-    },
-  };
 }
 
 export class Runner {
@@ -296,7 +260,7 @@ export class Runner {
       return;
     }
 
-    const deps = dispatchDeps(native, registry, workflowContext);
+    const deps = dispatchDeps(native, registry);
     const watch = new LoopWatch('main');
     this.dispatchId = native.registerDispatch((activation) => {
       // What the delay warning names when this loop is held. The worker tier

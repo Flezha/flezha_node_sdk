@@ -97,6 +97,23 @@ export interface Ctx<TOut = never, TState = void, TChange = never> {
   checkpoint(): void;
 
   /**
+   * End the workflow instance this procedure runs in, with `result` as the
+   * result its completion reports, encoded as a sink naming no codec encodes a
+   * value: bytes as they are, a string as UTF-8 and anything else as JSON;
+   * `undefined` or `null` carries no result. The rest of the iteration still
+   * runs and commits; once that commit is durable the instance ends instead of
+   * waiting for its next input. In a `once` workflow it sets the result the pass ends
+   * with. A second call in one item replaces the first; calls from several
+   * entities in one iteration end the instance once, with the result of the
+   * procedure latest in the chain and, within it, the entity whose key sorts
+   * last.
+   *
+   * A stream never completes: a stream procedure calling this fails its input,
+   * without a retry, with an error beginning `CompleteOutsideWorkflow`.
+   */
+  complete(result?: unknown): void;
+
+  /**
    * Ask the controller for a workflow instance of `factoryId` with `payload` as
    * its first input, or as one more input of the running instance an `id` names
    * under `ifRunning: 'deliver'`. Returns the handle at once: a failure comes out
@@ -112,20 +129,6 @@ export interface Ctx<TOut = never, TState = void, TChange = never> {
    * most one instance, or the id on replay, passes its own `id`.
    */
   spawnWorkflow(factoryId: string, payload: unknown, options?: SpawnOptions): SpawnHandle;
-}
-
-/** The context a run-sugar workflow body receives. */
-export interface WorkflowCtx {
-  readonly instanceId: string;
-  /** Emit one output payload. Best-effort and at-least-once. */
-  emit(value: unknown): void;
-  /** The next inbox item, or null on timeout. */
-  recv(timeoutMs?: number): Promise<unknown | null>;
-  /** Whether the body's cancellation token has tripped. */
-  isCancelled(): boolean;
-  /** Set the terminal result; the body is `completed` once this is called. */
-  complete(result?: unknown): void;
-  now(): bigint;
 }
 
 /** Static entity mode: a fixed key set, plus the fan-out an input belongs to. */
@@ -370,10 +373,8 @@ export interface WorkflowDefinition {
   maxDurationMs?: number;
   wakeAfterMs?: number;
   syncDurability?: boolean;
-  /** A run-sugar body: one imperative function. */
-  run?: (args: unknown, ctx: WorkflowCtx) => unknown | Promise<unknown>;
-  /** A structured chain over a channels graph. Mutually exclusive with `run`. */
-  channels?: (builder: ChannelBuilder) => void;
+  /** The procedures the workflow runs, wired over a channels graph. */
+  channels: (builder: ChannelBuilder) => void;
 }
 
 /**

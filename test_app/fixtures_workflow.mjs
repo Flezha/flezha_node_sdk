@@ -92,13 +92,16 @@ const failingStep = (name) =>
 
 // -- echo_workflow ----------------------------------------------------------
 //
-// The run-sugar shape (workflow.rs:14): emits its args back once and returns,
-// so the SDK ships the completion and the controller deregisters it.
+// A `once` workflow of one procedure (workflow.rs): its single pass is seeded
+// with the start values and emits them back, so the instance completes and the
+// controller deregisters it.
+
+const Echo = statelessStep('echo', (input, ctx) => ctx.emit(`echo:${input}`));
 
 export const echoWorkflow = defineWorkflow({
   factoryId: 'echo_workflow',
-  run: (args, ctx) => {
-    ctx.emit(`echo:${args}`);
+  channels: (c) => {
+    c.input('in', { codec: 'text' }).into(Echo).sink('out');
   },
 });
 
@@ -382,7 +385,10 @@ export const retryWorkflow = defineWorkflow({
 // release variable is unset, so a SIGKILL lands with the earlier iterations
 // durable and that one in flight. Keying the block on the payload rather than
 // on an invocation count keeps it deterministic across the park/rehydrate
-// cycles, which re-run the driver but not the turns.
+// cycles, which re-run the driver but not the turns. The turn `bye` closes the
+// session: TURN emits it like any other turn but does not record it, and ends
+// the instance with the number of turns its state holds once that iteration
+// commits.
 //
 // stateless_loop_workflow is the same loop MINUS its stateful first
 // procedure: ChatReply alone holds no per-Entity state, so nothing writes an
@@ -395,12 +401,22 @@ export const retryWorkflow = defineWorkflow({
 // reads the last thing it said, retracts it and pops it.
 
 const CRASH_TURN = 'mid-crash';
+const CLOSING_TURN = 'bye';
 
-const ChatTurn = durableStep('chat_turn', {
+const recordTurn = durableStep('chat_turn', {
   // Keyed by the turn, so the record count is the number of DISTINCT turns
   // that ran — a re-run of a committed iteration would show up.
   change: (input) => input,
   gate: (input) => input === CRASH_TURN,
+}).definition;
+
+const ChatTurn = defineProcedure({
+  ...recordTurn,
+  handle: (input, ctx) => {
+    if (input !== CLOSING_TURN) return recordTurn.handle(input, ctx);
+    ctx.emit(input);
+    ctx.complete(String(ctx.state.items.length));
+  },
 });
 
 const ChatReply = statelessStep('chat_reply', (input, ctx) => ctx.emit(`reply:${input}`));
@@ -424,8 +440,8 @@ const ChatReplyUndoable = defineProcedure({
   },
 });
 
-// A chat session ends on an external stop, not on its own; the duration
-// backstop keeps a stray instance from outliving the test run.
+// The duration backstop keeps a stray instance, one that neither `bye` nor a
+// stop ended, from outliving the test run.
 const loopKnobs = { loopMode: 'per_input', maxDurationMs: 600_000 };
 
 export const chatLoopWorkflow = defineWorkflow({

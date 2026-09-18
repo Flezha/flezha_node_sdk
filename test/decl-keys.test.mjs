@@ -99,7 +99,7 @@ function fullyDeclaredWorkflow() {
     maxDurationMs: 120_000,
     wakeAfterMs: 30_000,
     syncDurability: true,
-    run: async () => undefined,
+    channels: (c) => c.input('in').into(defineProcedure({ name: 'step', handle: () => {} })),
   });
 }
 

@@ -142,17 +142,23 @@ export function channelEncoder(
           ? Buffer.from(value, 'utf8')
           : refusePayload(channel, codec, value);
     case 'json':
-      return (value) => jsonPayload(channel, value);
+      return (value) => jsonPayload(`channel \`${channel.name}\``, value);
     case 'msgpack':
       return encodeValue;
     default:
-      return (value) =>
-        value instanceof Uint8Array
-          ? value
-          : typeof value === 'string'
-            ? Buffer.from(value, 'utf8')
-            : jsonPayload(channel, value);
+      return (value) => plainPayload(value, `channel \`${channel.name}\``);
   }
+}
+
+/**
+ * Bytes as they are, a string as UTF-8 and anything else as JSON: what a sink
+ * naming no codec sends, and what a workflow completion carries. `owner` is
+ * what a refusal names.
+ */
+export function plainPayload(value: unknown, owner: string): Uint8Array {
+  if (value instanceof Uint8Array) return value;
+  if (typeof value === 'string') return Buffer.from(value, 'utf8');
+  return jsonPayload(owner, value);
 }
 
 function utf8Text(bytes: Uint8Array, channel: NamedChannel): string {
@@ -163,7 +169,7 @@ function utf8Text(bytes: Uint8Array, channel: NamedChannel): string {
   }
 }
 
-function jsonPayload(channel: NamedChannel, value: unknown): Uint8Array {
+function jsonPayload(owner: string, value: unknown): Uint8Array {
   // `stringify` throws for a `bigint`, and answers `undefined` rather than
   // throwing for `undefined`, a function and a symbol.
   let reason = 'it has no JSON form';
@@ -173,9 +179,7 @@ function jsonPayload(channel: NamedChannel, value: unknown): Uint8Array {
   } catch (error) {
     reason = (error as Error).message;
   }
-  throw new EmitError(
-    `channel \`${channel.name}\`: a ${typeName(value)} cannot be sent as JSON: ${reason}`,
-  );
+  throw new EmitError(`${owner}: a ${typeName(value)} cannot be sent as JSON: ${reason}`);
 }
 
 function refusePayload(channel: NamedChannel, codec: ChannelCodec, value: unknown): never {

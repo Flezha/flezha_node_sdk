@@ -16,7 +16,7 @@
 import { Registry, dispatch, dispatchDeps } from './dispatch.js';
 import { toHostClassDecl, validate } from './graph.js';
 import { loadNative, type CoreOutput, type Native } from './native.js';
-import { ACTIVATION_SCHEMA_VERSION, workflowContext } from './runner.js';
+import { ACTIVATION_SCHEMA_VERSION } from './runner.js';
 import type { ClassSpec } from './authoring.js';
 
 /** One value a graph released on a declared sink. */
@@ -58,7 +58,7 @@ export class LocalOperative {
       registry.add(spec);
       native.declareClass(Buffer.from(JSON.stringify(toHostClassDecl(spec))));
       native.localStart(spec.factoryId, `${spec.factoryId}-local`);
-      const deps = dispatchDeps(native, registry, workflowContext);
+      const deps = dispatchDeps(native, registry);
       run.#dispatchId = native.registerDispatch((activation) => {
         void dispatch(activation, native, deps);
       });

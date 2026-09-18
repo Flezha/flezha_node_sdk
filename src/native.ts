@@ -56,7 +56,6 @@ export type NativeActivationKind =
   | 'apply_state'
   | 'migration_serialize'
   | 'key_request'
-  | 'workflow_run'
   | 'compensate_run';
 
 export interface NativeActivation {
@@ -72,7 +71,6 @@ export interface NativeActivation {
   changes?: NativeRestoreBody[];
   stateJson?: Buffer;
   keyRequest?: NativeKeyRequest;
-  args?: Buffer;
   outputs?: Buffer[];
 }
 
@@ -119,6 +117,8 @@ export interface NativeItemEffect {
   timers?: NativeTimerOp[];
   checkpoint?: boolean;
   dlq?: NativeDlqEntry;
+  /** The encoded result of `ctx.complete`, absent when it was not called. */
+  complete?: Uint8Array;
 }
 
 export interface NativePrepareAnswer {
@@ -137,8 +137,7 @@ export type NativeOutcome =
   | 'state_applied'
   | 'migration_state'
   | 'prepared'
-  | 'failed'
-  | 'workflow_done';
+  | 'failed';
 
 export interface NativeActivationResult {
   token: bigint;
@@ -149,8 +148,6 @@ export interface NativeActivationResult {
   prepared?: NativePrepareAnswer[];
   error?: string;
   nonRetryable?: boolean;
-  workflowCompleted?: boolean;
-  workflowResult?: Uint8Array;
 }
 
 export interface NativeExport {
@@ -202,9 +199,6 @@ export interface Native {
   complete(result: NativeActivationResult): Promise<void>;
   abandon(token: bigint): void;
   shutdown(): void;
-  workflowEmit(instanceId: string, payload: Uint8Array): void;
-  workflowRecv(instanceId: string, timeoutMs: number): Promise<Buffer | null>;
-  workflowCancelled(instanceId: string): boolean;
   /** Request a spawn from the live activation `token`; answers its handle. Never waits. */
   spawnRequest(
     token: bigint,

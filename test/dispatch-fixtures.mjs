@@ -16,7 +16,7 @@ export function depsFor(...specs) {
     validate(spec);
     registry.add(spec);
   }
-  return { registry, bridge: spawnBridge(), workflowCtx: () => ({}) };
+  return { registry, bridge: spawnBridge() };
 }
 
 /**

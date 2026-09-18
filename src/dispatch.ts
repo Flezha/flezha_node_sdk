@@ -23,7 +23,6 @@ import type {
   NativePrepareAnswer,
 } from './native.js';
 import { foldRestore, rawState } from './state.js';
-import type { WorkflowCtx } from './types.js';
 
 /** A declared class, with the lookups dispatch needs on the hot path. */
 export class RegisteredClass {
@@ -104,14 +103,9 @@ function isNonRetryable(error: unknown): boolean {
   );
 }
 
-/** A live run-sugar workflow body's context, plus what it recorded. */
-export type WorkflowSession = WorkflowCtx & { completed?: boolean; result?: unknown };
-
 export interface DispatchDeps {
   registry: Registry;
   bridge: SpawnBridge;
-  /** The workflow context for a run-sugar body. */
-  workflowCtx(instanceId: string): WorkflowSession;
 }
 
 /**
@@ -121,16 +115,8 @@ export interface DispatchDeps {
  * this level — so a third kind of loop gets it by calling this rather than by
  * copying it.
  */
-export function dispatchDeps(
-  native: Native,
-  registry: Registry,
-  session: (native: Native, instanceId: string) => WorkflowSession,
-): DispatchDeps {
-  return {
-    registry,
-    bridge: native,
-    workflowCtx: (instanceId) => session(native, instanceId),
-  };
+export function dispatchDeps(native: Native, registry: Registry): DispatchDeps {
+  return { registry, bridge: native };
 }
 
 /**
@@ -152,11 +138,6 @@ export async function answer(
   }
 
   try {
-    // The workflow body is the one kind addressed to a class rather than to a
-    // procedure, so it is answered before the procedure is resolved — which is
-    // what lets every arm below hold a procedure rather than assert one.
-    if (activation.kind === 'workflow_run') return await runWorkflow(activation, registered, deps);
-
     const node = registered.spec.procedures[activation.procedure];
     if (!node) {
       return failed(
@@ -439,31 +420,6 @@ function prepare(
   });
 
   return { token: activation.token, outcome: 'prepared', prepared: answers };
-}
-
-async function runWorkflow(
-  activation: NativeActivation,
-  registered: RegisteredClass,
-  deps: DispatchDeps,
-): Promise<NativeActivationResult> {
-  const run = registered.spec.run;
-  if (!run) {
-    return failed(
-      activation.token,
-      `class \`${activation.factory}\` was handed a workflow body but declares none`,
-      true,
-    );
-  }
-  const ctx = deps.workflowCtx(activation.operative);
-  const args = activation.args ? decodeValue(activation.args) : undefined;
-  const returned = await invocation.run({ procedure: activation.factory }, () => run(args, ctx));
-  const completed = ctx.completed ?? returned !== undefined;
-  return {
-    token: activation.token,
-    outcome: 'workflow_done',
-    workflowCompleted: completed,
-    workflowResult: encodeValue(ctx.completed ? ctx.result : returned),
-  };
 }
 
 async function compensate(

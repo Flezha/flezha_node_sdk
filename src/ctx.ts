@@ -2,12 +2,13 @@
  * The invocation context: every deterministic effect a handler is allowed.
  *
  * The context accumulates one item's effects — recorded changes, outputs,
- * timer operations, the checkpoint flag — and the dispatcher turns them into
- * the `ItemEffect` the core folds. Nothing here reaches the wire on its own;
- * an emit is a value in a list until the completion carries it.
+ * timer operations, the checkpoint flag, a request to end the workflow — and
+ * the dispatcher turns them into the `ItemEffect` the core folds. Nothing here
+ * reaches the wire on its own; an emit is a value in a list until the
+ * completion carries it.
  */
 
-import { encodeValue } from './codec.js';
+import { encodeValue, plainPayload } from './codec.js';
 import { applyTransforms, isStructuredWorkflow } from './authoring.js';
 import type { ChannelSpec, ClassSpec, ConsumerEdge, ProcNode } from './authoring.js';
 import type {
@@ -138,6 +139,7 @@ export class Invocation implements Ctx<unknown, unknown, unknown> {
   private emitOrdinal = 0;
   private identityBytes: Uint8Array | null = null;
   private live: unknown;
+  private completion: Uint8Array | undefined;
 
   constructor(private readonly input: InvocationInput) {
     this.live = input.state;
@@ -354,6 +356,13 @@ export class Invocation implements Ctx<unknown, unknown, unknown> {
     this.checkpointed = true;
   }
 
+  complete(result?: unknown): void {
+    this.completion =
+      result === undefined || result === null
+        ? new Uint8Array()
+        : plainPayload(result, this.input.node.name);
+  }
+
   spawnWorkflow(factoryId: string, payload: unknown, options: SpawnOptions = {}): SpawnHandle {
     const { id, ifRunning } = options;
     if (ifRunning !== undefined && !id) {
@@ -386,6 +395,7 @@ export class Invocation implements Ctx<unknown, unknown, unknown> {
       eventTime: this.input.now,
       timers: this.timers,
       checkpoint: this.checkpointed,
+      complete: this.completion,
     };
   }
 }

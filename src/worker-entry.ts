@@ -20,7 +20,7 @@ import { validate } from './graph.js';
 import { LoopWatch } from './loop-watch.js';
 import { log } from './logger.js';
 import { loadNative } from './native.js';
-import { importModule, loadRegistry, specsFrom, workflowContext } from './runner.js';
+import { importModule, loadRegistry, specsFrom } from './runner.js';
 import type { FromWorker, ToWorker } from './workers.js';
 
 interface WorkerConfig {
@@ -42,7 +42,7 @@ async function main(): Promise<void> {
   const watch = new LoopWatch(`worker-${config.index}`);
   watch.start();
 
-  const deps = dispatchDeps(native, registry, workflowContext);
+  const deps = dispatchDeps(native, registry);
 
   const dispatchId = native.registerDispatch((activation) => {
     const registered = registry.get(activation.factory);

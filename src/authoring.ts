@@ -139,7 +139,6 @@ export interface ClassSpec {
   procedures: ProcNode[];
   channels: ChannelSpec[];
   workflow?: WorkflowSpec;
-  run?: WorkflowDefinition['run'];
 }
 
 /**
@@ -775,25 +774,16 @@ export function defineOperative(definition: OperativeDefinition): ClassSpec {
   };
 }
 
-/** Define a workflow operative — a run-sugar body, or a structured chain. */
+/** Define a workflow operative from the procedures its channels graph wires. */
 export function defineWorkflow(definition: WorkflowDefinition): ClassSpec {
-  if (definition.run && definition.channels) {
+  if (typeof definition.channels !== 'function') {
     throw new DeclarationError(
       definition.factoryId,
       null,
-      'declares both a run body and a channels graph; a workflow is one or the other',
+      'declares no channels; a workflow runs procedures, wired in `channels`',
     );
   }
-  if (!definition.run && !definition.channels) {
-    throw new DeclarationError(
-      definition.factoryId,
-      null,
-      'declares neither a run body nor a channels graph',
-    );
-  }
-  const builder = definition.channels
-    ? buildGraph(definition.factoryId, definition.channels)
-    : new Builder(definition.factoryId);
+  const builder = buildGraph(definition.factoryId, definition.channels);
   return {
     factoryId: definition.factoryId,
     kind: 'workflow',
@@ -814,7 +804,6 @@ export function defineWorkflow(definition: WorkflowDefinition): ClassSpec {
       maxDurationMs: definition.maxDurationMs,
       wakeAfterMs: definition.wakeAfterMs,
     },
-    run: definition.run,
   };
 }
 
@@ -865,12 +854,11 @@ export function applyTransforms(
 /**
  * Whether this class's producers release their values untransformed.
  *
- * A structured workflow's stage releases ONE value per emit and the driver
- * fans it out to every consumer itself, so each consumer edge — its transforms
- * and its key — belongs to the consumer. The producer and the consumer read
- * this one predicate, so they cannot disagree about which side applies the
- * edge.
+ * A workflow's stage releases ONE value per emit and the driver fans it out to
+ * every consumer itself, so each consumer edge — its transforms and its key —
+ * belongs to the consumer. The producer and the consumer read this one
+ * predicate, so they cannot disagree about which side applies the edge.
  */
 export function isStructuredWorkflow(spec: ClassSpec): boolean {
-  return spec.kind === 'workflow' && spec.channels.length > 0;
+  return spec.kind === 'workflow';
 }
