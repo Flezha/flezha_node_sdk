@@ -92,8 +92,8 @@ const failingStep = (name) =>
 
 // -- echo_workflow ----------------------------------------------------------
 //
-// A `once` workflow of one tasklet (workflow.rs): its single pass is seeded
-// with the start values and emits them back, so the instance completes and the
+// A `once` workflow of one tasklet (workflow.rs): its single pass runs on the
+// first message and emits it back, so the instance completes and the
 // controller deregisters it.
 
 const Echo = statelessStep('echo', (input, ctx) => ctx.emit(`echo:${input}`));
@@ -460,11 +460,40 @@ export const statelessLoopWorkflow = defineWorkflow({
   },
 });
 
+// The chat loop with the block moved AFTER the root's commit: TURN commits its
+// turn, REPLY blocks on the turn `reply-crash` while the release env is unset,
+// so a SIGKILL lands between a root's `task_committed` and the pass's
+// `iter_committed` (workflow_loop.rs).
+const REPLY_CRASH_TURN = 'reply-crash';
+
+const BlockingReply = statelessStep('blocking_reply', async (input, ctx) => {
+  if (input === REPLY_CRASH_TURN) await blockUntilReleased();
+  ctx.emit(`reply:${input}`);
+});
+
+export const replyBlockLoopWorkflow = defineWorkflow({
+  factoryId: 'reply_block_loop_workflow',
+  ...loopKnobs,
+  channels: (c) => {
+    c.input('in', { codec: 'text' }).into(ChatTurn).named('mid').into(BlockingReply).sink('out');
+  },
+});
+
 // -- spawn_requester --------------------------------------------------------
 //
 // On each input it spawns `stateless_loop_workflow` once with no id and once
 // under the input as its id, and prints both results, because a handle's answer
 // is observable nowhere but in the tasklet that read it (workflow_loop.rs).
+
+// A spawn handle's answer on stdout, as `spawn_result <label> <id> <outcome>`.
+async function reportSpawn(label, handle) {
+  try {
+    const { id, outcome } = await handle.wait();
+    console.log(`spawn_result ${label} ${id} ${outcome}`);
+  } catch (error) {
+    console.log(`spawn_result ${label} error ${error.message}`);
+  }
+}
 
 const SpawnRequester = defineTasklet({
   name: 'spawn_requester',
@@ -474,14 +503,7 @@ const SpawnRequester = defineTasklet({
       ['unnamed', ctx.spawnWorkflow(factory, input)],
       ['named', ctx.spawnWorkflow(factory, input, { id: input })],
     ];
-    for (const [label, handle] of handles) {
-      try {
-        const { id, outcome } = await handle.wait();
-        console.log(`spawn_result ${label} ${id} ${outcome}`);
-      } catch (error) {
-        console.log(`spawn_result ${label} error ${error.message}`);
-      }
-    }
+    for (const [label, handle] of handles) await reportSpawn(label, handle);
   },
 });
 
@@ -489,6 +511,39 @@ export const spawnRequester = defineOperative({
   factoryId: 'spawn_requester',
   channels: (c) => {
     c.input('in', { codec: 'text' }).into(SpawnRequester).sink('out');
+  },
+});
+
+// -- spawn_once_requester / typed_once_workflow -------------------------------
+//
+// The KB-381 shape: a stream tasklet spawns a `once` workflow whose entry
+// channel decodes the payload's type. The spawned instance prints what its
+// entry decoded and completes with it, because the runner's stdout and the
+// completion record are the two places the scenario can read.
+
+const OncePlaced = statelessStep('once_placed', (ticket, ctx) => {
+  console.log(`once_ran ${ticket.text}`);
+  ctx.emit(`placed:${ticket.text}`);
+  ctx.complete(ticket.text);
+});
+
+export const typedOnceWorkflow = defineWorkflow({
+  factoryId: 'typed_once_workflow',
+  channels: (c) => {
+    c.input('order', { codec: 'json' }).into(OncePlaced).sink('placed');
+  },
+});
+
+const SpawnOnceRequester = defineTasklet({
+  name: 'spawn_once_requester',
+  run: async (input, ctx) =>
+    reportSpawn('once', ctx.spawnWorkflow(typedOnceWorkflow.factoryId, { text: input })),
+});
+
+export const spawnOnceRequester = defineOperative({
+  factoryId: 'spawn_once_requester',
+  channels: (c) => {
+    c.input('in', { codec: 'text' }).into(SpawnOnceRequester).sink('out');
   },
 });
 

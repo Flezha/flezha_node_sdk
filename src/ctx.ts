@@ -374,12 +374,14 @@ export class Invocation implements Ctx<unknown, unknown, unknown> {
     }
     // The replay flag goes to the core, which sends nothing for a replayed
     // invocation: a spawn is an external side effect, where a timer is
-    // internal state and is registered again.
+    // internal state and is registered again. The payload is the spawned
+    // instance's first message on its entry channel, encoded as a sink
+    // naming no codec sends a value, so a `text` or `json` entry reads it.
     const handle = this.input.bridge.spawnRequest(
       this.input.token,
       factoryId,
       id ?? '',
-      encodeValue(payload),
+      plainPayload(payload, this.input.node.name),
       ifRunning ?? '',
       this.input.replay,
     );

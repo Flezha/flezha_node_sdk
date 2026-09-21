@@ -124,6 +124,11 @@ export interface Ctx<TOut = never, TState = void, TChange = never> {
    * second instance, and a replay of it answers an empty id, because the
    * generated id exists only in the live run's answer. A caller who needs at
    * most one instance, or the id on replay, passes its own `id`.
+   *
+   * `payload` is an ordinary message on the instance's first entry channel,
+   * encoded as a sink naming no codec sends a value: bytes as they are, a
+   * string as UTF-8, anything else as JSON, which a `text` or `json` entry
+   * reads.
    */
   spawnWorkflow(factoryId: string, payload: unknown, options?: SpawnOptions): SpawnHandle;
 }

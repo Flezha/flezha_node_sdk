@@ -13,7 +13,6 @@ import {
   SpawnRefusedError,
   SpawnTimeoutError,
   SpawnUnavailableError,
-  decodeValue,
   loadNative,
 } from '../dist/esm/index.js';
 
@@ -53,7 +52,23 @@ test('a spawn returns its handle at once, under the activation it runs in', asyn
     ifRunning: '',
     replay: false,
   });
-  assert.deepEqual(decodeValue(payload), { order: 'p' });
+  assert.deepEqual(JSON.parse(Buffer.from(payload).toString('utf8')), { order: 'p' });
+});
+
+// The payload is the spawned instance's first message, encoded as a sink
+// naming no codec sends a value, so the entry channel that reads it needs no
+// knowledge of this SDK's inter-tasklet codec.
+test('a spawn payload is what a text or json entry reads: UTF-8 for a string, JSON otherwise', async () => {
+  const bridge = spawnBridge();
+  await handled(bridge, (input, ctx) => {
+    ctx.spawnWorkflow('worker', `ticket-${input}`);
+    ctx.spawnWorkflow('worker', { symbol: 'AAPL', quantity: 10 });
+    ctx.spawnWorkflow('worker', Buffer.from([0xff, 0x00, 0x01]));
+  });
+  const [text, json, bytes] = bridge.requests.map((request) => Buffer.from(request.payload));
+  assert.equal(text.toString('utf8'), 'ticket-p', 'a string travels as its UTF-8 bytes');
+  assert.deepEqual(JSON.parse(json.toString('utf8')), { symbol: 'AAPL', quantity: 10 });
+  assert.deepEqual([...bytes], [0xff, 0x00, 0x01], 'bytes travel as they are');
 });
 
 test('a spawn resolves to the id it resolved to, generated or given', async () => {

@@ -769,8 +769,9 @@ for (const [kind, define] of [
 }
 
 // An entry naming no codec reads JSON, so plain text fails its decode: the
-// item rides the retry ladder and the handler is never handed it.
-test('plain text into an entry naming no codec never reaches the handler', async () => {
+// item is reported unreadable (the entrance's failure, not the handler's), so
+// the core parks it under the entry channel, and the handler is never handed it.
+test('plain text into an entry naming no codec is unreadable and never reaches the handler', async () => {
   const spec = defineOperative({
     factoryId: 'json_entry',
     channels: (c) => {
@@ -783,10 +784,62 @@ test('plain text into an entry naming no codec never reaches the handler', async
   });
   assert.deepEqual(
     effects.map((effect) => effect.verdict),
-    ['ok', 'retryable'],
+    ['ok', 'unreadable'],
   );
   assert.match(effects[1].message, /not valid JSON/);
   assert.deepEqual(handed, [{ a: 1 }]);
+});
+
+test('bytes that are not UTF-8 into a text entry are unreadable', async () => {
+  const spec = defineOperative({
+    factoryId: 'text_entry',
+    channels: (c) => {
+      c.input('in', { codec: 'text' }).into(record('text_entry_tasklet'));
+    },
+  });
+  const { effects, handed } = await ran(spec, {
+    cellKey: undefined,
+    items: [inputItem(0, { payload: Buffer.from([0xff, 0xfe]) })],
+  });
+  assert.equal(effects[0].verdict, 'unreadable');
+  assert.match(effects[0].message, /not valid UTF-8/);
+  assert.deepEqual(handed, []);
+});
+
+// An entry edge's transform runs at the entrance too, so its failure is the
+// entrance's; a handler throwing on a value that did decode stays a handler
+// failure, which is what the retry ladder is for.
+test("an entry edge transform that throws is unreadable, a handler that throws is not", async () => {
+  const spec = defineOperative({
+    factoryId: 'entry_edge',
+    channels: (c) => {
+      c.input('in', { codec: 'text' })
+        .map((text) => {
+          if (text === 'poison') throw new Error('the mapping rejected it');
+          return text;
+        })
+        .into(
+          defineTasklet({
+            name: 'entry_edge_tasklet',
+            run: (input) => {
+              if (input === 'boom') throw new Error('the handler rejected it');
+            },
+          }),
+        );
+    },
+  });
+  const { effects: mapped } = await ran(spec, {
+    cellKey: undefined,
+    items: [inputItem(0, { payload: Buffer.from('poison') })],
+  });
+  assert.equal(mapped[0].verdict, 'unreadable');
+  assert.equal(mapped[0].message, 'Error: the mapping rejected it');
+  const { effects: thrown } = await ran(spec, {
+    cellKey: undefined,
+    items: [inputItem(0, { payload: Buffer.from('boom') })],
+  });
+  assert.equal(thrown[0].verdict, 'retryable');
+  assert.match(thrown[0].message, /the handler rejected it/);
 });
 
 // --- merged sources ---------------------------------------------------------

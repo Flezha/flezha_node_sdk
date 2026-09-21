@@ -108,7 +108,12 @@ export interface NativeDlqEntry {
 }
 
 export interface NativeItemEffect {
-  verdict: 'ok' | 'retryable' | 'non_retryable';
+  /**
+   * `unreadable` is answered only for an entry channel's decode or its edge
+   * transforms: the core parks the payload rather than counting it as a
+   * tasklet failure.
+   */
+  verdict: 'ok' | 'retryable' | 'non_retryable' | 'unreadable';
   message?: string;
   changes?: Uint8Array[];
   outputs?: NativeOutput[];

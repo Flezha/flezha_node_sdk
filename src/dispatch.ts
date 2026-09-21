@@ -271,7 +271,7 @@ async function runWork(
           const edge = untransformed
             ? channel?.consumers.find((each) => each.tasklet === node.index)
             : undefined;
-          const values = edgeValues(channel, edge, item.payload ?? Buffer.alloc(0));
+          const values = entryValues(channel, edge, item.payload ?? Buffer.alloc(0));
           // A filtered value is consumed and reaches no handler, and a fanned
           // one reaches it once per value. Either way the input produces one
           // effect, so its offset advances once and nothing is retried.
@@ -289,8 +289,7 @@ async function runWork(
       // Items after this one are re-handed by the core, so the batch stops
       // here rather than reporting effects the cell never saw.
       effects.push({
-        verdict: isNonRetryable(error) ? 'non_retryable' : 'retryable',
-        message: errorMessage(error),
+        ...failureOf(error),
         eventTime: now,
         consumedOffset: item.consumedOffset,
       });
@@ -299,6 +298,48 @@ async function runWork(
   }
 
   return { token: activation.token, outcome: 'work', effects };
+}
+
+/**
+ * An entry payload the channel's decoder or its edge's transforms rejected:
+ * the one failure the core is told apart from a handler's, because it parks
+ * the payload rather than counting it as a tasklet failure. Only the entry
+ * seam raises it.
+ */
+class UnreadableEntry extends Error {
+  constructor(cause: unknown) {
+    super(errorMessage(cause));
+    this.name = 'UnreadableEntry';
+  }
+}
+
+/**
+ * A failed item's verdict and the message the wire carries: unreadable at the
+ * entrance, reported as its cause, else the handler's.
+ */
+function failureOf(error: unknown): Pick<NativeItemEffect, 'verdict' | 'message'> {
+  if (error instanceof UnreadableEntry) return { verdict: 'unreadable', message: error.message };
+  return {
+    verdict: isNonRetryable(error) ? 'non_retryable' : 'retryable',
+    message: errorMessage(error),
+  };
+}
+
+/**
+ * `edgeValues` for a delivered item: a failure on an entry channel (the wire's
+ * bytes, not a producer's) is the entrance's, and is reported as such.
+ */
+function entryValues(
+  channel: ChannelSpec | undefined,
+  edge: ConsumerEdge | undefined,
+  payload: Uint8Array,
+): unknown[] {
+  try {
+    return edgeValues(channel, edge, payload);
+  } catch (error) {
+    if (channel === undefined || channel.kind === 'entry') throw new UnreadableEntry(error);
+    throw error;
+  }
 }
 
 /**

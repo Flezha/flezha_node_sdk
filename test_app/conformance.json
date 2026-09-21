@@ -71,6 +71,8 @@
     "keyed_channels": ["partition_relay"],
     "workflow": [
       "spawn_requester",
+      "spawn_once_requester",
+      "typed_once_workflow",
       "echo_workflow",
       "commit_block_workflow",
       "sync_durable_workflow",
@@ -82,6 +84,7 @@
       "chat_loop_workflow",
       "stateless_loop_workflow",
       "chat_rewind_workflow",
+      "reply_block_loop_workflow",
       "retry_workflow",
       "branch_workflow",
       "diamond_workflow",
