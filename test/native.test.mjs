@@ -11,7 +11,7 @@ import { fileURLToPath } from 'node:url';
 import {
   ACTIVATION_SCHEMA_VERSION,
   defineOperative,
-  defineProcedure,
+  defineTasklet,
   loadNative,
   toHostClassDecl,
 } from '../dist/esm/index.js';
@@ -132,7 +132,7 @@ const checkpointClass = (factoryId, declare) =>
       c.effectivelyOnce();
       declare(c);
       c.input('input')
-        .into(defineProcedure({ name: `${factoryId}_procedure`, run: (input) => input }))
+        .into(defineTasklet({ name: `${factoryId}_tasklet`, run: (input) => input }))
         .keyed()
         .sink('sink');
     },

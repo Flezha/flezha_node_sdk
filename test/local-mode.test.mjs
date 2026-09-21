@@ -1,5 +1,5 @@
 // The Node SDK's local mode: a user's own operative definition, its declared
-// two-procedure graph, and no controller anywhere.
+// two-tasklet graph, and no controller anywhere.
 //
 // The graph and its expected sink output are read from
 // `test/fixtures/local_mode_word_count.txt`, which the Rust, Java and Elixir
@@ -10,7 +10,7 @@ import assert from 'node:assert/strict';
 import { dirname } from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
-import { LocalOperative, defineOperative, defineProcedure } from '../dist/esm/index.js';
+import { LocalOperative, defineOperative, defineTasklet } from '../dist/esm/index.js';
 
 import { read } from './contract.mjs';
 
@@ -19,7 +19,7 @@ const utf8 = (bytes) => Buffer.from(bytes).toString('utf8');
 const bytes = (text) => Buffer.from(text, 'utf8');
 
 /** One line into its words: the hop to `Tally` is the runtime's job. */
-const Split = defineProcedure({
+const Split = defineTasklet({
   name: 'split',
   run: (line, ctx) => {
     for (const word of line.split(/\s+/).filter(Boolean)) {
@@ -28,10 +28,10 @@ const Split = defineProcedure({
   },
 });
 
-/** One Entity per word, minted on first sight of it. */
-const Tally = defineProcedure({
+/** One Cell per word, minted on first sight of it. */
+const Tally = defineTasklet({
   name: 'tally',
-  dynamicEntities: { idleTtlMs: 300_000 },
+  dynamicCells: { idleTtlMs: 300_000 },
   initialState: () => ({ seen: 0 }),
   applyChange: (state, change) => {
     state.seen = change.seen;
@@ -93,12 +93,12 @@ test('a declared graph runs locally and releases the recorded output', async () 
   assert.deepEqual(
     [...counted].sort(),
     [...expected].sort(),
-    'both procedures ran, the runtime performed the hop, and one Entity per word counted',
+    'both tasklets ran, the runtime performed the hop, and one Cell per word counted',
   );
 
   const first = released[0];
   assert.equal(first.channel, 'totals');
-  for (const stamp of ['flz.entity', 'flz.seq', 'flz.key']) {
+  for (const stamp of ['flz.cell', 'flz.seq', 'flz.key']) {
     assert.ok(
       stamp in first.metadata,
       `a keyed sink carries ${stamp}: ${JSON.stringify(first.metadata)}`,
@@ -143,7 +143,7 @@ test('a channel the class does not declare is refused by name', async () => {
 });
 
 /** Reads the map an undeclared entry decodes, and emits a string and a map. */
-const Defaults = defineProcedure({
+const Defaults = defineTasklet({
   name: 'defaults',
   run: (value, ctx) => {
     ctx.emit(`a is ${value.a}`);
@@ -172,7 +172,7 @@ test('an undeclared entry reads JSON and an undeclared sink follows the value', 
 });
 
 test('a spawn with no controller anywhere is unavailable, from either read', async () => {
-  const Spawner = defineProcedure({
+  const Spawner = defineTasklet({
     name: 'spawner',
     run: async (input, ctx) => {
       let tried;

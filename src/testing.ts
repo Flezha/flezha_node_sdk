@@ -1,11 +1,11 @@
 /**
- * The procedure test harness.
+ * The tasklet test harness.
  *
  * A defined handler is an ordinary function: a plain unit test can call it
  * with no runner started and no controller running. What the harness adds is
- * the parts a runtime would otherwise own — the entity's state, the recorded
+ * the parts a runtime would otherwise own — the cell's state, the recorded
  * change log, the emits, the clock a timer fires on — and the replay-equality
- * gate, which is the conformance gate for every procedure.
+ * gate, which is the conformance gate for every tasklet.
  *
  * It drives the same `Invocation` the dispatcher does, so what a test exercises
  * is the production path rather than a second one written to agree with it.
@@ -13,23 +13,23 @@
 
 import { isDeepStrictEqual } from 'node:util';
 
-import { defineOperative, type ChannelSpec, type ClassSpec, type ProcNode } from './authoring.js';
+import { defineOperative, type ChannelSpec, type ClassSpec, type TaskNode } from './authoring.js';
 import { decodeValue } from './codec.js';
 import { Invocation, type SpawnBridge } from './ctx.js';
 import { invocation } from './determinism.js';
 import { foldRestore, rawState, type RestoreBody } from './state.js';
-import type { Procedure, TimerKind, TimerFiring } from './types.js';
+import type { Tasklet, TimerKind, TimerFiring } from './types.js';
 
 /** The recorded change log did not rebuild the state the handler produced. */
 export class ReplayMismatch extends Error {
   constructor(
-    readonly procedure: string,
+    readonly tasklet: string,
     readonly live: unknown,
     readonly replayed: unknown,
   ) {
     super(
-      `${procedure}: folding the recorded change log against a fresh initial state did not ` +
-        `reproduce the handler's state. The engine rebuilds an entity exactly this way on a ` +
+      `${tasklet}: folding the recorded change log against a fresh initial state did not ` +
+        `reproduce the handler's state. The engine rebuilds a cell exactly this way on a ` +
         `warm restart, so the difference is what a restart would lose.\n` +
         `  live:     ${JSON.stringify(live, replacer)}\n` +
         `  replayed: ${JSON.stringify(replayed, replacer)}`,
@@ -67,7 +67,7 @@ function resolvedSpawns(): SpawnBridge {
 }
 
 export interface HarnessOptions<TState> {
-  entityKey?: string;
+  cellKey?: string;
   /** Override the declared starting state. */
   state?: TState;
   /** The value `ctx.now()` serves until an input or an advance moves it. */
@@ -91,18 +91,18 @@ export interface Invoked<TOut, TChange> {
   checkpoint: boolean;
 }
 
-export class ProcedureTestHarness<TIn, TOut, TState, TChange> {
+export class TaskletTestHarness<TIn, TOut, TState, TChange> {
   private state: TState;
   private clock: bigint;
   private readonly log: TChange[] = [];
   private readonly emitted: TOut[] = [];
   private readonly spec: ClassSpec;
-  private readonly node: ProcNode;
+  private readonly node: TaskNode;
   private readonly outgoing: ChannelSpec[];
   private readonly spawns = resolvedSpawns();
 
   private constructor(
-    private readonly procedure: Procedure<TIn, TOut, TState, TChange>,
+    private readonly tasklet: Tasklet<TIn, TOut, TState, TChange>,
     private readonly options: HarnessOptions<TState>,
     state: TState,
   ) {
@@ -114,25 +114,24 @@ export class ProcedureTestHarness<TIn, TOut, TState, TChange> {
     // MessagePack codec, so the emits the harness reads back are each value
     // exactly as the handler emitted it.
     this.spec = defineOperative({
-      factoryId: `harness_${procedure.name}`,
+      factoryId: `harness_${tasklet.name}`,
       channels: (c) =>
         c
           .input('harness_in')
-          .into(procedure as never)
+          .into(tasklet as never)
           .sink({ codec: 'msgpack' }),
     });
-    this.node = this.spec.procedures[0] as ProcNode;
+    this.node = this.spec.tasklets[0] as TaskNode;
     this.outgoing = this.spec.channels.filter((channel) => channel.producer !== undefined);
   }
 
-  /** A harness over the procedure's declared starting state. */
+  /** A harness over the tasklet's declared starting state. */
   static of<TIn, TOut, TState, TChange>(
-    procedure: Procedure<TIn, TOut, TState, TChange>,
+    tasklet: Tasklet<TIn, TOut, TState, TChange>,
     options: HarnessOptions<TState> = {},
-  ): ProcedureTestHarness<TIn, TOut, TState, TChange> {
-    const initial =
-      options.state ?? (procedure.definition.initialState?.(options.entityKey) as TState);
-    return new ProcedureTestHarness(procedure, options, initial);
+  ): TaskletTestHarness<TIn, TOut, TState, TChange> {
+    const initial = options.state ?? (tasklet.definition.initialState?.(options.cellKey) as TState);
+    return new TaskletTestHarness(tasklet, options, initial);
   }
 
   /**
@@ -141,10 +140,10 @@ export class ProcedureTestHarness<TIn, TOut, TState, TChange> {
    * migration is provable without a controller.
    */
   static withPayload<TIn, TOut, TState, TChange>(
-    procedure: Procedure<TIn, TOut, TState, TChange>,
+    tasklet: Tasklet<TIn, TOut, TState, TChange>,
     payload: RestorePayload,
     options: HarnessOptions<TState> = {},
-  ): ProcedureTestHarness<TIn, TOut, TState, TChange> {
+  ): TaskletTestHarness<TIn, TOut, TState, TChange> {
     const body = (bytes: Uint8Array): RestoreBody => ({
       bytes,
       fromVersion: payload.fromVersion,
@@ -152,15 +151,15 @@ export class ProcedureTestHarness<TIn, TOut, TState, TChange> {
     // The same fold the dispatcher runs, so what a test constructs from is
     // what a warm restart would have produced rather than an agreement with it.
     const state = foldRestore(
-      procedure.definition as never,
+      tasklet.definition as never,
       {
         snapshot: payload.snapshot ? body(payload.snapshot) : undefined,
         changes: (payload.changes ?? []).map(body),
       },
-      options.entityKey,
-      procedure.name,
+      options.cellKey,
+      tasklet.name,
     ) as TState;
-    return new ProcedureTestHarness(procedure, options, state);
+    return new TaskletTestHarness(tasklet, options, state);
   }
 
   private context(now: bigint): Invocation {
@@ -168,8 +167,8 @@ export class ProcedureTestHarness<TIn, TOut, TState, TChange> {
       spec: this.spec,
       node: this.node,
       outgoing: this.outgoing,
-      operative: this.options.operative ?? `harness_${this.procedure.name}`,
-      entityKey: this.options.entityKey,
+      operative: this.options.operative ?? `harness_${this.tasklet.name}`,
+      cellKey: this.options.cellKey,
       changeSeq: BigInt(this.log.length),
       now,
       replay: false,
@@ -184,8 +183,8 @@ export class ProcedureTestHarness<TIn, TOut, TState, TChange> {
 
     const emits = ctx.outputs.map((output) => decodeValue<TOut>(output.payload));
     const changes = ctx.changes.map((bytes) =>
-      this.procedure.definition.changeCodec
-        ? this.procedure.definition.changeCodec.decode(bytes)
+      this.tasklet.definition.changeCodec
+        ? this.tasklet.definition.changeCodec.decode(bytes)
         : decodeValue<TChange>(bytes),
     );
     this.emitted.push(...emits);
@@ -207,22 +206,22 @@ export class ProcedureTestHarness<TIn, TOut, TState, TChange> {
    */
   async input(value: TIn): Promise<Invoked<TOut, TChange>> {
     const ctx = this.context(this.clock);
-    await invocation.run({ procedure: this.procedure.name }, () => ctx.handle(value));
+    await invocation.run({ tasklet: this.tasklet.name }, () => ctx.handle(value));
     return this.collect(ctx);
   }
 
   /** Fire a timer. `ctx.now()` inside the callback is the scheduled time. */
   async fireTimer(kind: TimerKind, scheduledAt: bigint): Promise<Invoked<TOut, TChange>> {
-    const onTimer = this.procedure.definition.onTimer;
+    const onTimer = this.tasklet.definition.onTimer;
     if (!onTimer) {
       throw new Error(
-        `${this.procedure.name} declares no onTimer; a procedure that registers a timer ` +
+        `${this.tasklet.name} declares no onTimer; a tasklet that registers a timer ` +
           'handles its firing',
       );
     }
     const firing: TimerFiring = { kind, scheduledAt };
     const ctx = this.context(scheduledAt);
-    await invocation.run({ procedure: this.procedure.name }, () => onTimer(firing, ctx as never));
+    await invocation.run({ tasklet: this.tasklet.name }, () => onTimer(firing, ctx as never));
     return this.collect(ctx);
   }
 
@@ -240,7 +239,7 @@ export class ProcedureTestHarness<TIn, TOut, TState, TChange> {
     return this.clock;
   }
 
-  /** The entity's state as the handler left it. */
+  /** The cell's state as the handler left it. */
   get currentState(): TState {
     return this.state;
   }
@@ -264,11 +263,11 @@ export class ProcedureTestHarness<TIn, TOut, TState, TChange> {
    * only check that sees it.
    */
   replayEquals(): void {
-    const definition = this.procedure.definition;
-    const replayed = definition.initialState?.(this.options.entityKey) as TState;
+    const definition = this.tasklet.definition;
+    const replayed = definition.initialState?.(this.options.cellKey) as TState;
     for (const change of this.log) definition.applyChange?.(replayed, change);
     if (!isDeepStrictEqual(replayed, this.state)) {
-      throw new ReplayMismatch(this.procedure.name, this.state, replayed);
+      throw new ReplayMismatch(this.tasklet.name, this.state, replayed);
     }
   }
 }

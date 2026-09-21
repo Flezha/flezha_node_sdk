@@ -1,4 +1,4 @@
-// A procedure's spawn: the handle it returns at once, and what the handle's
+// A tasklet's spawn: the handle it returns at once, and what the handle's
 // reads answer. The core's own answers are stood in for by `spawnBridge`; the
 // same reads against the real addon with no controller are in
 // `local-mode.test.mjs`.
@@ -44,7 +44,7 @@ test('a spawn returns its handle at once, under the activation it runs in', asyn
     handle = ctx.spawnWorkflow('worker', { order: input });
   });
   assert.equal(typeof handle.then, 'undefined', 'the handle is not a promise');
-  assert.deepEqual(bridge.reads, [], 'nothing was read that the procedure did not ask for');
+  assert.deepEqual(bridge.reads, [], 'nothing was read that the tasklet did not ask for');
   const [{ payload, ...request }] = bridge.requests;
   assert.deepEqual(request, {
     token: 7n,

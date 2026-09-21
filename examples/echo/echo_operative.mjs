@@ -1,6 +1,6 @@
 import { defineOperative } from '@flezha/sdk';
 
-import { EchoProcedure } from './echo_procedure.mjs';
+import { EchoTasklet } from './echo_tasklet.mjs';
 
 /**
  * The deployable unit. An operative declares the graph a message travels: the
@@ -18,6 +18,6 @@ import { EchoProcedure } from './echo_procedure.mjs';
 export default defineOperative({
   factoryId: 'echo',
   channels: (c) => {
-    c.input('in', { codec: 'text' }).into(EchoProcedure).sink('out');
+    c.input('in', { codec: 'text' }).into(EchoTasklet).sink('out');
   },
 });

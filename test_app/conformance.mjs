@@ -3,11 +3,11 @@
 // `test/fixtures/reference_topologies.txt` names one refusal per row, with the
 // authoring steps in a language-neutral spelling every SDK maps to its own
 // surface. This module is that mapping for Node: it reads the fixture, binds
-// the procedure palette the fixture header declares, and submits each row the
+// the tasklet palette the fixture header declares, and submits each row the
 // same way `validate()` does — so the Node SDK is measured against the whole
 // table rather than against the rows it happens to declare itself.
 //
-// The palette lives here rather than in `fixtures.mjs`: these procedures exist
+// The palette lives here rather than in `fixtures.mjs`: these tasklets exist
 // only for the conformance run and are not part of the app's declared set.
 //
 // `flz_core/src/host/check_tests.rs` is the same interpreter written against
@@ -22,7 +22,7 @@ import {
   ACTIVATION_SCHEMA_VERSION,
   DeclarationError,
   defineOperative,
-  defineProcedure,
+  defineTasklet,
   defineWorkflow,
   loadNative,
   Registry,
@@ -59,7 +59,7 @@ export function rows() {
     .split('\n')
     .map((line) => line.trim())
     .filter((line) => line !== '' && !line.startsWith('#'))
-    .map((line) => line.split('|').map((cell) => cell.trim()))
+    .map((line) => line.split('|').map((part) => part.trim()))
     .filter((columns) => columns.length === 4)
     .map(([refusal, topology, steps, needs]) => ({ refusal, topology, steps, needs }));
 }
@@ -78,8 +78,8 @@ function splitHead(step) {
 }
 
 /**
- * One fixture procedure per palette role. `mailbox` is the row's
- * `<proc>.mailbox(n)`, which is a procedure knob in this SDK rather than a
+ * One fixture tasklet per palette role. `mailbox` is the row's
+ * `<task>.mailbox(n)`, which is a tasklet knob in this SDK rather than a
  * builder call, so it is read before the graph is declared.
  */
 function palette(role, mailbox) {
@@ -87,27 +87,27 @@ function palette(role, mailbox) {
   switch (role) {
     case 'plain':
     case 'second':
-      return defineProcedure({ name: role, ...common });
-    // A twin is a DIFFERENT procedure claiming `plain`'s name: that is the
+      return defineTasklet({ name: role, ...common });
+    // A twin is a DIFFERENT tasklet claiming `plain`'s name: that is the
     // collision the row names.
     case 'twin':
-      return defineProcedure({ name: 'plain', ...common });
+      return defineTasklet({ name: 'plain', ...common });
     case 'static':
-      return defineProcedure({ name: role, entities: { keys: ['a', 'b'] }, ...common });
+      return defineTasklet({ name: role, cells: { keys: ['a', 'b'] }, ...common });
     case 'routed':
-      return defineProcedure({
+      return defineTasklet({
         name: role,
-        entities: { keys: ['a', 'b'], entitiesFor: () => ['a'] },
+        cells: { keys: ['a', 'b'], cellsFor: () => ['a'] },
         ...common,
       });
     case 'dynamic':
-      return defineProcedure({ name: role, dynamicEntities: {}, ...common });
-    // A logical clock over a procedure that journals nothing: no `applyChange`
+      return defineTasklet({ name: role, dynamicCells: {}, ...common });
+    // A logical clock over a tasklet that journals nothing: no `applyChange`
     // is what makes the change type empty.
     case 'nochange':
-      return defineProcedure({ name: role, clock: 'logical', ...common });
+      return defineTasklet({ name: role, clock: 'logical', ...common });
     case 'eventtime':
-      return defineProcedure({ name: role, clock: 'event_time', eventTime: () => 0n, ...common });
+      return defineTasklet({ name: role, clock: 'event_time', eventTime: () => 0n, ...common });
     default:
       throw new Error(`the fixture names a palette role this interpreter does not bind: ${role}`);
   }
@@ -115,7 +115,7 @@ function palette(role, mailbox) {
 
 /**
  * The facts a row states before its graph is built: which class kind to
- * declare, whether it journals, and each procedure's mailbox capacity — all
+ * declare, whether it journals, and each tasklet's mailbox capacity — all
  * three are declaration options here, not fluent calls.
  */
 function preScan(steps) {
@@ -174,10 +174,10 @@ function specOf(row) {
     .map((step) => step.trim())
     .filter(Boolean);
   const { mailbox, workflow, persistent } = preScan(steps);
-  const procedures = new Map();
-  const procedureFor = (role) => {
-    if (!procedures.has(role)) procedures.set(role, palette(role, mailbox.get(role)));
-    return procedures.get(role);
+  const tasklets = new Map();
+  const taskletFor = (role) => {
+    if (!tasklets.has(role)) tasklets.set(role, palette(role, mailbox.get(role)));
+    return tasklets.get(role);
   };
 
   const channels = (c) => {
@@ -189,7 +189,7 @@ function specOf(row) {
     };
 
     // One fluent sequence, left to right. `into` answers the consuming
-    // procedure's output channel, which the role then addresses.
+    // tasklet's output channel, which the role then addresses.
     const chain = (id, rest) => {
       let stream = handle(id);
       for (const link of rest.split('.')) {
@@ -223,7 +223,7 @@ function specOf(row) {
             stream = arg === '' ? stream.sink() : stream.sink(arg);
             break;
           case 'into':
-            stream = stream.into(procedureFor(arg));
+            stream = stream.into(taskletFor(arg));
             handles.set(arg, stream);
             break;
           default:
@@ -253,7 +253,7 @@ function specOf(row) {
             (pending, id) => pending.from(handle(id), (value) => value),
             c.merge(),
           );
-          handles.set(role, merge.into(procedureFor(role)));
+          handles.set(role, merge.into(taskletFor(role)));
           continue;
         }
         throw new Error(`the fixture spells a step this interpreter does not map: ${step}`);
@@ -263,7 +263,7 @@ function specOf(row) {
         continue;
       }
       // The mailbox capacity was read by `preScan` and is already on the
-      // procedure this row wires.
+      // tasklet this row wires.
       if (call(rest)[0] === 'mailbox') continue;
       chain(head, rest);
     }
@@ -302,7 +302,7 @@ function derivedOf(declaration) {
     name: channel.name,
     kind: channel.kind,
     producer: channel.producer ?? null,
-    consumers: channel.consumers.map((edge) => edge.procedure),
+    consumers: channel.consumers.map((edge) => edge.tasklet),
     sink: channel.sink ?? null,
   }));
 }

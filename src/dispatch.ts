@@ -1,16 +1,16 @@
 /**
  * Turning one activation into one answer, exactly once.
  *
- * Per-entity exclusivity IS the handout: the core holds an entity's next
+ * Per-cell exclusivity IS the handout: the core holds a cell's next
  * activation until this one is answered, so an activation that returns
- * unanswered retires that entity for the life of the process. Every path out
+ * unanswered retires that cell for the life of the process. Every path out
  * of `dispatch` therefore ends in a completion or an abandon, through a
  * `finally` rather than a rule applied at each return site — a thrown handler,
  * a rejected promise and an encoding failure all reach the same guard.
  */
 
 import { applyTransforms, isStructuredWorkflow } from './authoring.js';
-import type { ChannelSpec, ClassSpec, ConsumerEdge, ProcNode } from './authoring.js';
+import type { ChannelSpec, ClassSpec, ConsumerEdge, TaskNode } from './authoring.js';
 import { decodeValue, encodeValue, fromStateJson, toStateJson } from './codec.js';
 import { Invocation, type SpawnBridge } from './ctx.js';
 import { invocation } from './determinism.js';
@@ -26,33 +26,33 @@ import { foldRestore, rawState } from './state.js';
 
 /** A declared class, with the lookups dispatch needs on the hot path. */
 export class RegisteredClass {
-  /** Channels each procedure produces on, by procedure index. */
+  /** Channels each tasklet produces on, by tasklet index. */
   readonly outgoing: ChannelSpec[][];
-  /** Live entity state, keyed by procedure index and entity key. */
-  private readonly entities = new Map<string, unknown>();
+  /** Live cell state, keyed by tasklet index and cell key. */
+  private readonly cells = new Map<string, unknown>();
 
   constructor(readonly spec: ClassSpec) {
-    this.outgoing = spec.procedures.map((node) =>
+    this.outgoing = spec.tasklets.map((node) =>
       spec.channels.filter((channel) => channel.producer === node.index),
     );
   }
 
-  private cellKey(procedure: number, entityKey: string | undefined): string {
-    return `${procedure}/${entityKey ?? ''}`;
+  private cellAddress(tasklet: number, cellKey: string | undefined): string {
+    return `${tasklet}/${cellKey ?? ''}`;
   }
 
-  /** The entity's live state, created from the declaration on first touch. */
-  stateOf(node: ProcNode, entityKey: string | undefined): unknown {
-    const key = this.cellKey(node.index, entityKey);
-    if (!this.entities.has(key)) {
-      const initial = node.procedure.definition.initialState;
-      this.entities.set(key, initial ? initial(entityKey) : undefined);
+  /** The cell's live state, created from the declaration on first touch. */
+  stateOf(node: TaskNode, cellKey: string | undefined): unknown {
+    const key = this.cellAddress(node.index, cellKey);
+    if (!this.cells.has(key)) {
+      const initial = node.tasklet.definition.initialState;
+      this.cells.set(key, initial ? initial(cellKey) : undefined);
     }
-    return this.entities.get(key);
+    return this.cells.get(key);
   }
 
-  setState(node: ProcNode, entityKey: string | undefined, state: unknown): void {
-    this.entities.set(this.cellKey(node.index, entityKey), state);
+  setState(node: TaskNode, cellKey: string | undefined, state: unknown): void {
+    this.cells.set(this.cellAddress(node.index, cellKey), state);
   }
 }
 
@@ -122,7 +122,7 @@ export function dispatchDeps(native: Native, registry: Registry): DispatchDeps {
 /**
  * Produce the answer for one activation. Throwing is not an option here: every
  * failure becomes a result the core can act on, because the alternative is an
- * entity that never receives work again.
+ * cell that never receives work again.
  */
 export async function answer(
   activation: NativeActivation,
@@ -138,11 +138,11 @@ export async function answer(
   }
 
   try {
-    const node = registered.spec.procedures[activation.procedure];
+    const node = registered.spec.tasklets[activation.tasklet];
     if (!node) {
       return failed(
         activation.token,
-        `class \`${activation.factory}\` has no procedure at index ${activation.procedure}`,
+        `class \`${activation.factory}\` has no tasklet at index ${activation.tasklet}`,
         true,
       );
     }
@@ -158,18 +158,18 @@ export async function answer(
         return {
           token: activation.token,
           outcome: 'state_json',
-          json: toStateJson(registered.stateOf(node, activation.entityKey)),
+          json: toStateJson(registered.stateOf(node, activation.cellKey)),
         };
       case 'migration_serialize':
         return {
           token: activation.token,
           outcome: 'migration_state',
-          json: toStateJson(registered.stateOf(node, activation.entityKey)),
+          json: toStateJson(registered.stateOf(node, activation.cellKey)),
         };
       case 'apply_state':
         registered.setState(
           node,
-          activation.entityKey,
+          activation.cellKey,
           fromStateJson(activation.stateJson ?? Buffer.alloc(0)),
         );
         return { token: activation.token, outcome: 'state_applied' };
@@ -186,19 +186,19 @@ export async function answer(
 }
 
 /**
- * Run user code against one entity, and keep the state it produced.
+ * Run user code against one cell, and keep the state it produced.
  *
  * Every activation kind that reaches a handler goes through here — an input,
  * a timer firing, a compensation — so the context they receive and the state
  * they leave behind cannot differ between them. The state is written back
  * whether or not the body threw: a change recorded before the throw is
- * already journaled, and dropping it here would make the live entity
+ * already journaled, and dropping it here would make the live cell
  * disagree with its own log.
  */
 async function invoke(
   activation: NativeActivation,
   registered: RegisteredClass,
-  node: ProcNode,
+  node: TaskNode,
   deps: DispatchDeps,
   at: { now: bigint; replay: boolean },
   body: (ctx: Invocation) => Promise<unknown>,
@@ -208,29 +208,29 @@ async function invoke(
     node,
     outgoing: registered.outgoing[node.index] as ChannelSpec[],
     operative: activation.operative,
-    entityKey: activation.entityKey,
+    cellKey: activation.cellKey,
     changeSeq: activation.changeSeq,
     now: at.now,
     replay: at.replay,
-    state: registered.stateOf(node, activation.entityKey),
+    state: registered.stateOf(node, activation.cellKey),
     token: activation.token,
     bridge: deps.bridge,
   });
   try {
-    await invocation.run({ procedure: node.name }, () => body(ctx));
+    await invocation.run({ tasklet: node.name }, () => body(ctx));
     return ctx;
   } finally {
-    registered.setState(node, activation.entityKey, rawState(ctx.currentState));
+    registered.setState(node, activation.cellKey, rawState(ctx.currentState));
   }
 }
 
 async function runWork(
   activation: NativeActivation,
   registered: RegisteredClass,
-  node: ProcNode,
+  node: TaskNode,
   deps: DispatchDeps,
 ): Promise<NativeActivationResult> {
-  const definition = node.procedure.definition;
+  const definition = node.tasklet.definition;
   const effects: NativeItemEffect[] = [];
 
   for (const item of activation.items ?? []) {
@@ -269,13 +269,13 @@ async function runWork(
             channel.kind === 'entry' ||
             isStructuredWorkflow(registered.spec);
           const edge = untransformed
-            ? channel?.consumers.find((each) => each.procedure === node.index)
+            ? channel?.consumers.find((each) => each.tasklet === node.index)
             : undefined;
           const values = edgeValues(channel, edge, item.payload ?? Buffer.alloc(0));
           // A filtered value is consumed and reaches no handler, and a fanned
           // one reaches it once per value. Either way the input produces one
           // effect, so its offset advances once and nothing is retried.
-          for (const input of valuesForEntity(edge, definition, activation.entityKey, values)) {
+          for (const input of valuesForCell(edge, definition, activation.cellKey, values)) {
             await ctx.handle(input);
           }
         },
@@ -287,7 +287,7 @@ async function runWork(
       // travels to the dead-letter entry and the controller's log.
       log().debug(`${node.name} failed an item: ${(error as Error)?.stack ?? error}`);
       // Items after this one are re-handed by the core, so the batch stops
-      // here rather than reporting effects the entity never saw.
+      // here rather than reporting effects the cell never saw.
       effects.push({
         verdict: isNonRetryable(error) ? 'non_retryable' : 'retryable',
         message: errorMessage(error),
@@ -304,7 +304,7 @@ async function runWork(
 /**
  * What one payload becomes on `edge`: decoded as its channel reads it, then run
  * through the edge's transforms. The crossing and the delivery both start here,
- * so an entity keeps exactly the values the crossing keyed.
+ * so a cell keeps exactly the values the crossing keyed.
  */
 function edgeValues(
   channel: ChannelSpec | undefined,
@@ -316,50 +316,50 @@ function edgeValues(
 }
 
 /**
- * The entity keys one value routes to: the edge's key, else the procedure's
+ * The cell keys one value routes to: the edge's key, else the tasklet's
  * static fan-out, else null for a consumer that routes by neither.
  */
 function keysOf(
   edge: ConsumerEdge | undefined,
-  definition: ProcNode['procedure']['definition'] | undefined,
+  definition: TaskNode['tasklet']['definition'] | undefined,
   value: unknown,
 ): string[] | null {
   if (edge?.keyBy) return [edge.keyBy(value)];
-  const entitiesFor = definition?.entities?.entitiesFor;
-  return entitiesFor ? entitiesFor(value) : null;
+  const cellsFor = definition?.cells?.cellsFor;
+  return cellsFor ? cellsFor(value) : null;
 }
 
 /**
- * The values of one delivered payload that belong to this entity. The core
- * hands the whole payload to every key its crossing answered, so each entity
+ * The values of one delivered payload that belong to this cell. The core
+ * hands the whole payload to every key its crossing answered, so each cell
  * keeps the values the crossing keyed to it. With no edge evaluated here, the
- * producer already keyed the payload to this entity.
+ * producer already keyed the payload to this cell.
  */
-function valuesForEntity(
+function valuesForCell(
   edge: ConsumerEdge | undefined,
-  definition: ProcNode['procedure']['definition'],
-  entityKey: string | undefined,
+  definition: TaskNode['tasklet']['definition'],
+  cellKey: string | undefined,
   values: unknown[],
 ): unknown[] {
-  if (edge === undefined || entityKey === undefined) return values;
+  if (edge === undefined || cellKey === undefined) return values;
   return values.filter((value) => {
     const keys = keysOf(edge, definition, value);
-    return keys === null || keys.includes(entityKey);
+    return keys === null || keys.includes(cellKey);
   });
 }
 
 function restoreFold(
   activation: NativeActivation,
   registered: RegisteredClass,
-  node: ProcNode,
+  node: TaskNode,
 ): NativeActivationResult {
   registered.setState(
     node,
-    activation.entityKey,
+    activation.cellKey,
     foldRestore(
-      node.procedure.definition as never,
+      node.tasklet.definition as never,
       { snapshot: activation.snapshot, changes: activation.changes },
-      activation.entityKey,
+      activation.cellKey,
       node.name,
     ),
   );
@@ -369,10 +369,10 @@ function restoreFold(
 function snapshot(
   activation: NativeActivation,
   registered: RegisteredClass,
-  node: ProcNode,
+  node: TaskNode,
 ): NativeActivationResult {
-  const codec = node.procedure.definition.stateCodec;
-  const state = registered.stateOf(node, activation.entityKey);
+  const codec = node.tasklet.definition.stateCodec;
+  const state = registered.stateOf(node, activation.cellKey);
   return {
     token: activation.token,
     outcome: 'snapshot',
@@ -392,18 +392,18 @@ function prepare(
   // The crossing answers one key set for the whole payload, so it reads the
   // first consumer edge — the one the core routes the answer to.
   const edge = channel?.consumers[0];
-  const node = edge === undefined ? undefined : registered.spec.procedures[edge.procedure];
-  const definition = node?.procedure.definition;
+  const node = edge === undefined ? undefined : registered.spec.tasklets[edge.tasklet];
+  const definition = node?.tasklet.definition;
 
   const answers: NativePrepareAnswer[] = request.payloads.map((payload) => {
     try {
       const values = edgeValues(channel, edge, payload);
       // A filtered payload answers no key. For a dynamic consumer that is what
       // tells the core not to route it at all — the drop happens before an
-      // entity is minted rather than inside one.
+      // cell is minted rather than inside one.
       if (values.length === 0) return { keys: [] };
 
-      // A fanned payload reaches every entity one of its values keys to.
+      // A fanned payload reaches every cell one of its values keys to.
       const keys = request.wantKeys
         ? [...new Set(values.flatMap((value) => keysOf(edge, definition, value) ?? []))]
         : [];
@@ -425,10 +425,10 @@ function prepare(
 async function compensate(
   activation: NativeActivation,
   registered: RegisteredClass,
-  node: ProcNode,
+  node: TaskNode,
   deps: DispatchDeps,
 ): Promise<NativeActivationResult> {
-  const definition = node.procedure.definition;
+  const definition = node.tasklet.definition;
   if (!definition.compensate) {
     return failed(activation.token, `${node.name} declares no compensate hook`, true);
   }
@@ -448,7 +448,7 @@ async function compensate(
  * Dispatch one activation and answer it exactly once.
  *
  * The guard is the contract, not politeness. An unanswered activation retires
- * its entity for the life of the process, so a throw from the dispatcher, from
+ * its cell for the life of the process, so a throw from the dispatcher, from
  * encoding the result, or from `complete` itself abandons rather than logging
  * and returning.
  */

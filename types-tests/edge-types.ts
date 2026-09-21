@@ -12,7 +12,7 @@
  * at registration and covered by `test/authoring.test.mjs`.
  */
 
-import { defineOperative, defineProcedure, defineWorkflow } from '../src/index.js';
+import { defineOperative, defineTasklet, defineWorkflow } from '../src/index.js';
 
 interface Trade {
   symbol: string;
@@ -24,17 +24,17 @@ interface Candle {
   close: number;
 }
 
-const Ohlc = defineProcedure({
+const Ohlc = defineTasklet({
   name: 'ohlc',
   run: (trade: Trade): Candle => ({ symbol: trade.symbol, close: trade.price }),
 });
 
-const Publish = defineProcedure({
+const Publish = defineTasklet({
   name: 'publish',
   run: (candle: Candle): string => `${candle.symbol}:${candle.close}`,
 });
 
-const Count = defineProcedure({
+const Count = defineTasklet({
   name: 'count',
   initialState: () => ({ total: 0 }),
   applyChange: (state, change: { by: number }) => {
@@ -100,7 +100,7 @@ export const refusals = defineOperative({
     // And a change the fold does not accept.
     c.input<Trade>('i').into(Count);
 
-    // A merge's mappings lift every source into the input its procedure reads.
+    // A merge's mappings lift every source into the input its tasklet reads.
     c.merge<Trade>()
       .from(c.input<Trade>('r'), (trade) => trade)
       .from(c.input('s', { codec: 'text' }), (line) => ({ symbol: line, price: 0 }))
@@ -108,7 +108,7 @@ export const refusals = defineOperative({
       .into(Ohlc)
       .into(Publish);
 
-    // @ts-expect-error a merge of Trade does not feed a procedure reading Candle
+    // @ts-expect-error a merge of Trade does not feed a tasklet reading Candle
     c.merge<Trade>().from(c.input<Trade>('t'), (trade) => trade).into(Publish);
 
     // @ts-expect-error the mapping answers a string, not the merged Trade
@@ -124,7 +124,7 @@ export const refusals = defineOperative({
   },
 });
 
-const BadChange = defineProcedure({
+const BadChange = defineTasklet({
   name: 'bad_change',
   initialState: () => ({ total: 0 }),
   applyChange: (state, change: { by: number }) => {
@@ -136,7 +136,7 @@ const BadChange = defineProcedure({
   },
 });
 
-const BadEmit = defineProcedure<Trade, Candle>({
+const BadEmit = defineTasklet<Trade, Candle>({
   name: 'bad_emit',
   run: (trade, ctx) => {
     // @ts-expect-error the declared output is Candle, not a string
@@ -151,7 +151,7 @@ export const moreRefusals = defineOperative({
   },
 });
 
-// The §5 short form: one procedure's fields and its `run` body in place of a
+// The §5 short form: one tasklet's fields and its `run` body in place of a
 // `channels` body, at the function whose name is its kind.
 export const shortForm = defineOperative({
   factoryId: 'short_form',
@@ -179,14 +179,14 @@ defineOperative({ factoryId: 'both', run: (line: string) => line, channels: () =
 // @ts-expect-error the kind is the function's own name, never a field
 defineWorkflow({ factoryId: 'kinded', kind: 'workflow', run: (line: string) => line });
 
-// @ts-expect-error a short form's procedure is named after its `factoryId`
+// @ts-expect-error a short form's tasklet is named after its `factoryId`
 defineOperative({ factoryId: 'named', name: 'other', run: (line: string) => line });
 
 // @ts-expect-error a class-level setting is the full form
 defineWorkflow({ factoryId: 'looped', loopMode: 'chained', run: (line: string) => line });
 
-// @ts-expect-error a procedure carries no sink; the short form is an operative
-defineProcedure({ name: 'sinking', sink: 'out', run: (line: string) => line });
+// @ts-expect-error a tasklet carries no sink; the short form is an operative
+defineTasklet({ name: 'sinking', sink: 'out', run: (line: string) => line });
 
-// @ts-expect-error a procedure's body is `run`
-defineProcedure({ name: 'old', handle: (line: string) => line });
+// @ts-expect-error a tasklet's body is `run`
+defineTasklet({ name: 'old', handle: (line: string) => line });

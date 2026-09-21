@@ -17,8 +17,8 @@ import { AsyncLocalStorage } from 'node:async_hooks';
 
 import { log } from './logger.js';
 
-/** The procedure whose invocation the current async context belongs to. */
-export const invocation = new AsyncLocalStorage<{ procedure: string }>();
+/** The tasklet whose invocation the current async context belongs to. */
+export const invocation = new AsyncLocalStorage<{ tasklet: string }>();
 
 const reported = new Set<string>();
 let installed = false;
@@ -59,7 +59,7 @@ function report(what: string, instead: string): void {
   if (reported.has(key)) return;
   reported.add(key);
   log().warn(
-    `${context.procedure} read ${what} at ${site}. That value differs on every replay, and ` +
+    `${context.tasklet} read ${what} at ${site}. That value differs on every replay, and ` +
       `the engine replays — a crash-resume, a retry and a correction all re-enter this ` +
       `handler expecting the same effects. Use ${instead}.`,
   );

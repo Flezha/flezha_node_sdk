@@ -1,14 +1,14 @@
 // Twins of the rust_runner e2e fixtures (test/apps/rust_runner/src/main.rs)
-// under the same factory ids, procedure names, channel names and output bytes.
+// under the same factory ids, tasklet names, channel names and output bytes.
 //
 // Entry payloads and plugin frames are UTF-8 text on the wire, the same as the
 // reference: every entry names the text codec, and a sink naming none sends a
-// string as its UTF-8 bytes. An inter-procedure hop between two Node
-// procedures carries MessagePack, which no one else reads.
+// string as its UTF-8 bytes. An inter-tasklet hop between two Node
+// tasklets carries MessagePack, which no one else reads.
 
 import { BroadcastChannel } from 'node:worker_threads';
 
-import { defineOperative, defineProcedure, defineWorkflow } from '@flezha/sdk';
+import { defineOperative, defineTasklet, defineWorkflow } from '@flezha/sdk';
 
 import { prefix } from './fixture_support.mjs';
 
@@ -17,8 +17,8 @@ export * from './fixtures_state.mjs';
 
 // -- do_nothing / bench_echo ------------------------------------------------
 
-const DoNothing = defineProcedure({
-  name: 'do_nothing_procedure',
+const DoNothing = defineTasklet({
+  name: 'do_nothing_tasklet',
   run: (input) => input,
 });
 
@@ -42,9 +42,9 @@ export const benchEcho = defineOperative({
 // -- compare_filter ---------------------------------------------------------
 
 // State seeded by the controller's init values and then only read: there is
-// nothing to journal, so the procedure declares no change fold.
-const CompareFilter = defineProcedure({
-  name: 'compare_filter_procedure',
+// nothing to journal, so the tasklet declares no change fold.
+const CompareFilter = defineTasklet({
+  name: 'compare_filter_tasklet',
   initialState: () => ({ comparable: 'default', inverted: false }),
   run: (input, ctx) => (ctx.state.comparable === input ? input : undefined),
 });
@@ -56,18 +56,18 @@ export const compareFilter = defineOperative({
   },
 });
 
-// -- static_entity / sugar_static_entity / mixed_operative ------------------
+// -- static_cell / sugar_static_cell / mixed_operative ------------------
 
 const STATIC_KEYS = ['a', 'b', 'c', 'd'];
-const staticEntitiesFor = (input) => {
+const staticCellsFor = (input) => {
   const first = String(input)[0];
   return [STATIC_KEYS.includes(first) ? first : 'd'];
 };
 
 const staticEntry = (name) =>
-  defineProcedure({
+  defineTasklet({
     name,
-    entities: { keys: STATIC_KEYS, entitiesFor: staticEntitiesFor },
+    cells: { keys: STATIC_KEYS, cellsFor: staticCellsFor },
     initialState: () => ({ seen: [] }),
     applyChange: (state, change) => {
       state.seen.push(change.push);
@@ -79,13 +79,13 @@ const staticEntry = (name) =>
   });
 
 const passThrough = (name, options = {}) =>
-  defineProcedure({ name, ...options, run: (input) => input });
+  defineTasklet({ name, ...options, run: (input) => input });
 
-const StaticEntry = staticEntry('static_entry_procedure');
-const StaticDownstream = passThrough('static_downstream_procedure');
+const StaticEntry = staticEntry('static_entry_tasklet');
+const StaticDownstream = passThrough('static_downstream_tasklet');
 
-export const staticEntity = defineOperative({
-  factoryId: 'static_entity',
+export const staticCell = defineOperative({
+  factoryId: 'static_cell',
   channels: (c) => {
     c.input('input', { codec: 'text' })
       .into(StaticEntry)
@@ -95,13 +95,13 @@ export const staticEntity = defineOperative({
   },
 });
 
-const MacroStaticEntry = staticEntry('macro_static_entry_procedure');
-const MacroStaticDownstream = passThrough('macro_static_downstream_procedure');
+const MacroStaticEntry = staticEntry('macro_static_entry_tasklet');
+const MacroStaticDownstream = passThrough('macro_static_downstream_tasklet');
 
 // The reference pipeline sugar leaves the hop unnamed and lets the sink name
 // the producing channel.
-export const sugarStaticEntity = defineOperative({
-  factoryId: 'sugar_static_entity',
+export const sugarStaticCell = defineOperative({
+  factoryId: 'sugar_static_cell',
   channels: (c) => {
     c.input('input', { codec: 'text' })
       .into(MacroStaticEntry)
@@ -110,7 +110,7 @@ export const sugarStaticEntity = defineOperative({
   },
 });
 
-const MixedMacroEntry = passThrough('mixed_macro_entry_procedure');
+const MixedMacroEntry = passThrough('mixed_macro_entry_tasklet');
 const MixedHandDownstream = passThrough('mixed_hand_downstream');
 
 export const mixedOperative = defineOperative({
@@ -126,8 +126,8 @@ export const mixedOperative = defineOperative({
 
 // -- the §5 short forms -----------------------------------------------------
 //
-// One operative declaration each, carrying its procedure's `run` body in place
-// of a `channels` body; the function's name is its kind. No procedure is
+// One operative declaration each, carrying its tasklet's `run` body in place
+// of a `channels` body; the function's name is its kind. No tasklet is
 // declared beside them.
 
 export const sugarDoNothing = defineOperative({
@@ -167,7 +167,7 @@ export const sugarWorkflow = defineWorkflow({
   run: (input) => input,
 });
 
-// No sink: the entry feeds a procedure that only keeps state.
+// No sink: the entry feeds a tasklet that only keeps state.
 export const sugarStateOnly = defineOperative({
   factoryId: 'sugar_state_only',
   input: 'ticks',
@@ -183,30 +183,30 @@ export const sugarStateOnly = defineOperative({
 
 // -- hybrid_channel ---------------------------------------------------------
 //
-// One emit reaching two destinations: an inter-procedure consumer and a plugin
+// One emit reaching two destinations: an inter-tasklet consumer and a plugin
 // wire with its own serializer. The serializer refuses a sentinel value, so an
 // operator can observe end to end that a refusal is isolated to the emit rather
 // than failing the item.
 
 const HYBRID_SENTINEL = 0xdeadbeef;
 
-const HybridProducer = defineProcedure({
-  name: 'hybrid_producer_procedure',
+const HybridProducer = defineTasklet({
+  name: 'hybrid_producer_tasklet',
   run: (input, ctx) => {
     const parsed = Number.parseInt(String(input), 10);
     const value = Number.isSafeInteger(parsed) && parsed >= 0 && parsed <= 0xffffffff ? parsed : 0;
     try {
       ctx.emit(value);
     } catch (error) {
-      console.error(`hybrid_producer_procedure: serializer refused an emit: ${error.message}`);
+      console.error(`hybrid_producer_tasklet: serializer refused an emit: ${error.message}`);
     }
   },
 });
 
-const HybridConsumer = defineProcedure({
-  name: 'hybrid_consumer_procedure',
+const HybridConsumer = defineTasklet({
+  name: 'hybrid_consumer_tasklet',
   run: (input) => {
-    console.log(`hybrid_consumer_procedure: received ${input}`);
+    console.log(`hybrid_consumer_tasklet: received ${input}`);
   },
 });
 
@@ -234,15 +234,15 @@ export const hybridChannel = defineOperative({
 
 // -- merged_input -----------------------------------------------------------
 //
-// Two entry channels merged into one procedure. Each source's mapping tags the
+// Two entry channels merged into one tasklet. Each source's mapping tags the
 // value with the channel it came from, the merge keys on the symbol the mapping
 // read, and the emitted line is `<source>:<payload>`.
 
 const tagged = (source) => (payload) => ({ source, symbol: prefix(payload), payload });
 
-const MergeLabel = defineProcedure({
-  name: 'merge_label_procedure',
-  dynamicEntities: {},
+const MergeLabel = defineTasklet({
+  name: 'merge_label_tasklet',
+  dynamicCells: {},
   run: (input) => `${input.source}:${input.payload}`,
 });
 
@@ -264,7 +264,7 @@ export const mergedInput = defineOperative({
 // Every value transform on one edge: `drop` is filtered out, a comma list fans
 // out into one value per element, each is upper-cased and keyed on its prefix.
 
-const TransformLabel = passThrough('transform_label_procedure', { dynamicEntities: {} });
+const TransformLabel = passThrough('transform_label_tasklet', { dynamicCells: {} });
 
 export const transformChain = defineOperative({
   factoryId: 'transform_chain',
@@ -280,14 +280,14 @@ export const transformChain = defineOperative({
   },
 });
 
-// -- entity_stress ----------------------------------------------------------
+// -- cell_stress ----------------------------------------------------------
 
 const STRESS_KEYS = ['p0', 'p1', 'p2', 'p3', 'p4', 'p5', 'p6', 'p7'];
 
-const stress = (name, entitiesFor) =>
-  defineProcedure({
+const stress = (name, cellsFor) =>
+  defineTasklet({
     name,
-    entities: { keys: STRESS_KEYS, entitiesFor },
+    cells: { keys: STRESS_KEYS, cellsFor },
     run: (input) => input,
   });
 
@@ -296,8 +296,8 @@ const StressB = stress('stress_b', () => ['p0']);
 const StressC = stress('stress_c', () => ['p0']);
 const StressD = stress('stress_d', () => ['p0']);
 
-export const entityStress = defineOperative({
-  factoryId: 'entity_stress',
+export const cellStress = defineOperative({
+  factoryId: 'cell_stress',
   channels: (c) => {
     c.input('input', { codec: 'text' })
       .into(StressA)
@@ -315,8 +315,8 @@ export const entityStress = defineOperative({
 
 let antidoteTaken = false;
 
-const PoisonProbe = defineProcedure({
-  name: 'poison_probe_procedure',
+const PoisonProbe = defineTasklet({
+  name: 'poison_probe_tasklet',
   run: (input) => {
     if (input === 'antidote') antidoteTaken = true;
     if (input === 'poison' && !antidoteTaken) throw new Error('poison payload');
@@ -333,8 +333,8 @@ export const poisonProbe = defineOperative({
 
 let wedgeAborted = false;
 
-const WedgeProbe = defineProcedure({
-  name: 'wedge_probe_procedure',
+const WedgeProbe = defineTasklet({
+  name: 'wedge_probe_tasklet',
   run: async (input) => {
     // Holds the dispatch loop forever: the runner stays connected and
     // heartbeating while its dispatch counter freezes — the wedge signature.
@@ -368,8 +368,8 @@ export const wedgeProbe = defineOperative({
 // it, the engine rewinds behind 200, replays the retained input log sorted by
 // event time, and the fold order becomes [100, 200, 300].
 
-const Candle = defineProcedure({
-  name: 'candle_procedure',
+const Candle = defineTasklet({
+  name: 'candle_tasklet',
   clock: 'event_time',
   eventTime: (input) => Number(String(input).split(':')[0]) || 0,
   // Event times in fold order: the assertion surface.
@@ -399,12 +399,12 @@ export const candle = defineOperative({
 // -- session_timeout --------------------------------------------------------
 //
 // The worked session-timeout shape: each input pushes the idle deadline out,
-// and the firing closes the session. Single-entity so the e2e's crash-resume
-// half exercises a durable Entity. The timeout is read from
+// and the firing closes the session. Single-cell so the e2e's crash-resume
+// half exercises a durable Cell. The timeout is read from
 // `TIMER_TEST_TIMEOUT_MS` (the e2e sets it short).
 
-const SessionTimeout = defineProcedure({
-  name: 'session_timeout_procedure',
+const SessionTimeout = defineTasklet({
+  name: 'session_timeout_tasklet',
   initialState: () => ({ touched: [], closed_at: [] }),
   applyChange: (state, change) => {
     if ('touched' in change) state.touched.push(change.touched);
@@ -432,8 +432,8 @@ export const sessionTimeout = defineOperative({
 
 // -- bounded_mailbox_{drop_nothing,drop_newest,drop_oldest} -----------------
 
-const boundedMailboxProcedure = (name) =>
-  defineProcedure({
+const boundedMailboxTasklet = (name) =>
+  defineTasklet({
     name,
     mailboxCapacity: 4,
     initialState: () => ({ processed: 0 }),
@@ -452,7 +452,7 @@ const boundedMailbox = (policy) =>
     channels: (c) => {
       c.input(`${policy}_input`, { codec: 'text' })
         .onFull(policy)
-        .into(boundedMailboxProcedure(`${policy}_test_procedure`))
+        .into(boundedMailboxTasklet(`${policy}_test_tasklet`))
         .sink(`${policy}_echo`);
     },
   });
@@ -469,9 +469,9 @@ export const boundedMailboxDropOldest = boundedMailbox('drop_oldest');
 // forwarded frame keeps its producing channel's name, and that is what selects
 // the receiving operative's entry channel — so the entry here is `in`.
 
-const PartitionRelay = defineProcedure({
-  name: 'partition_relay_procedure',
-  dynamicEntities: {},
+const PartitionRelay = defineTasklet({
+  name: 'partition_relay_tasklet',
+  dynamicCells: {},
   initialState: () => ({ seen: [] }),
   applyChange: (state, change) => {
     state.seen.push(change.push);
@@ -489,11 +489,11 @@ export const partitionRelay = defineOperative({
   },
 });
 
-// -- dynamic_entity ---------------------------------------------------------
+// -- dynamic_cell ---------------------------------------------------------
 
-const DynamicEntity = defineProcedure({
-  name: 'dynamic_entity_procedure',
-  dynamicEntities: {
+const DynamicCell = defineTasklet({
+  name: 'dynamic_cell_tasklet',
+  dynamicCells: {
     idleTtlMs: Number(process.env.DYN_TEST_TTL_MS) || undefined,
   },
   initialState: () => ({ seen: [] }),
@@ -506,16 +506,16 @@ const DynamicEntity = defineProcedure({
   },
 });
 
-export const dynamicEntity = defineOperative({
-  factoryId: 'dynamic_entity',
+export const dynamicCell = defineOperative({
+  factoryId: 'dynamic_cell',
   channels: (c) => {
     c.input('input', { codec: 'text' })
       .onFull('drop_nothing')
       // Filtered before keying: a dropped value answers no key, so the core
-      // never mints an entity for it.
+      // never mints a cell for it.
       .filter((input) => input !== 'drop')
       .keyBy(prefix)
-      .into(DynamicEntity)
+      .into(DynamicCell)
       .sink('kafka');
   },
 });

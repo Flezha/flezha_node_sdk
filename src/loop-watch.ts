@@ -5,7 +5,7 @@
  * prevent: the loop it runs on is the loop that would dispatch everything
  * else, and there is no way to preempt JavaScript. What the SDK can do is name
  * it at its source, so the diagnosis is not left to a controller-side
- * `entity_dispatch_stalled` verdict half a minute later.
+ * `cell_dispatch_stalled` verdict half a minute later.
  */
 
 import { monitorEventLoopDelay, type IntervalHistogram } from 'node:perf_hooks';
@@ -25,13 +25,13 @@ const SAMPLE_INTERVAL_MS = 5_000;
 export class LoopWatch {
   private histogram: IntervalHistogram | null = null;
   private timer: NodeJS.Timeout | null = null;
-  private lastProcedure = '<none>';
+  private lastTasklet = '<none>';
 
   constructor(private readonly loopName: string) {}
 
-  /** The procedure most recently dispatched here — what the warning names. */
-  observe(procedure: string): void {
-    this.lastProcedure = procedure;
+  /** The tasklet most recently dispatched here — what the warning names. */
+  observe(tasklet: string): void {
+    this.lastTasklet = tasklet;
   }
 
   start(): void {
@@ -51,7 +51,7 @@ export class LoopWatch {
     if (worstMs < DELAY_WARN_MS) return;
     log().warn(
       `dispatch loop ${this.loopName} was blocked for ${worstMs.toFixed(0)}ms while running ` +
-        `\`${this.lastProcedure}\`. A handler that computes synchronously holds the loop that ` +
+        `\`${this.lastTasklet}\`. A handler that computes synchronously holds the loop that ` +
         'would dispatch everything else. Move dispatch onto worker threads — .workers(n) or ' +
         'FLEZHA_NODE_WORKERS — so the work has its own loops and a wedged one can be replaced.',
     );

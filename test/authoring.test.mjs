@@ -14,7 +14,7 @@ import {
   ACTIVATION_SCHEMA_VERSION,
   DeclarationError,
   defineOperative,
-  defineProcedure,
+  defineTasklet,
   defineWorkflow,
   encodeValue,
   loadNative,
@@ -22,7 +22,7 @@ import {
   toHostClassDecl,
   validate,
 } from '../dist/esm/index.js';
-import { ProcedureTestHarness } from '../dist/esm/testing.js';
+import { TaskletTestHarness } from '../dist/esm/testing.js';
 import { EmitError } from '../dist/esm/types.js';
 
 import { member } from './contract.mjs';
@@ -32,7 +32,7 @@ loadNative().contextNew(ACTIVATION_SCHEMA_VERSION);
 
 const fixtures = await testAppModule('fixtures.mjs');
 
-const echo = (name, options = {}) => defineProcedure({ name, ...options, run: (input) => input });
+const echo = (name, options = {}) => defineTasklet({ name, ...options, run: (input) => input });
 
 const refusal = (build) => {
   try {
@@ -51,7 +51,7 @@ const derivedChannels = (spec) =>
     channel.name,
     channel.kind,
     channel.producer,
-    channel.consumers.map((edge) => edge.procedure),
+    channel.consumers.map((edge) => edge.tasklet),
   ]);
 
 test('a graph builds and its topology reaches the declaration', () => {
@@ -69,17 +69,17 @@ test('a graph builds and its topology reaches the declaration', () => {
     validate(spec).channels.map((channel) => [channel.name, channel.kind]),
     [
       ['in', 'entry'],
-      ['first', 'inter_proc'],
+      ['first', 'inter_task'],
       ['second', 'plugin'],
     ],
   );
   const decl = toHostClassDecl(spec);
   assert.deepEqual(
     decl.channels.map((channel) => channel.kind),
-    ['entry', 'inter_proc', 'inter_proc'],
+    ['entry', 'inter_task', 'inter_task'],
   );
   assert.deepEqual(
-    decl.procedures.map((p) => p.name),
+    decl.tasklets.map((p) => p.name),
     ['first', 'second'],
   );
   assert.equal(decl.sdk_lang, 4);
@@ -87,9 +87,9 @@ test('a graph builds and its topology reaches the declaration', () => {
 });
 
 test('keyBy declares a dynamic consumer and the key reaches the channel', () => {
-  const counter = defineProcedure({
+  const counter = defineTasklet({
     name: 'counter',
-    dynamicEntities: { idleTtlMs: 60_000, maxEntities: 100 },
+    dynamicCells: { idleTtlMs: 60_000, maxCells: 100 },
     initialState: () => ({ seen: 0 }),
     applyChange: (state, change) => {
       state.seen += change.by;
@@ -111,25 +111,25 @@ test('keyBy declares a dynamic consumer and the key reaches the channel', () => 
   });
   validate(spec);
   const decl = toHostClassDecl(spec);
-  assert.equal(decl.procedures[0].entity_mode, 'dynamic');
-  assert.equal(decl.procedures[0].idle_ttl_ms, 60_000);
+  assert.equal(decl.tasklets[0].cell_mode, 'dynamic');
+  assert.equal(decl.tasklets[0].idle_ttl_ms, 60_000);
   assert.equal(decl.channels[1].keyed, true);
 });
 
-// The record carries `change_is_nochange` per procedure: a handler that folds
+// The record carries `change_is_nochange` per tasklet: a handler that folds
 // no change has the empty Change type, and a logical clock over it never
 // advances. The refusal is the core's `UnservableClock`; what is asserted here
 // is that this builder writes the fact it reads.
-test('a procedure that folds no change declares it, and a logical clock over it is refused', () => {
+test('a tasklet that folds no change declares it, and a logical clock over it is refused', () => {
   const spec = defineOperative({
     factoryId: 'unservable',
     channels: (c) =>
       c
         .input('in')
-        .into(defineProcedure({ name: 'ticker', clock: 'logical', run: (i) => i }))
+        .into(defineTasklet({ name: 'ticker', clock: 'logical', run: (i) => i }))
         .sink(),
   });
-  assert.equal(toHostClassDecl(spec).procedures[0].change_is_nochange, true);
+  assert.equal(toHostClassDecl(spec).tasklets[0].change_is_nochange, true);
   assert.deepEqual(refusal(() => spec).refusals, ['UnservableClock']);
 });
 
@@ -151,7 +151,7 @@ test('a refusal reaches the author under the core’s own names', () => {
     refused.message,
     /^edge_already_wired: topology rejected \[EdgeAlreadyWired\]:\n {2}- /,
   );
-  assert.match(refused.message, /already feeds procedure `target`/);
+  assert.match(refused.message, /already feeds tasklet `target`/);
 });
 
 // The one refusal this builder raises under a core name reads the way the core's do.
@@ -169,7 +169,7 @@ test('a node identity collision is refused under the core’s name, in the messa
   assert.deepEqual(refused.refusals, ['NodeIdentityCollision']);
   assert.match(
     refused.message,
-    /^collision: twin: topology rejected \[NodeIdentityCollision\]:\n {2}- two different procedures/,
+    /^collision: twin: topology rejected \[NodeIdentityCollision\]:\n {2}- two different tasklets/,
   );
 });
 
@@ -189,7 +189,7 @@ test('a named edge names the channel, not the consuming node', () => {
     ['in', 'hop', 'second'],
   );
   assert.deepEqual(
-    decl.procedures.map((p) => p.name),
+    decl.tasklets.map((p) => p.name),
     ['first', 'second'],
   );
 });
@@ -204,15 +204,15 @@ test('a second mention under its own node name is a second node', () => {
   });
   validate(spec);
   assert.deepEqual(
-    toHostClassDecl(spec).procedures.map((p) => p.name),
+    toHostClassDecl(spec).tasklets.map((p) => p.name),
     ['step', 'step_again'],
   );
 });
 
-test('two procedures claiming one node identity are refused', () => {
+test('two tasklets claiming one node identity are refused', () => {
   const refused = refusal(() => {
-    const first = defineProcedure({ name: 'same', run: (i) => i });
-    const second = defineProcedure({ name: 'same', run: (i) => i });
+    const first = defineTasklet({ name: 'same', run: (i) => i });
+    const second = defineTasklet({ name: 'same', run: (i) => i });
     return defineOperative({
       factoryId: 'collide',
       channels: (c) => {
@@ -225,10 +225,10 @@ test('two procedures claiming one node identity are refused', () => {
 
 test('an event-time clock without an extractor is refused', () => {
   const refused = refusal(() => {
-    const proc = defineProcedure({ name: 'windowed', clock: 'event_time', run: (i) => i });
+    const task = defineTasklet({ name: 'windowed', clock: 'event_time', run: (i) => i });
     return defineOperative({
       factoryId: 'no_extractor',
-      channels: (c) => c.input('in').into(proc).sink(),
+      channels: (c) => c.input('in').into(task).sink(),
     });
   });
   assert.match(
@@ -259,7 +259,7 @@ test('the checkpoint options compose in any order, and none clears another', () 
   assert.equal(decl.checkpoint_max_delay_ms, 250);
 });
 
-test('two procedures each terminate on their own sink, named by their node', () => {
+test('two tasklets each terminate on their own sink, named by their node', () => {
   const a = echo('a');
   const b = echo('b');
   const spec = defineOperative({
@@ -359,7 +359,7 @@ test('two channels naming one sink is refused as a duplicate sink name', () => {
   );
 });
 
-test('a workflow declares its lifecycle knobs beside its procedures', () => {
+test('a workflow declares its lifecycle knobs beside its tasklets', () => {
   const spec = defineWorkflow({
     factoryId: 'saga',
     loopMode: 'chained',
@@ -373,7 +373,7 @@ test('a workflow declares its lifecycle knobs beside its procedures', () => {
   assert.equal(decl.workflow.rollback_mode, 'keep_progress');
   assert.equal(decl.workflow.max_duration_ms, 60_000);
   assert.deepEqual(
-    decl.procedures.map((p) => p.name),
+    decl.tasklets.map((p) => p.name),
     ['p'],
   );
 });
@@ -383,29 +383,29 @@ test('state read but never folded is allowed; recording a change is not', async 
   // `compare_filter` fixture is exactly it — so the declaration stands. What
   // is refused is recording a change with nothing to fold it through, at the
   // point of use rather than at declaration.
-  const ReadOnly = defineProcedure({
+  const ReadOnly = defineTasklet({
     name: 'read_only',
     initialState: () => ({ comparable: 'default' }),
     run: (input, ctx) => (ctx.state.comparable === input ? input : undefined),
   });
-  const harness = ProcedureTestHarness.of(ReadOnly);
+  const harness = TaskletTestHarness.of(ReadOnly);
   assert.deepEqual((await harness.input('default')).emits, ['default']);
   assert.deepEqual((await harness.input('other')).emits, []);
 
-  const Recording = defineProcedure({
+  const Recording = defineTasklet({
     name: 'recording',
     initialState: () => ({ n: 0 }),
     run: (_input, ctx) => ctx.change({ by: 1 }),
   });
   await assert.rejects(
-    () => ProcedureTestHarness.of(Recording).input(1),
+    () => TaskletTestHarness.of(Recording).input(1),
     (error) => /declares no applyChange/.test(error.message),
   );
 });
 
 test('applyChange with no state to fold into is refused at definition', () => {
   assert.throws(
-    () => defineProcedure({ name: 'nowhere', applyChange: () => {}, run: () => {} }),
+    () => defineTasklet({ name: 'nowhere', applyChange: () => {}, run: () => {} }),
     (error) => /no initialState/.test(error.message),
   );
 });
@@ -413,7 +413,7 @@ test('applyChange with no state to fold into is refused at definition', () => {
 test('a declared state that cannot be encoded is refused at definition', () => {
   assert.throws(
     () =>
-      defineProcedure({
+      defineTasklet({
         name: 'unencodable',
         initialState: () => ({ pending: new Map() }),
         applyChange: () => {},
@@ -457,21 +457,21 @@ test('an unnamed edge terminating on a sink takes the producing node’s name', 
   );
 });
 
-// --- one output channel per producing procedure ------------------------------
+// --- one output channel per producing tasklet ------------------------------
 //
-// The model Rust and Java carry: a procedure node owns ONE output channel,
+// The model Rust and Java carry: a tasklet node owns ONE output channel,
 // created on first wiring and reused after. A held handle wired twice appends
 // a second consumer to it — it does not declare a second channel claiming the
 // same producer, which the core resolves by first match
-// (`host/register.rs` `procedure_wiring`) and so silently truncates.
+// (`host/register.rs` `tasklet_wiring`) and so silently truncates.
 
-// --- one output channel per producing procedure ------------------------------
+// --- one output channel per producing tasklet ------------------------------
 //
-// The model Rust and Java carry: a procedure node owns ONE output channel,
+// The model Rust and Java carry: a tasklet node owns ONE output channel,
 // created on first wiring and reused after. A held handle wired twice appends
 // a second consumer to it — it does not declare a second channel claiming the
 // same producer, which the core resolves by first match
-// (`host/register.rs` `procedure_wiring`) and so silently truncates.
+// (`host/register.rs` `tasklet_wiring`) and so silently truncates.
 
 test('a held handle wired twice is one channel with two consumers', () => {
   const producer = echo('producer');
@@ -486,7 +486,7 @@ test('a held handle wired twice is one channel with two consumers', () => {
   const channels = derivedChannels(spec);
   assert.deepEqual(channels, [
     ['in', 'entry', null, [0]],
-    ['producer', 'inter_proc', 0, [1, 2]],
+    ['producer', 'inter_task', 0, [1, 2]],
   ]);
   assert.equal(channels.filter((channel) => channel[2] === 0).length, 1);
 });
@@ -526,14 +526,14 @@ test('sink(...) returns the handle, so a consumer wires behind it', () => {
       channel.name,
       channel.kind,
       channel.producer,
-      channel.consumers.map((edge) => edge.procedure),
+      channel.consumers.map((edge) => edge.tasklet),
       channel.sink,
     ]),
     [
       ['in', 'entry', null, [0], null],
-      // A sink alongside a consumer stays inter-procedure: the value reaches
+      // A sink alongside a consumer stays inter-tasklet: the value reaches
       // both, and the channel is journalled as the edge it still is.
-      ['hybrid_indicator', 'inter_proc', 0, [1], 'hybrid_indicator'],
+      ['hybrid_indicator', 'inter_task', 0, [1], 'hybrid_indicator'],
     ],
   );
 });
@@ -561,7 +561,7 @@ test('a transform declared before one into(...) reaches that consumer only', () 
   validate(spec);
   const [, channel] = spec.channels;
   assert.deepEqual(
-    channel.consumers.map((consumer) => [consumer.procedure, consumer.transforms.length]),
+    channel.consumers.map((consumer) => [consumer.tasklet, consumer.transforms.length]),
     [
       [1, 1],
       [2, 0],
@@ -586,7 +586,7 @@ test('a bare re-declared edge is a no-op, not a second edge', () => {
   });
   validate(spec);
   assert.deepEqual(
-    spec.channels[0].consumers.map((edge) => [edge.procedure, edge.transforms.length]),
+    spec.channels[0].consumers.map((edge) => [edge.tasklet, edge.transforms.length]),
     [[0, 0]],
   );
 });
@@ -759,7 +759,7 @@ test('two sources merge into one node, each edge applying its own mapping', () =
   );
 });
 
-test('a procedure output and an entry are both merge sources', () => {
+test('a tasklet output and an entry are both merge sources', () => {
   const spec = defineOperative({
     factoryId: 'merged_hop',
     channels: (c) => {
@@ -773,7 +773,7 @@ test('a procedure output and an entry are both merge sources', () => {
   });
   assert.deepEqual(derivedChannels(spec), [
     ['raw', 'entry', null, [0]],
-    ['parse', 'inter_proc', 0, [1]],
+    ['parse', 'inter_task', 0, [1]],
     ['direct', 'entry', null, [1]],
     ['join', 'plugin', 1, []],
   ]);
@@ -802,7 +802,7 @@ test('a merge is refused by the core’s names', () => {
     }),
     ['EdgeAlreadyWired'],
   );
-  const keyed = echo('keyed', { dynamicEntities: {} });
+  const keyed = echo('keyed', { dynamicCells: {} });
   assert.deepEqual(
     refused((c) =>
       c
@@ -830,12 +830,12 @@ test('the router is a merge into the route_latest node, and a named one is its o
   assert.deepEqual(derivedChannels(spec), [
     ['trades', 'entry', null, [0, 2]],
     ['config', 'entry', null, [0]],
-    ['route_latest', 'inter_proc', 0, [1]],
+    ['route_latest', 'inter_task', 0, [1]],
     ['limits', 'entry', null, [2]],
-    ['limits_router', 'inter_proc', 2, [3]],
+    ['limits_router', 'inter_task', 2, [3]],
   ]);
   assert.deepEqual(
-    spec.procedures.map((node) => node.name),
+    spec.tasklets.map((node) => node.name),
     ['route_latest', 'detector', 'limits_router', 'guard'],
   );
 });
@@ -849,8 +849,8 @@ test('the router hands each key each document once, on that key’s own traffic'
       );
     },
   });
-  const router = spec.procedures.find((node) => node.name === 'route_latest');
-  const harness = ProcedureTestHarness.of(router.procedure);
+  const router = spec.tasklets.find((node) => node.name === 'route_latest');
+  const harness = TaskletTestHarness.of(router.tasklet);
   const document = { limit: 5 };
 
   // Traffic before any document has nothing to hand on.
@@ -879,7 +879,7 @@ test('the router hands each key each document once, on that key’s own traffic'
 
 // --- the §5 short form ------------------------------------------------------
 //
-// An operative definition carrying one procedure's `run` body in place of a
+// An operative definition carrying one tasklet's `run` body in place of a
 // `channels` body is a whole operative of the function's kind, built on the
 // same graph path a hand-written one is built on. `SinkWithoutOutput` is not
 // among the refusals: a `.mjs` author runs no type checker and this SDK ships
@@ -898,7 +898,7 @@ test('a stream short form is its hand-written twin', () => {
     factoryId: 'upcase',
     channels: (c) => {
       c.input('input', { codec: 'text' })
-        .into(defineProcedure({ name: 'upcase', run: upper }))
+        .into(defineTasklet({ name: 'upcase', run: upper }))
         .sink('out');
     },
   });
@@ -919,7 +919,7 @@ test('a workflow short form is its hand-written once workflow', () => {
     factoryId: 'place',
     channels: (c) => {
       c.input('order', { codec: 'text' })
-        .into(defineProcedure({ name: 'place', run: upper }))
+        .into(defineTasklet({ name: 'place', run: upper }))
         .sink('placed');
     },
   });
@@ -929,7 +929,7 @@ test('a workflow short form is its hand-written once workflow', () => {
   assert.deepEqual(declared(short), declared(twin));
 });
 
-test('a short form with no sink wires its entry into the procedure and no plugin channel', async () => {
+test('a short form with no sink wires its entry into the tasklet and no plugin channel', async () => {
   const stateOnly = fixtures.sugarStateOnly;
 
   assert.deepEqual(
@@ -937,20 +937,20 @@ test('a short form with no sink wires its entry into the procedure and no plugin
     [['ticks', 'entry', [0]]],
   );
   assert.deepEqual(
-    stateOnly.procedures.map((node) => node.name),
+    stateOnly.tasklets.map((node) => node.name),
     ['sugar_state_only'],
   );
   assert.equal(stateOnly.channels[0].decode(Buffer.from('tick')), 'tick', 'a codec needs no sink');
 
-  const harness = ProcedureTestHarness.of(stateOnly.procedures[0].procedure);
+  const harness = TaskletTestHarness.of(stateOnly.tasklets[0].tasklet);
   await harness.input('one');
   assert.deepEqual(harness.currentState, { seen: ['one'] });
 });
 
-test('every procedure field a short form carries reaches its generated procedure', () => {
+test('every tasklet field a short form carries reaches its generated tasklet', () => {
   const codec = { encode: (value) => encodeValue(value), decode: () => ({ n: 0 }) };
   const keyed = {
-    entities: { keys: ['a', 'b'], entitiesFor: () => ['a'] },
+    cells: { keys: ['a', 'b'], cellsFor: () => ['a'] },
     clock: 'logical',
     mailboxCapacity: 7,
     schemaVersion: 3,
@@ -968,7 +968,7 @@ test('every procedure field a short form carries reaches its generated procedure
     run: upper,
   };
   const dynamic = {
-    dynamicEntities: { idleTtlMs: 60_000, maxEntities: 10 },
+    dynamicCells: { idleTtlMs: 60_000, maxCells: 10 },
     clock: 'event_time',
     eventTime: () => 0n,
     run: upper,
@@ -978,10 +978,10 @@ test('every procedure field a short form carries reaches its generated procedure
     [defineWorkflow, keyed],
     [defineOperative, dynamic],
   ]) {
-    const node = define({ factoryId: 'fielded', sink: 'out', ...fields }).procedures[0];
+    const node = define({ factoryId: 'fielded', sink: 'out', ...fields }).tasklets[0];
     assert.equal(node.name, 'fielded');
     for (const [field, value] of Object.entries(fields)) {
-      assert.equal(node.procedure.definition[field], value, `${field} reached the procedure`);
+      assert.equal(node.tasklet.definition[field], value, `${field} reached the tasklet`);
     }
   }
 });
@@ -1008,7 +1008,7 @@ test('a field a short form does not carry is refused under the operative, naming
   }
 });
 
-test('a short-form key or a procedure field beside a channels body is refused, naming it', () => {
+test('a short-form key or a tasklet field beside a channels body is refused, naming it', () => {
   for (const define of [defineOperative, defineWorkflow]) {
     for (const [key, value] of [
       ['sink', 'out'],
@@ -1016,7 +1016,7 @@ test('a short-form key or a procedure field beside a channels body is refused, n
       ['codec', 'text'],
       ['mailboxCapacity', 8],
       ['initialState', () => ({ n: 0 })],
-      ['entities', { keys: ['a'] }],
+      ['cells', { keys: ['a'] }],
     ]) {
       const { message } = refusal(() =>
         define({ factoryId: 'full', [key]: value, channels: (c) => c.input('in').into(echo('p')) }),
@@ -1053,7 +1053,7 @@ test('a definition with no factory id is refused, naming it', () => {
   }
 });
 
-test('an operative field on a procedure is refused, naming it and defineOperative', () => {
+test('an operative field on a tasklet is refused, naming it and defineOperative', () => {
   for (const [field, value] of [
     ['kind', 'stream'],
     ['sink', 'out'],
@@ -1061,7 +1061,7 @@ test('an operative field on a procedure is refused, naming it and defineOperativ
     ['codec', 'text'],
   ]) {
     const { message } = refusal(() =>
-      defineProcedure({ name: 'upcase', [field]: value, run: upper }),
+      defineTasklet({ name: 'upcase', [field]: value, run: upper }),
     );
     assert.ok(message.includes(`\`${field}\``) && message.includes('`defineOperative`'), message);
   }
@@ -1076,14 +1076,14 @@ test('a short form under a factory id already held is refused across kinds', () 
   );
 });
 
-// --- the procedure body -----------------------------------------------------
+// --- the tasklet body -----------------------------------------------------
 
-test("a procedure's body is its run field", async () => {
-  const Upcase = defineProcedure({ name: 'upcase', run: upper });
-  assert.deepEqual((await ProcedureTestHarness.of(Upcase).input('abc')).emits, ['ABC']);
+test("a tasklet's body is its run field", async () => {
+  const Upcase = defineTasklet({ name: 'upcase', run: upper });
+  assert.deepEqual((await TaskletTestHarness.of(Upcase).input('abc')).emits, ['ABC']);
 });
 
-test('a procedure carrying the old handle field is refused, naming run', () => {
-  const { message } = refusal(() => defineProcedure({ name: 'upcase', handle: upper }));
+test('a tasklet carrying the old handle field is refused, naming run', () => {
+  const { message } = refusal(() => defineTasklet({ name: 'upcase', handle: upper }));
   assert.ok(message.includes('`run`'), message);
 });

@@ -257,7 +257,7 @@ export class Runner {
     this.dispatchId = native.registerDispatch((activation) => {
       // What the delay warning names when this loop is held. The worker tier
       // observes the same thing on its own loop.
-      const node = registry.get(activation.factory)?.spec.procedures[activation.procedure];
+      const node = registry.get(activation.factory)?.spec.tasklets[activation.tasklet];
       watch.observe(node?.name ?? activation.factory);
       void dispatch(activation, native, deps);
     });

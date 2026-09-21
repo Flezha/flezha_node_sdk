@@ -1,8 +1,8 @@
 /**
  * The authoring surface's public types.
  *
- * Handler input and output types drive the graph: `.into(procedure)` accepts a
- * procedure whose declared input the producing edge's value satisfies, so a
+ * Handler input and output types drive the graph: `.into(tasklet)` accepts a
+ * tasklet whose declared input the producing edge's value satisfies, so a
  * mismatched edge is a compile error rather than a registration-time one.
  */
 
@@ -49,9 +49,9 @@ export interface TimerFiring {
 }
 
 export interface EmitOptions {
-  /** Routing key for the destination. Defaults to this entity's own key. */
+  /** Routing key for the destination. Defaults to this cell's own key. */
   key?: string;
-  /** Which declared output channel, when the procedure has more than one. */
+  /** Which declared output channel, when the tasklet has more than one. */
   channel?: string;
   /** User metadata. Keys under `flz.` are reserved and refused. */
   metadata?: Record<string, string>;
@@ -63,24 +63,24 @@ export interface EmitOptions {
  * warns when a handler reaches for them.
  */
 export interface Ctx<TOut = never, TState = void, TChange = never> {
-  /** The entity's state. Assigning to a field is refused; record a change. */
+  /** The cell's state. Assigning to a field is refused; record a change. */
   readonly state: TState;
-  /** This entity's key, or undefined for a single-entity procedure. */
-  readonly entityKey: string | undefined;
+  /** This cell's key, or undefined for a single-cell tasklet. */
+  readonly cellKey: string | undefined;
   /** True while the controller is re-forwarding a journaled slice. */
   readonly replay: boolean;
 
   /** The core-evaluated declared clock for this item. Never ambient time. */
   now(): bigint;
-  /** A replay-stable identifier, distinct per invocation within the entity. */
+  /** A replay-stable identifier, distinct per invocation within the cell. */
   stableId(): string;
 
   /** Record one declared change: journaled, then folded into the state. */
   change(change: TChange): void;
 
-  /** Emit one output value on the procedure's declared output. */
+  /** Emit one output value on the tasklet's declared output. */
   emit(value: TOut, options?: EmitOptions): void;
-  /** Emit onto a named channel — the spelling for a procedure with several. */
+  /** Emit onto a named channel — the spelling for a tasklet with several. */
   emitTo(channel: string, value: unknown, options?: EmitOptions): void;
 
   /** Register a processing-time timer `ms` from `now()`. Returns its time. */
@@ -94,18 +94,18 @@ export interface Ctx<TOut = never, TState = void, TChange = never> {
   checkpoint(): void;
 
   /**
-   * End the workflow instance this procedure runs in, with `result` as the
+   * End the workflow instance this tasklet runs in, with `result` as the
    * result its completion reports, encoded as a sink naming no codec encodes a
    * value: bytes as they are, a string as UTF-8 and anything else as JSON;
    * `undefined` or `null` carries no result. The rest of the iteration still
    * runs and commits; once that commit is durable the instance ends instead of
    * waiting for its next input. In a `once` workflow it sets the result the pass ends
    * with. A second call in one item replaces the first; calls from several
-   * entities in one iteration end the instance once, with the result of the
-   * procedure latest in the chain and, within it, the entity whose key sorts
+   * cells in one iteration end the instance once, with the result of the
+   * tasklet latest in the chain and, within it, the cell whose key sorts
    * last.
    *
-   * A stream never completes: a stream procedure calling this fails its input,
+   * A stream never completes: a stream tasklet calling this fails its input,
    * without a retry, with an error beginning `CompleteOutsideWorkflow`.
    */
   complete(result?: unknown): void;
@@ -128,26 +128,26 @@ export interface Ctx<TOut = never, TState = void, TChange = never> {
   spawnWorkflow(factoryId: string, payload: unknown, options?: SpawnOptions): SpawnHandle;
 }
 
-/** Static entity mode: a fixed key set, plus the fan-out an input belongs to. */
-export interface StaticEntities<TIn> {
+/** Static cell mode: a fixed key set, plus the fan-out an input belongs to. */
+export interface StaticCells<TIn> {
   keys: string[];
-  entitiesFor?: (input: TIn) => string[];
+  cellsFor?: (input: TIn) => string[];
 }
 
-/** Dynamic entity mode: entities appear on first key, with optional limits. */
-export interface DynamicEntities {
+/** Dynamic cell mode: cells appear on first key, with optional limits. */
+export interface DynamicCells {
   idleTtlMs?: number;
-  maxEntities?: number;
+  maxCells?: number;
 }
 
-export interface ProcedureDefinition<TIn, TOut, TState, TChange> {
-  /** The procedure's node identity within its operative. */
+export interface TaskletDefinition<TIn, TOut, TState, TChange> {
+  /** The tasklet's node identity within its operative. */
   name: string;
 
   /** Fixed key set. Dynamic keying is declared on the wiring with `keyBy`. */
-  entities?: StaticEntities<TIn>;
-  /** Lazy entities. The key comes from the wiring's `keyBy`. */
-  dynamicEntities?: DynamicEntities;
+  cells?: StaticCells<TIn>;
+  /** Lazy cells. The key comes from the wiring's `keyBy`. */
+  dynamicCells?: DynamicCells;
 
   clock?: ClockKind;
   /** Required by an event-time clock: the event time of an input. */
@@ -155,15 +155,15 @@ export interface ProcedureDefinition<TIn, TOut, TState, TChange> {
 
   mailboxCapacity?: number;
 
-  /** Stamped into every durable record this procedure writes. */
+  /** Stamped into every durable record this tasklet writes. */
   schemaVersion?: number;
-  /** The oldest version this procedure still reads. Defaults to its own. */
+  /** The oldest version this tasklet still reads. Defaults to its own. */
   minReadableSchemaVersion?: number;
   migrateState?: (fromVersion: number, bytes: Uint8Array) => TState;
   migrateChange?: (fromVersion: number, bytes: Uint8Array) => TChange;
 
-  /** The entity's starting state. Its absence declares a stateless procedure. */
-  initialState?: (entityKey?: string) => TState;
+  /** The cell's starting state. Its absence declares a stateless tasklet. */
+  initialState?: (cellKey?: string) => TState;
   /** The replay path: fold one recorded change into the state. */
   applyChange?: (state: TState, change: TChange) => void;
 
@@ -180,16 +180,16 @@ export interface ProcedureDefinition<TIn, TOut, TState, TChange> {
     ctx: Ctx<TOut, TState, TChange>,
   ) => TOut | undefined | void | Promise<TOut | undefined | void>;
 
-  /** A per-entity deadline fired. `ctx.now()` is the scheduled time. */
+  /** A per-cell deadline fired. `ctx.now()` is the scheduled time. */
   onTimer?: (firing: TimerFiring, ctx: Ctx<TOut, TState, TChange>) => void | Promise<void>;
 
-  /** Saga compensation for this procedure's recorded forward outputs. */
+  /** Saga compensation for this tasklet's recorded forward outputs. */
   compensate?: (outputs: TOut[], ctx: Ctx<TOut, TState, TChange>) => void | Promise<void>;
 }
 
-/** A defined procedure. Opaque to authors beyond its identity and types. */
-export interface Procedure<TIn, TOut = never, TState = void, TChange = never> {
-  readonly definition: ProcedureDefinition<TIn, TOut, TState, TChange>;
+/** A defined tasklet. Opaque to authors beyond its identity and types. */
+export interface Tasklet<TIn, TOut = never, TState = void, TChange = never> {
+  readonly definition: TaskletDefinition<TIn, TOut, TState, TChange>;
   readonly name: string;
   /** Present only to carry the input and output types; never read. */
   readonly __types?: { input: TIn; output: TOut };
@@ -214,22 +214,22 @@ export interface Stream<T> {
    * reaching the consumer on its own. An empty iterable drops the value.
    */
   flatMap<U>(transform: (value: T) => Iterable<U>): Stream<U>;
-  /** Route by a computed key: the consumer becomes a dynamic keyed procedure. */
+  /** Route by a computed key: the consumer becomes a dynamic keyed tasklet. */
   keyBy(key: (value: T) => string): Stream<T>;
   onFull(policy: OverflowPolicy): Stream<T>;
   retryMax(attempts: number): Stream<T>;
   retryBackoffMs(ms: number): Stream<T>;
-  /** Stamp `flz.entity` / `flz.seq` / `flz.key` onto this channel's plugin frames. */
+  /** Stamp `flz.cell` / `flz.seq` / `flz.key` onto this channel's plugin frames. */
   keyed(): Stream<T>;
   /**
-   * Wire this edge into a procedure whose declared input accepts `T`.
+   * Wire this edge into a tasklet whose declared input accepts `T`.
    *
-   * Two unnamed mentions of one procedure are one node, so a fan-out and
+   * Two unnamed mentions of one tasklet are one node, so a fan-out and
    * fan-back-in describes a diamond rather than two instances. `nodeName`
    * gives a second mention its own node.
    */
   into<TOut, TState, TChange>(
-    procedure: Procedure<T, TOut, TState, TChange>,
+    tasklet: Tasklet<T, TOut, TState, TChange>,
     nodeName?: string,
   ): Stream<TOut>;
   /**
@@ -260,18 +260,18 @@ export interface Stream<T> {
 }
 
 /**
- * Several streams feeding one procedure, each lifted into its input `I` by a
- * mapping of its own. A source is an entry stream or a procedure's output
+ * Several streams feeding one tasklet, each lifted into its input `I` by a
+ * mapping of its own. A source is an entry stream or a tasklet's output
  * declared on the same builder.
  */
 export interface Merge<I> {
-  /** Add a source: its values reach the procedure as `map` answers them. */
+  /** Add a source: its values reach the tasklet as `map` answers them. */
   from<S>(source: Stream<S>, map: (value: S) => I): Merge<I>;
   /** Route every source by a key computed on the mapped value. */
   keyBy(key: (value: I) => string): Merge<I>;
-  /** Close the merge on a procedure, as `Stream.into` does, and answer its output. */
+  /** Close the merge on a tasklet, as `Stream.into` does, and answer its output. */
   into<TOut, TState, TChange>(
-    procedure: Procedure<I, TOut, TState, TChange>,
+    tasklet: Tasklet<I, TOut, TState, TChange>,
     nodeName?: string,
   ): Stream<TOut>;
 }
@@ -312,7 +312,7 @@ export interface ChannelBuilder {
   input(name: string, options: { codec: 'bytes' }): Stream<Uint8Array>;
   input<T = unknown>(name: string, options: { codec: 'json' | 'msgpack' }): Stream<T>;
   input<T>(name: string, decode?: (bytes: Uint8Array) => T): Stream<T>;
-  /** Start a merge of several streams into one procedure. */
+  /** Start a merge of several streams into one tasklet. */
   merge<I = unknown>(): Merge<I>;
   /**
    * Hand the latest document to each key on that key's own next traffic item,
@@ -335,25 +335,25 @@ export interface ChannelBuilder {
 
 export interface OperativeDefinition {
   factoryId: string;
-  /** Whether change bytes are flushed to the per-entity WAL. Default true. */
+  /** Whether change bytes are flushed to the per-cell WAL. Default true. */
   persistent?: boolean;
   channels: (builder: ChannelBuilder) => void;
 }
 
 /**
  * The §5 short form, taken by `defineOperative` and `defineWorkflow`: one
- * procedure's fields and its `run` body in place of a `channels` body. It
- * generates an entry channel into a procedure named `factoryId`, and that
- * procedure's output into the `sink` plugin channel when one is written. Every
+ * tasklet's fields and its `run` body in place of a `channels` body. It
+ * generates an entry channel into a tasklet named `factoryId`, and that
+ * tasklet's output into the `sink` plugin channel when one is written. Every
  * class-level setting stays at its default; a class-level setting is the full
  * form.
  */
 export interface ShortFormDefinition<TIn, TOut, TState, TChange> extends Omit<
-  ProcedureDefinition<TIn, TOut, TState, TChange>,
+  TaskletDefinition<TIn, TOut, TState, TChange>,
   'name'
 > {
   factoryId: string;
-  /** The plugin sink the procedure's output reaches. Absent declares none. */
+  /** The plugin sink the tasklet's output reaches. Absent declares none. */
   sink?: string;
   /** The generated entry channel's name. Defaults to `input`. */
   input?: string;
@@ -372,7 +372,7 @@ export interface WorkflowDefinition {
   maxDurationMs?: number;
   wakeAfterMs?: number;
   syncDurability?: boolean;
-  /** The procedures the workflow runs, wired over a channels graph. */
+  /** The tasklets the workflow runs, wired over a channels graph. */
   channels: (builder: ChannelBuilder) => void;
 }
 

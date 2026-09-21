@@ -2,7 +2,7 @@
  * Administering the namespace this runner's connection proved, from ordinary
  * application code.
  *
- * No procedure has to be running and the application holds no credential of
+ * No tasklet has to be running and the application holds no credential of
  * its own: the controller judges every call as the identity the connection
  * already established, so nothing an unattended process holds expires. An
  * operator grants a namespace's applications the authority once and revokes it
@@ -27,7 +27,7 @@ export interface StartOptions {
   id?: string;
   /** `'stream'` (the default) or `'workflow'`. */
   kind?: string;
-  /** The values the factory is seeded with, keyed by procedure. */
+  /** The values the factory is seeded with, keyed by tasklet. */
   init_values?: unknown;
   /** The start options, as `flz operative start` takes them. */
   opts?: unknown;
@@ -87,9 +87,9 @@ export class Admin {
     return this.call('PluginManager.list');
   }
 
-  /** One entity's live state, and the change sequence it was read at. */
-  async entityState(operativeId: string, entityKey: string): Promise<unknown> {
-    return this.call('Operative.entity_state', operativeId, entityKey);
+  /** One cell's live state, and the change sequence it was read at. */
+  async cellState(operativeId: string, cellKey: string): Promise<unknown> {
+    return this.call('Operative.cell_state', operativeId, cellKey);
   }
 
   /**

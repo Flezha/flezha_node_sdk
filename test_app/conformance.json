@@ -29,13 +29,13 @@
     "runner_lifecycle": ["do_nothing", "compare_filter", "bench_echo"],
     "connect_discovery": ["do_nothing"],
     "graph_builder": [
-      "sugar_static_entity",
-      "static_entity",
+      "sugar_static_cell",
+      "static_cell",
       "mixed_operative",
       "hybrid_channel",
       "merged_input",
       "transform_chain",
-      "entity_stress",
+      "cell_stress",
       "bench_keyed_nopersist"
     ],
     "shorthand": [
@@ -66,7 +66,7 @@
       "checkpoint_batched_store",
       "bench_checkpoint"
     ],
-    "entity_timers": ["session_timeout"],
+    "cell_timers": ["session_timeout"],
     "correction_window": ["candle"],
     "keyed_channels": ["partition_relay"],
     "workflow": [
@@ -91,8 +91,8 @@
       "bench_chain_optout_4",
       "bench_loop_workflow"
     ],
-    "partitioned": ["partition_relay", "dynamic_entity"],
-    "dynamic_entity": ["dynamic_entity"],
+    "partitioned": ["partition_relay", "dynamic_cell"],
+    "dynamic_cell": ["dynamic_cell"],
     "pool_wedge": ["wedge_probe"],
     "schema_evolution": ["schema_evolution_v1", "schema_evolution_v2"]
   },

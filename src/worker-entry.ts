@@ -46,7 +46,7 @@ async function main(): Promise<void> {
 
   const dispatchId = native.registerDispatch((activation) => {
     const registered = registry.get(activation.factory);
-    const node = registered?.spec.procedures[activation.procedure];
+    const node = registered?.spec.tasklets[activation.tasklet];
     watch.observe(node?.name ?? activation.factory);
     void dispatch(activation, native, deps);
   });

@@ -9,7 +9,7 @@ import test from 'node:test';
 import {
   ACTIVATION_SCHEMA_VERSION,
   defineOperative,
-  defineProcedure,
+  defineTasklet,
   defineWorkflow,
   loadNative,
   toHostClassDecl,
@@ -34,9 +34,9 @@ function pinned(section) {
 
 /** Every stream-side option the Node surface has a spelling for. */
 function fullyDeclaredStream() {
-  const dynamic = defineProcedure({
+  const dynamic = defineTasklet({
     name: 'full_dynamic',
-    dynamicEntities: { idleTtlMs: 30_000, maxEntities: 64 },
+    dynamicCells: { idleTtlMs: 30_000, maxCells: 64 },
     clock: 'event_time',
     eventTime: (input) => BigInt(input.at),
     mailboxCapacity: 512,
@@ -75,11 +75,11 @@ function fullyDeclaredStream() {
   });
 }
 
-/** Every static-mode procedure key, which the dynamic one cannot carry. */
+/** Every static-mode tasklet key, which the dynamic one cannot carry. */
 function fullyDeclaredStatic() {
-  const statik = defineProcedure({
+  const statik = defineTasklet({
     name: 'full_static',
-    entities: { keys: ['a', 'b'], entitiesFor: () => ['a'] },
+    cells: { keys: ['a', 'b'], cellsFor: () => ['a'] },
     run: (input) => input,
   });
   return defineOperative({
@@ -99,12 +99,12 @@ function fullyDeclaredWorkflow() {
     maxDurationMs: 120_000,
     wakeAfterMs: 30_000,
     syncDurability: true,
-    channels: (c) => c.input('in').into(defineProcedure({ name: 'step', run: () => {} })),
+    channels: (c) => c.input('in').into(defineTasklet({ name: 'step', run: () => {} })),
   });
 }
 
 test('every class key the fixture pins has a Node spelling', () => {
-  // The kind splits the class keys the way entity mode splits the procedure
+  // The kind splits the class keys the way cell mode splits the tasklet
   // ones: only a workflow class carries `workflow`.
   const emitted = new Set(
     [fullyDeclaredStream(), fullyDeclaredWorkflow()]
@@ -126,18 +126,18 @@ test('every channel key the fixture pins has a Node spelling', () => {
   assert.deepEqual(missing, [], `channel keys with no Node spelling: ${missing.join(', ')}`);
 });
 
-test('every procedure key the fixture pins has a Node spelling', () => {
-  // Entity mode splits the procedure keys: a dynamic procedure carries
-  // `idle_ttl_ms` and `max_entities`, a static one `entity_keys`, and neither
+test('every tasklet key the fixture pins has a Node spelling', () => {
+  // Cell mode splits the tasklet keys: a dynamic tasklet carries
+  // `idle_ttl_ms` and `max_cells`, a static one `cell_keys`, and neither
   // carries the other's.
   const emitted = new Set(
     [fullyDeclaredStream(), fullyDeclaredStatic()]
       .map(toHostClassDecl)
-      .flatMap((decl) => decl.procedures)
-      .flatMap((procedure) => Object.keys(procedure)),
+      .flatMap((decl) => decl.tasklets)
+      .flatMap((tasklet) => Object.keys(tasklet)),
   );
-  const missing = pinned('procedure').filter((key) => !emitted.has(key));
-  assert.deepEqual(missing, [], `procedure keys with no Node spelling: ${missing.join(', ')}`);
+  const missing = pinned('tasklet').filter((key) => !emitted.has(key));
+  assert.deepEqual(missing, [], `tasklet keys with no Node spelling: ${missing.join(', ')}`);
 });
 
 test('every workflow key the fixture pins has a Node spelling', () => {
@@ -159,10 +159,10 @@ test('the builder invents no key the core never learned', () => {
   check('class', new Set([...Object.keys(stream), ...Object.keys(workflow)]));
   check('channel', new Set(stream.channels.flatMap((c) => Object.keys(c))));
   check(
-    'procedure',
+    'tasklet',
     new Set(
       [stream, toHostClassDecl(fullyDeclaredStatic())]
-        .flatMap((decl) => decl.procedures)
+        .flatMap((decl) => decl.tasklets)
         .flatMap((p) => Object.keys(p)),
     ),
   );
@@ -240,9 +240,7 @@ function topologyLines(topology, spec) {
       channel.name,
       channel.kind,
       channel.producer ?? '-',
-      channel.consumers.length > 0
-        ? channel.consumers.map((edge) => edge.procedure).join(',')
-        : '-',
+      channel.consumers.length > 0 ? channel.consumers.map((edge) => edge.tasklet).join(',') : '-',
       channel.sink ?? '-',
     ].join(' | '),
   );
@@ -251,11 +249,11 @@ function topologyLines(topology, spec) {
 const bytes = (value) => Buffer.from(String(value), 'utf8');
 
 function hybridChannel() {
-  const producer = defineProcedure({
-    name: 'hybrid_producer_procedure',
+  const producer = defineTasklet({
+    name: 'hybrid_producer_tasklet',
     run: (input, ctx) => ctx.emit(input),
   });
-  const consumer = defineProcedure({ name: 'hybrid_consumer_procedure', run: () => {} });
+  const consumer = defineTasklet({ name: 'hybrid_consumer_tasklet', run: () => {} });
   return defineOperative({
     factoryId: 'hybrid_channel',
     channels: (c) => {
@@ -265,11 +263,11 @@ function hybridChannel() {
 }
 
 function commitBlockChain() {
-  const commitA = defineProcedure({
+  const commitA = defineTasklet({
     name: 'tier_commit_a',
     run: (input, ctx) => ctx.emit(input, { key: 'job' }),
   });
-  const blockB = defineProcedure({ name: 'block_b', run: () => {} });
+  const blockB = defineTasklet({ name: 'block_b', run: () => {} });
   return defineWorkflow({
     factoryId: 'commit_block_chain',
     channels: (c) => {
@@ -293,7 +291,7 @@ test('the structured workflow topology is the reference, channel for channel', (
 // A merge is no declaration key: each source is a chain the core reads, closed
 // by the `merge` link `flz_core::host::decl` deserializes.
 test('a merge source serialises as the core’s merge link, keyed after its mapping', () => {
-  const merged = (name) => defineProcedure({ name, dynamicEntities: {}, run: (i) => i });
+  const merged = (name) => defineTasklet({ name, dynamicCells: {}, run: (i) => i });
   const decl = toHostClassDecl(
     defineOperative({
       factoryId: 'node_decl_merge',
@@ -311,10 +309,10 @@ test('a merge source serialises as the core’s merge link, keyed after its mapp
       },
     }),
   );
-  const source = (procedure, group) => [
+  const source = (tasklet, group) => [
     { link: 'transform' },
     { link: 'key' },
-    { link: 'merge', procedure, group },
+    { link: 'merge', tasklet, group },
   ];
   assert.deepEqual(
     decl.channels.map((channel) => channel.chains),

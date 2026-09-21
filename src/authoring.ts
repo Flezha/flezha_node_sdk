@@ -4,7 +4,7 @@
  * Factory functions rather than decorators: decorators need a build step, do
  * not apply to plain functions, and cannot reshape the decorated type — which
  * is exactly what a typed graph needs. A generic function can, so
- * `.into(procedure)` refuses a producer whose value the procedure's declared
+ * `.into(tasklet)` refuses a producer whose value the tasklet's declared
  * input does not accept, before the program runs.
  */
 
@@ -25,34 +25,34 @@ import {
   type Merge,
   type OperativeDefinition,
   type OverflowPolicy,
-  type Procedure,
-  type ProcedureDefinition,
+  type Tasklet,
+  type TaskletDefinition,
   type RoutedDocument,
   type ShortFormDefinition,
   type Stream,
   type WorkflowDefinition,
 } from './types.js';
 
-/** A procedure as the graph holds it, with its position in the declaration. */
-export interface ProcNode {
+/** A tasklet as the graph holds it, with its position in the declaration. */
+export interface TaskNode {
   index: number;
-  /** The node identity — the procedure's name, or the name `named()` gave. */
+  /** The node identity — the tasklet's name, or the name `named()` gave. */
   name: string;
-  procedure: Procedure<unknown, unknown, unknown, unknown>;
+  tasklet: Tasklet<unknown, unknown, unknown, unknown>;
   /** The one channel this node produces on, created on first wiring. */
   output?: ChannelSpec;
 }
 
 /** One consumer of a channel, with the transforms and key of its own edge. */
 export interface ConsumerEdge {
-  procedure: number;
+  tasklet: number;
   /** Producer-side transforms for this edge, applied in declaration order. */
   transforms: Array<(value: unknown) => unknown>;
   /** Dynamic routing key for this edge. */
   keyBy?: (value: unknown) => string;
 }
 
-export type ChannelKind = 'entry' | 'inter_proc' | 'plugin';
+export type ChannelKind = 'entry' | 'inter_task' | 'plugin';
 
 /**
  * One link of a chain, exactly as the core deserializes it.
@@ -68,8 +68,8 @@ export type Link =
   | { link: 'key' }
   | { link: 'named'; name: string }
   | { link: 'sink'; name?: string }
-  | { link: 'into'; procedure: number }
-  | { link: 'merge'; procedure: number; group: number }
+  | { link: 'into'; tasklet: number }
+  | { link: 'merge'; tasklet: number; group: number }
   | { link: 'branch'; arms: number };
 
 /** The links that close a chain onto a consumer edge. */
@@ -99,15 +99,15 @@ export interface ChannelSpec {
   sink?: string;
   /**
    * An entry channel's payload decoder: its own, its codec's, or JSON. Absent
-   * on a channel between procedures, whose payloads are the class codec's.
+   * on a channel between tasklets, whose payloads are the class codec's.
    */
   decode?: (bytes: Uint8Array) => unknown;
   /**
    * The plugin sink's payload encoder: its own, its codec's, or the default
    * that sends bytes as they are, a string as UTF-8 and anything else as JSON.
-   * It belongs to the sink frame alone: an inter-procedure frame is decoded
+   * It belongs to the sink frame alone: an inter-tasklet frame is decoded
    * with the class codec, so encoding one with this hands the consuming
-   * procedure bytes it cannot read.
+   * tasklet bytes it cannot read.
    */
   sinkEncode?: (value: unknown) => Uint8Array;
 }
@@ -137,70 +137,66 @@ export interface ClassSpec {
   beyondWindowPolicy: BeyondWindowPolicy;
   compactAfterBytes?: number;
   syncDurability: boolean;
-  procedures: ProcNode[];
+  tasklets: TaskNode[];
   channels: ChannelSpec[];
   workflow?: WorkflowSpec;
 }
 
 /**
- * Define a procedure.
+ * Define a tasklet.
  *
  * The declaration's own shape carries the inference: the body's first
  * parameter is the input type, its return type the output. A body that emits
  * through the context returns nothing, and names its output type through the
  * definition's type arguments.
  */
-export function defineProcedure<TIn, TOut = never, TState = void, TChange = never>(
-  definition: ProcedureDefinition<TIn, TOut, TState, TChange>,
-): Procedure<TIn, TOut, TState, TChange> {
+export function defineTasklet<TIn, TOut = never, TState = void, TChange = never>(
+  definition: TaskletDefinition<TIn, TOut, TState, TChange>,
+): Tasklet<TIn, TOut, TState, TChange> {
   const operativeFields = written(definition, ['kind', ...SHORT_FORM_KEYS]);
   if (operativeFields) {
     throw new DeclarationError(
-      '<procedure>',
+      '<tasklet>',
       definition.name ?? null,
-      `declares ${operativeFields}, which a procedure does not carry; the short form is declared ` +
+      `declares ${operativeFields}, which a tasklet does not carry; the short form is declared ` +
         'with `defineOperative` or `defineWorkflow`, whose name is its kind',
     );
   }
   if (!definition.name || !definition.name.trim()) {
-    throw new DeclarationError('<procedure>', null, 'a procedure declares a non-empty name');
+    throw new DeclarationError('<tasklet>', null, 'a tasklet declares a non-empty name');
   }
   if ((definition as { handle?: unknown }).handle !== undefined) {
     throw new DeclarationError(
-      '<procedure>',
+      '<tasklet>',
       definition.name,
-      "declares `handle`; a procedure's body is named `run`",
+      "declares `handle`; a tasklet's body is named `run`",
     );
   }
   if (typeof definition.run !== 'function') {
-    throw new DeclarationError(
-      '<procedure>',
-      definition.name,
-      'a procedure declares its body, `run`',
-    );
+    throw new DeclarationError('<tasklet>', definition.name, 'a tasklet declares its body, `run`');
   }
   // State without a fold is legitimate: a value seeded at start and read but
   // never mutated has nothing to journal, and `ctx.change` already refuses at
   // the point of use. A fold with no state to fold into is not.
   if (!definition.initialState && definition.applyChange) {
     throw new DeclarationError(
-      '<procedure>',
+      '<tasklet>',
       definition.name,
       'declares applyChange but no initialState; there is nothing for a change to fold into',
     );
   }
-  if (definition.entities && definition.dynamicEntities) {
+  if (definition.cells && definition.dynamicCells) {
     throw new DeclarationError(
-      '<procedure>',
+      '<tasklet>',
       definition.name,
-      'declares both a static key set and dynamic entities; the two modes are exclusive',
+      'declares both a static key set and dynamic cells; the two modes are exclusive',
     );
   }
-  if (definition.entities && definition.entities.keys.length === 0) {
+  if (definition.cells && definition.cells.keys.length === 0) {
     throw new DeclarationError(
-      '<procedure>',
+      '<tasklet>',
       definition.name,
-      'declares an empty static key set; a static procedure names its entities',
+      'declares an empty static key set; a static tasklet names its cells',
     );
   }
   // A state that cannot be encoded cannot be restored, and the first anyone
@@ -211,7 +207,7 @@ export function defineProcedure<TIn, TOut = never, TState = void, TChange = neve
   return {
     definition,
     name: definition.name,
-  } as Procedure<TIn, TOut, TState, TChange>;
+  } as Tasklet<TIn, TOut, TState, TChange>;
 }
 
 type ShortForm = ShortFormDefinition<unknown, unknown, unknown, unknown>;
@@ -220,13 +216,13 @@ type ShortForm = ShortFormDefinition<unknown, unknown, unknown, unknown>;
 const SHORT_FORM_KEYS = ['sink', 'input', 'codec'] as const satisfies readonly (keyof ShortForm)[];
 
 /**
- * A procedure definition's fields but its `name`, which a short form writes as
+ * A tasklet definition's fields but its `name`, which a short form writes as
  * `factoryId`, and `run`, which is what makes one. Keyed by the type, so a
- * field the procedure definition gains is listed here or does not compile.
+ * field the tasklet definition gains is listed here or does not compile.
  */
-const PROCEDURE_FIELDS = Object.keys({
-  entities: true,
-  dynamicEntities: true,
+const TASKLET_FIELDS = Object.keys({
+  cells: true,
+  dynamicCells: true,
   clock: true,
   eventTime: true,
   mailboxCapacity: true,
@@ -241,7 +237,7 @@ const PROCEDURE_FIELDS = Object.keys({
   onTimer: true,
   compensate: true,
 } satisfies Record<
-  Exclude<keyof ProcedureDefinition<unknown, unknown, unknown, unknown>, 'name' | 'run'>,
+  Exclude<keyof TaskletDefinition<unknown, unknown, unknown, unknown>, 'name' | 'run'>,
   true
 >);
 
@@ -285,8 +281,8 @@ type EitherForm<D extends OperativeDefinition | WorkflowDefinition> = Omit<D, 'c
 
 /**
  * The channels body a definition wires: its own `channels`, or, for a §5 short
- * form carrying one procedure's `run` body in their place, the body a
- * hand-written single-procedure operative carries. `ShortFormWithTopology` is
+ * form carrying one tasklet's `run` body in their place, the body a
+ * hand-written single-tasklet operative carries. `ShortFormWithTopology` is
  * the one contract refusal (`authoring_contract.md` §5.2) raised here, and it
  * carries its name in `refusals` and at the start of the message.
  *
@@ -312,7 +308,7 @@ function channelsOf(
       definition.factoryId,
       null,
       'ShortFormWithTopology: declares both `run` and `channels`; a short form carries its one ' +
-        "procedure's body in place of a topology body",
+        "tasklet's body in place of a topology body",
       ['ShortFormWithTopology'],
     );
   }
@@ -321,18 +317,18 @@ function channelsOf(
       throw new DeclarationError(
         definition.factoryId,
         null,
-        'declares no body; an operative wires its procedures in `channels`, or carries one ' +
-          "procedure's `run` body as the short form",
+        'declares no body; an operative wires its tasklets in `channels`, or carries one ' +
+          "tasklet's `run` body as the short form",
       );
     }
-    const keys = written(definition, [...SHORT_FORM_KEYS, ...PROCEDURE_FIELDS]);
+    const keys = written(definition, [...SHORT_FORM_KEYS, ...TASKLET_FIELDS]);
     if (keys) {
       throw new DeclarationError(
         definition.factoryId,
         null,
         `declares ${keys} beside \`channels\`; a full form wires its entry channels, codecs ` +
-          "and sinks in `channels` itself, and declares each procedure's fields on its " +
-          '`defineProcedure`',
+          "and sinks in `channels` itself, and declares each tasklet's fields on its " +
+          '`defineTasklet`',
       );
     }
     return channels;
@@ -349,7 +345,7 @@ function channelsOf(
     throw new DeclarationError(
       definition.factoryId,
       null,
-      "declares `name` on a short form; a short form's procedure is named after its `factoryId`",
+      "declares `name` on a short form; a short form's tasklet is named after its `factoryId`",
     );
   }
   const settings = written(definition, CLASS_SETTINGS);
@@ -361,18 +357,18 @@ function channelsOf(
         'short form keeps every one at its default',
     );
   }
-  const { factoryId, sink, input = 'input', codec, ...procedure } = definition as ShortForm;
+  const { factoryId, sink, input = 'input', codec, ...tasklet } = definition as ShortForm;
   // Named after the factory id, verbatim: the name is a component of every
-  // entity's state path, so growing into the full form keeps the state.
-  const node = defineProcedure({ ...procedure, name: factoryId });
+  // cell's state path, so growing into the full form keeps the state.
+  const node = defineTasklet({ ...tasklet, name: factoryId });
   return (builder) => {
     const output = builder.input(input, codec === undefined ? undefined : { codec }).into(node);
     if (sink !== undefined) output.sink(sink);
   };
 }
 
-/** One procedure for every router, so two unnamed routers are one node. */
-const LatestRouter = defineProcedure(latestRouter);
+/** One tasklet for every router, so two unnamed routers are one node. */
+const LatestRouter = defineTasklet(latestRouter);
 
 /** One pending edge's declared options, accumulated by the fluent calls. */
 interface PendingEdge {
@@ -391,7 +387,7 @@ interface PendingEdge {
 }
 
 class Builder implements ChannelBuilder {
-  readonly procedures: ProcNode[] = [];
+  readonly tasklets: TaskNode[] = [];
   readonly channels: ChannelSpec[] = [];
   effectivelyOnceFlag = false;
   checkpointAckFlag = false;
@@ -502,8 +498,8 @@ class Builder implements ChannelBuilder {
   }
 
   /** The handle a node's output is wired from. */
-  outputOf<T>(node: ProcNode): Stream<T> {
-    return new EdgeStream<T>(this, { source: 'procedure', node }, { transforms: [] });
+  outputOf<T>(node: TaskNode): Stream<T> {
+    return new EdgeStream<T>(this, { source: 'tasklet', node }, { transforms: [] });
   }
 
   /**
@@ -538,17 +534,17 @@ class Builder implements ChannelBuilder {
   }
 
   /**
-   * The node for a procedure. Two unnamed mentions of one procedure are one
+   * The node for a tasklet. Two unnamed mentions of one tasklet are one
    * node — the naming convention every SDK mirrors — so a diamond that fans
    * out and back in has one instance, not two.
    */
-  nodeFor(procedure: Procedure<unknown, unknown, unknown, unknown>, name?: string): ProcNode {
-    const identity = name ?? procedure.name;
-    const existing = this.procedures.find(
-      (node) => node.name === identity && node.procedure === procedure,
+  nodeFor(tasklet: Tasklet<unknown, unknown, unknown, unknown>, name?: string): TaskNode {
+    const identity = name ?? tasklet.name;
+    const existing = this.tasklets.find(
+      (node) => node.name === identity && node.tasklet === tasklet,
     );
     if (existing) return existing;
-    const collision = this.procedures.find((node) => node.name === identity);
+    const collision = this.tasklets.find((node) => node.name === identity);
     if (collision) {
       // The node table is keyed by identity and physically cannot hold two, so
       // the record the core would judge is unwritable. The refusal answers
@@ -556,13 +552,13 @@ class Builder implements ChannelBuilder {
       throw new DeclarationError(
         this.factoryId,
         identity,
-        'two different procedures claim this node identity; name one of them with ' +
+        'two different tasklets claim this node identity; name one of them with ' +
           '`named(...)` so each node has its own',
         ['NodeIdentityCollision'],
       );
     }
-    const node: ProcNode = { index: this.procedures.length, name: identity, procedure };
-    this.procedures.push(node);
+    const node: TaskNode = { index: this.tasklets.length, name: identity, tasklet };
+    this.tasklets.push(node);
     return node;
   }
 
@@ -573,12 +569,12 @@ class Builder implements ChannelBuilder {
    * source is this node — which is what makes a fan-out one channel with two
    * consumers rather than two channels claiming one producer.
    */
-  outputChannelFor(node: ProcNode): ChannelSpec {
+  outputChannelFor(node: TaskNode): ChannelSpec {
     if (node.output) return node.output;
     const channel: ChannelSpec = {
       index: this.channels.length,
       name: node.name,
-      kind: 'inter_proc',
+      kind: 'inter_task',
       producer: node.index,
       chains: [],
       chainEdges: new Map(),
@@ -592,8 +588,8 @@ class Builder implements ChannelBuilder {
   }
 }
 
-/** Where a stream's values come from: an entry channel, or a procedure. */
-type Source = { source: 'entry'; channel: ChannelSpec } | { source: 'procedure'; node: ProcNode };
+/** Where a stream's values come from: an entry channel, or a tasklet. */
+type Source = { source: 'entry'; channel: ChannelSpec } | { source: 'tasklet'; node: TaskNode };
 
 class EdgeStream<T> implements Stream<T> {
   constructor(
@@ -712,7 +708,7 @@ class EdgeStream<T> implements Stream<T> {
   /**
    * The channel this handle's values leave on, with everything the fluent
    * calls put aside applied to it. An entry handle already has one; a
-   * procedure handle's is created on first use and reused after.
+   * tasklet handle's is created on first use and reused after.
    */
   private channel(): ChannelSpec {
     const channel =
@@ -732,28 +728,28 @@ class EdgeStream<T> implements Stream<T> {
   }
 
   into<TOut, TState, TChange>(
-    procedure: Procedure<T, TOut, TState, TChange>,
+    tasklet: Tasklet<T, TOut, TState, TChange>,
     nodeName?: string,
   ): Stream<TOut> {
     const node = this.builder.nodeFor(
-      procedure as unknown as Procedure<unknown, unknown, unknown, unknown>,
+      tasklet as unknown as Tasklet<unknown, unknown, unknown, unknown>,
       nodeName,
     );
-    this.close(node, { link: 'into', procedure: node.index });
+    this.close(node, { link: 'into', tasklet: node.index });
     return this.builder.outputOf<TOut>(node);
   }
 
   /** Close this handle's chain on `node` with `link`: an `into`, or one merge source. */
-  close(node: ProcNode, link: EdgeLink): void {
+  close(node: TaskNode, link: EdgeLink): void {
     const channel = this.channel();
     const { chain } = this.record(channel, link);
     // The transforms and the key belong to this edge, not to the channel: one
-    // channel may feed several procedures, and a chain declared before one
+    // channel may feed several tasklets, and a chain declared before one
     // `into` must not reach another. The edge is held under the chain that
     // declared it and wired by `validate` from the core's own answer, so a
     // re-declaration is judged there rather than here.
     channel.chainEdges.set(chain, {
-      procedure: node.index,
+      tasklet: node.index,
       transforms: this.pending.transforms,
       keyBy: this.pending.keyBy,
     });
@@ -769,14 +765,14 @@ class EdgeStream<T> implements Stream<T> {
     // here is what keeps the shorter forms from spelling `sink(undefined, x)`.
     const name = typeof nameOrEncode === 'string' ? nameOrEncode : undefined;
     const rest = name === undefined ? [nameOrEncode, encodeOrOptions] : [encodeOrOptions, options];
-    if (this.from.source !== 'procedure') {
+    if (this.from.source !== 'tasklet') {
       // Not a topology rule the core states: a record whose entry channel
       // carries a sink derives a plugin channel with no producer, and there is
       // nothing in it that says which end fed the plugin.
       throw new DeclarationError(
         this.builder.factoryId,
         name ?? '<derived>',
-        'a plugin sink is fed by a procedure; wire the entry channel into one first',
+        'a plugin sink is fed by a tasklet; wire the entry channel into one first',
       );
     }
     const channel = this.channel();
@@ -825,16 +821,16 @@ class MergeHandle<I> implements Merge<I> {
   }
 
   into<TOut, TState, TChange>(
-    procedure: Procedure<I, TOut, TState, TChange>,
+    tasklet: Tasklet<I, TOut, TState, TChange>,
     nodeName?: string,
   ): Stream<TOut> {
     const node = this.builder.nodeFor(
-      procedure as unknown as Procedure<unknown, unknown, unknown, unknown>,
+      tasklet as unknown as Tasklet<unknown, unknown, unknown, unknown>,
       nodeName,
     );
     const link: EdgeLink = {
       link: 'merge',
-      procedure: node.index,
+      tasklet: node.index,
       group: this.builder.mergeGroups++,
     };
     for (const source of this.sources) {
@@ -860,7 +856,7 @@ function buildGraph(definition: EitherForm<OperativeDefinition | WorkflowDefinit
 
 /**
  * Define a stream operative from its channels graph, or, as the §5 short form,
- * from one procedure's fields and `run` body.
+ * from one tasklet's fields and `run` body.
  */
 export function defineOperative(definition: OperativeDefinition): ClassSpec;
 export function defineOperative<TIn, TOut = never, TState = void, TChange = never>(
@@ -881,14 +877,14 @@ export function defineOperative(definition: EitherForm<OperativeDefinition>): Cl
     beyondWindowPolicy: builder.beyondWindowPolicyValue,
     compactAfterBytes: builder.compactAfterBytesValue,
     syncDurability: builder.syncDurabilityFlag,
-    procedures: builder.procedures,
+    tasklets: builder.tasklets,
     channels: builder.channels,
   };
 }
 
 /**
- * Define a workflow operative from the procedures its channels graph wires,
- * or, as the §5 short form, a `once` workflow from one procedure's fields and
+ * Define a workflow operative from the tasklets its channels graph wires,
+ * or, as the §5 short form, a `once` workflow from one tasklet's fields and
  * `run` body.
  */
 export function defineWorkflow(definition: WorkflowDefinition): ClassSpec;
@@ -906,7 +902,7 @@ export function defineWorkflow(definition: EitherForm<WorkflowDefinition>): Clas
     checkpointOutputs: 'as_produced',
     beyondWindowPolicy: 'process_as_arrival',
     syncDurability: definition.syncDurability ?? false,
-    procedures: builder.procedures,
+    tasklets: builder.tasklets,
     channels: builder.channels,
     workflow: {
       loopMode: definition.loopMode ?? 'once',

@@ -83,21 +83,21 @@ test('keyed_channels: a keyed sink stamps the key the class resolved', async () 
     ['a', 'b', 'a'],
     'each release carries the key its own value resolved to',
   );
-  for (const stamp of ['flz.entity', 'flz.seq']) {
+  for (const stamp of ['flz.cell', 'flz.seq']) {
     assert.ok(stamp in released[0].metadata, `a keyed sink carries ${stamp}`);
   }
 });
 
-test('dynamic_entity: the declared filter runs before keying and nothing else is lost', async () => {
-  // The class's sink is not keyed, so a released value carries no entity
+test('dynamic_cell: the declared filter runs before keying and nothing else is lost', async () => {
+  // The class's sink is not keyed, so a released value carries no cell
   // stamp and the per-key minting is not visible on this channel. It is
-  // asserted above, on `partition_relay`, whose procedure is dynamic too and
+  // asserted above, on `partition_relay`, whose tasklet is dynamic too and
   // whose sink IS keyed. What this class shows that that one does not is the
   // declared filter: a value it rejects answers no key, so the core is never
-  // asked to mint an Entity for it.
-  declares('dynamic_entity', 'dynamic_entity');
+  // asked to mint a Cell for it.
+  declares('dynamic_cell', 'dynamic_cell');
 
-  const released = await release(fixtures.dynamicEntity, 'input', 'kafka', [
+  const released = await release(fixtures.dynamicCell, 'input', 'kafka', [
     'a:1',
     'b:1',
     'drop',
@@ -107,7 +107,7 @@ test('dynamic_entity: the declared filter runs before keying and nothing else is
   assert.deepEqual(
     released.map((output) => utf8(output.payload)),
     ['a:1', 'b:1', 'a:2'],
-    'the filter dropped `drop` before it was keyed, and every other value reached its Entity',
+    'the filter dropped `drop` before it was keyed, and every other value reached its Cell',
   );
   assert.deepEqual(
     released.map((output) => output.metadata.channel),
@@ -139,8 +139,8 @@ test('retry_ladder: a bounded mailbox that drops nothing loses no input', async 
   );
 });
 
-test('entity_timers: a declared timer fires locally with its scheduled time', async () => {
-  declares('entity_timers', 'session_timeout');
+test('cell_timers: a declared timer fires locally with its scheduled time', async () => {
+  declares('cell_timers', 'session_timeout');
 
   // The class reads its own deadline from the environment, the way the e2e
   // sets it; 200 ms keeps the run short without changing what is proved.

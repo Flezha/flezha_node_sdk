@@ -11,7 +11,7 @@ import {
   DeclarationError,
   decodeValue,
   defineOperative,
-  defineProcedure,
+  defineTasklet,
   defineWorkflow,
   encodeValue,
   loadNative,
@@ -51,9 +51,9 @@ async function said(run) {
   return lines.join('\n');
 }
 
-const Counter = defineProcedure({
+const Counter = defineTasklet({
   name: 'counter',
-  dynamicEntities: {},
+  dynamicCells: {},
   initialState: () => ({ total: 0 }),
   applyChange: (state, change) => {
     state.total += change.by;
@@ -79,9 +79,9 @@ const fixture = () => depsFor(Spec);
 const activation = activationFor('counters');
 
 test('a work batch answers one effect per item, in order', async () => {
-  // One entity's batch: every item carries the key that routed it here.
+  // One cell's batch: every item carries the key that routed it here.
   const result = await answer(
-    activation({ entityKey: '2', items: [inputItem(2), inputItem(2)] }),
+    activation({ cellKey: '2', items: [inputItem(2), inputItem(2)] }),
     fixture(),
   );
   assert.equal(result.outcome, 'work');
@@ -101,7 +101,7 @@ test('a work batch answers one effect per item, in order', async () => {
 });
 
 test('a throwing handler is a retryable verdict and stops the batch', async () => {
-  const Throwing = defineProcedure({
+  const Throwing = defineTasklet({
     name: 'throwing',
     run: (input) => {
       if (input === 'boom') throw new Error('handler exploded');
@@ -115,7 +115,7 @@ test('a throwing handler is a retryable verdict and stops the batch', async () =
   const result = await answer(
     activation({
       factory: 'throwing_op',
-      entityKey: undefined,
+      cellKey: undefined,
       items: [inputItem('ok'), inputItem('boom'), inputItem('never')],
     }),
     depsFor(spec),
@@ -126,7 +126,7 @@ test('a throwing handler is a retryable verdict and stops the batch', async () =
 });
 
 test('a rejected promise is answered the same way a throw is', async () => {
-  const Rejecting = defineProcedure({
+  const Rejecting = defineTasklet({
     name: 'rejecting',
     run: async () => {
       throw Object.assign(new Error('gave up'), { nonRetryable: true });
@@ -137,7 +137,7 @@ test('a rejected promise is answered the same way a throw is', async () => {
     channels: (c) => c.input('in').into(Rejecting).sink(),
   });
   const result = await answer(
-    activation({ factory: 'rejecting_op', entityKey: undefined, items: [inputItem(1)] }),
+    activation({ factory: 'rejecting_op', cellKey: undefined, items: [inputItem(1)] }),
     depsFor(spec),
   );
   assert.equal(result.effects[0].verdict, 'non_retryable');
@@ -188,7 +188,7 @@ test('a migration handover round-trips through the JSON form', async () => {
 });
 
 test('the JSON handover carries a bigint and a byte array without narrowing', async () => {
-  const Wide = defineProcedure({
+  const Wide = defineTasklet({
     name: 'wide',
     initialState: () => ({ offset: 0n, blob: new Uint8Array() }),
     applyChange: (state, change) => {
@@ -206,14 +206,14 @@ test('the JSON handover carries a bigint and a byte array without narrowing', as
   await answer(
     activation({
       factory: 'wide_op',
-      entityKey: undefined,
+      cellKey: undefined,
       kind: 'restore_fold',
       changes: [{ bytes: Buffer.from(encodeValue({ offset: huge, blob: new Uint8Array([9]) })) }],
     }),
     source,
   );
   const serialized = await answer(
-    activation({ factory: 'wide_op', entityKey: undefined, kind: 'migration_serialize' }),
+    activation({ factory: 'wide_op', cellKey: undefined, kind: 'migration_serialize' }),
     source,
   );
 
@@ -221,14 +221,14 @@ test('the JSON handover carries a bigint and a byte array without narrowing', as
   await answer(
     activation({
       factory: 'wide_op',
-      entityKey: undefined,
+      cellKey: undefined,
       kind: 'apply_state',
       stateJson: serialized.json,
     }),
     target,
   );
   const snapshot = await answer(
-    activation({ factory: 'wide_op', entityKey: undefined, kind: 'snapshot_request' }),
+    activation({ factory: 'wide_op', cellKey: undefined, kind: 'snapshot_request' }),
     target,
   );
   const state = decodeValue(snapshot.state);
@@ -241,7 +241,7 @@ async function keysAt(spec, channel, ...payloads) {
   const result = await answer(
     activationFor(spec.factoryId)({
       kind: 'key_request',
-      entityKey: undefined,
+      cellKey: undefined,
       keyRequest: {
         channel,
         payloads: payloads.map((text) => Buffer.from(text)),
@@ -260,9 +260,9 @@ test('a prepare crossing answers one key per payload, in order', async () => {
 });
 
 test('one payload failing its prepare does not fail the others', async () => {
-  const Windowed = defineProcedure({
+  const Windowed = defineTasklet({
     name: 'windowed',
-    dynamicEntities: {},
+    dynamicCells: {},
     clock: 'event_time',
     eventTime: (input) => {
       if (input.at === undefined) throw new Error('no event time on this payload');
@@ -283,7 +283,7 @@ test('one payload failing its prepare does not fail the others', async () => {
   const result = await answer(
     activation({
       factory: 'windowed_op',
-      entityKey: undefined,
+      cellKey: undefined,
       kind: 'key_request',
       keyRequest: {
         channel: 0,
@@ -298,7 +298,7 @@ test('one payload failing its prepare does not fail the others', async () => {
   assert.match(result.prepared[1].error, /no event time/);
 });
 
-test('an unanswerable activation abandons rather than retiring its entity', async () => {
+test('an unanswerable activation abandons rather than retiring its cell', async () => {
   // A token the core never handed out: it refuses the completion, and refuses
   // the abandon the guard falls back to. Neither refusal escapes the guard.
   const reported = await said(() =>
@@ -344,8 +344,8 @@ test('a module specifier is imported and its operatives registered', async () =>
   const module = join(dir, 'handlers.mjs');
   writeFileSync(
     module,
-    `import { defineOperative, defineProcedure } from '${new URL('../dist/esm/index.js', import.meta.url).pathname}';\n` +
-      `const Echo = defineProcedure({ name: 'echo', run: (i) => i });\n` +
+    `import { defineOperative, defineTasklet } from '${new URL('../dist/esm/index.js', import.meta.url).pathname}';\n` +
+      `const Echo = defineTasklet({ name: 'echo', run: (i) => i });\n` +
       `export default defineOperative({ factoryId: 'from_specifier', channels: (c) => c.input('in').into(Echo).sink() });\n`,
   );
   const registry = await loadRegistry([module]);
@@ -363,14 +363,14 @@ for (const [build, load, file, bind, exporting] of [
     'esm',
     loadRegistry,
     'handlers.mjs',
-    (sdk) => `import { defineOperative, defineProcedure } from '${sdk}';`,
+    (sdk) => `import { defineOperative, defineTasklet } from '${sdk}';`,
     'export default',
   ],
   [
     'cjs',
     createRequire(import.meta.url)('../dist/cjs/runner.js').loadRegistry,
     'handlers.cjs',
-    (sdk) => `const { defineOperative, defineProcedure } = require('${sdk}');`,
+    (sdk) => `const { defineOperative, defineTasklet } = require('${sdk}');`,
     'module.exports =',
   ],
 ]) {
@@ -379,7 +379,7 @@ for (const [build, load, file, bind, exporting] of [
     writeFileSync(
       module,
       `${bind(new URL(`../dist/${build}/index.js`, import.meta.url).pathname)}\n` +
-        `const Echo = defineProcedure({ name: 'echo', run: (i) => i });\n` +
+        `const Echo = defineTasklet({ name: 'echo', run: (i) => i });\n` +
         `${exporting} defineOperative({ factoryId: 'by_relative_path', channels: (c) => c.input('in').into(Echo).sink() });\n`,
     );
     const registry = await load([`./${relative(process.cwd(), module)}`]);
@@ -404,9 +404,9 @@ test('a refusal raised while a handler module is imported keeps its own name', a
   const module = join(dir, 'handlers.mjs');
   writeFileSync(
     module,
-    `import { defineOperative, defineProcedure } from '${new URL('../dist/esm/index.js', import.meta.url).pathname}';\n` +
-      `const A = defineProcedure({ name: 'twin', run: (i) => i });\n` +
-      `const B = defineProcedure({ name: 'twin', run: (i) => i });\n` +
+    `import { defineOperative, defineTasklet } from '${new URL('../dist/esm/index.js', import.meta.url).pathname}';\n` +
+      `const A = defineTasklet({ name: 'twin', run: (i) => i });\n` +
+      `const B = defineTasklet({ name: 'twin', run: (i) => i });\n` +
       `export default defineOperative({ factoryId: 'module_scope', channels: (c) => {\n` +
       `  const s = c.input('in'); s.into(A); s.into(B);\n` +
       `} });\n`,
@@ -455,7 +455,7 @@ test('a duplicate factory id fails at the second declaration, naming it', () => 
 // One invocation, several emits: the per-emit ordinal is the half a single-emit
 // assertion cannot see, and the e2e golden checks stamp NAMES only.
 
-const StampEmitter = defineProcedure({
+const StampEmitter = defineTasklet({
   name: 'stamp_emitter',
   run: (input, ctx) => {
     if (input === 'twice') {
@@ -481,9 +481,9 @@ const StampSpec = defineOperative({
   },
 });
 
-// A procedure owns ONE output channel, so a keyed and a non-keyed plugin
-// channel are two procedures. The unkeyed one carries no stamps at all.
-const PlainEmitter = defineProcedure({
+// A tasklet owns ONE output channel, so a keyed and a non-keyed plugin
+// channel are two tasklets. The unkeyed one carries no stamps at all.
+const PlainEmitter = defineTasklet({
   name: 'plain_emitter',
   run: (_input, ctx) => {
     ctx.emitTo('plain_out', 'p');
@@ -508,19 +508,19 @@ const metaOf = (output) => Object.fromEntries(output.metadata.map((m) => [m.key,
 
 test('a keyed plugin emit carries the identity stamps, and the ordinal advances per emit', async () => {
   const result = await answer(
-    stampActivation({ entityKey: 'ek', changeSeq: 5n, items: [inputItem('twice')] }),
+    stampActivation({ cellKey: 'ek', changeSeq: 5n, items: [inputItem('twice')] }),
     depsFor(StampSpec),
   );
   assert.equal(result.outcome, 'work');
   const outputs = result.effects[0].outputs;
   assert.equal(outputs.length, 2);
   assert.deepEqual(metaOf(outputs[0]), {
-    'flz.entity': 'op-1/stamp_emitter/ek',
+    'flz.cell': 'op-1/stamp_emitter/ek',
     'flz.seq': '5.0',
     'flz.key': 'ek',
   });
   assert.deepEqual(metaOf(outputs[1]), {
-    'flz.entity': 'op-1/stamp_emitter/ek',
+    'flz.cell': 'op-1/stamp_emitter/ek',
     'flz.seq': '5.1',
     'flz.key': 'ek',
   });
@@ -528,7 +528,7 @@ test('a keyed plugin emit carries the identity stamps, and the ordinal advances 
 
 test('a non-keyed plugin emit carries no stamps', async () => {
   const result = await answer(
-    mixedActivation({ entityKey: 'ek', changeSeq: 5n, items: [inputItem('mixed')] }),
+    mixedActivation({ cellKey: 'ek', changeSeq: 5n, items: [inputItem('mixed')] }),
     depsFor(MixedSpec),
   );
   const [plain] = result.effects[0].outputs;
@@ -539,7 +539,7 @@ test('a non-keyed plugin emit carries no stamps', async () => {
 test('a fresh work item restarts the emit ordinal', async () => {
   const result = await answer(
     stampActivation({
-      entityKey: 'ek',
+      cellKey: 'ek',
       changeSeq: 5n,
       items: [inputItem('twice'), inputItem('twice')],
     }),
@@ -555,7 +555,7 @@ test('a fresh work item restarts the emit ordinal', async () => {
 });
 
 test('user metadata survives beside the stamps and cannot spoof one', async () => {
-  const UserMeta = defineProcedure({
+  const UserMeta = defineTasklet({
     name: 'stamp_user_meta',
     run: (input, ctx) => {
       if (input === 'spoof') {
@@ -578,18 +578,18 @@ test('user metadata survives beside the stamps and cannot spoof one', async () =
   const activation = activationFor('stamps_user');
 
   const ok = await answer(
-    activation({ entityKey: 'ek', changeSeq: 2n, items: [inputItem('plain')] }),
+    activation({ cellKey: 'ek', changeSeq: 2n, items: [inputItem('plain')] }),
     depsFor(spec),
   );
   assert.deepEqual(metaOf(ok.effects[0].outputs[0]), {
     user: 'meta',
-    'flz.entity': 'op-1/stamp_user_meta/ek',
+    'flz.cell': 'op-1/stamp_user_meta/ek',
     'flz.seq': '2.0',
     'flz.key': 'ek',
   });
 
   const spoofed = await answer(
-    activation({ entityKey: 'ek', changeSeq: 2n, items: [inputItem('spoof')] }),
+    activation({ cellKey: 'ek', changeSeq: 2n, items: [inputItem('spoof')] }),
     depsFor(spec),
   );
   assert.equal(spoofed.effects[0].verdict, 'retryable');
@@ -603,7 +603,7 @@ test('user metadata survives beside the stamps and cannot spoof one', async () =
 // releases one output per consumer, transformed and keyed. The plugin output
 // rides alongside either way.
 
-const WorkflowProducer = defineProcedure({
+const WorkflowProducer = defineTasklet({
   name: 'wf_producer',
   run: (input, ctx) => {
     ctx.emit(input);
@@ -613,11 +613,11 @@ const WorkflowProducer = defineProcedure({
 /** What a consumer of the `handoff` channel was handed, in delivery order. */
 const DELIVERED = [];
 
-/** A procedure that records what it is handed; `entities` declares how it is keyed. */
-const record = (name, entities = {}) =>
-  defineProcedure({
+/** A tasklet that records what it is handed; `cells` declares how it is keyed. */
+const record = (name, cells = {}) =>
+  defineTasklet({
     name,
-    ...entities,
+    ...cells,
     run: (input) => {
       DELIVERED.push(input);
     },
@@ -702,17 +702,17 @@ test('the same graph on a stream class releases one output per consumer', async 
 // producer already applied the edge, so delivery applies nothing; a workflow
 // stage released the value raw, so delivery is the one application.
 
-/** Hand `payload` to `procedure` on the `handoff` channel and answer what it saw. */
-async function delivered(spec, procedure, payload) {
+/** Hand `payload` to `tasklet` on the `handoff` channel and answer what it saw. */
+async function delivered(spec, tasklet, payload) {
   const { effects, handed } = await ran(spec, {
-    procedure,
+    tasklet,
     items: [inputItem(0, { channel: 1, payload })],
   });
   assert.equal(effects[0].verdict, 'ok');
   return handed;
 }
 
-test('a stream inter-proc edge applies its map exactly once', async () => {
+test('a stream inter-task edge applies its map exactly once', async () => {
   const produced = await answer(
     activationFor('wf_emit_stream')({ items: [inputItem(10)] }),
     depsFor(StreamTwinSpec),
@@ -734,10 +734,10 @@ test('a workflow consumer applies its own edge exactly once, at delivery', async
 });
 
 // `ctx.complete` rides the item's effect on either kind: which kind runs the
-// procedure is the core's to judge, so the effect is built the same way.
+// tasklet is the core's to judge, so the effect is built the same way.
 
 /** Completes with `first` and then with its input, except on `stay`; echoes every input. */
-const Completing = defineProcedure({
+const Completing = defineTasklet({
   name: 'completing',
   run: (input, ctx) => {
     if (input === 'stay') return input;
@@ -753,7 +753,7 @@ for (const [kind, define] of [
   ['workflow', defineWorkflow],
   ['stream', defineOperative],
 ]) {
-  test(`a ${kind} procedure's complete rides its effect, the last call winning`, async () => {
+  test(`a ${kind} tasklet's complete rides its effect, the last call winning`, async () => {
     const spec = define({ factoryId: `complete_${kind}`, channels: completingGraph });
     const { effects } = await answer(
       activationFor(spec.factoryId)({ items: [inputItem('bye'), inputItem('stay')] }),
@@ -774,11 +774,11 @@ test('plain text into an entry naming no codec never reaches the handler', async
   const spec = defineOperative({
     factoryId: 'json_entry',
     channels: (c) => {
-      c.input('in').into(record('json_entry_procedure'));
+      c.input('in').into(record('json_entry_tasklet'));
     },
   });
   const { effects, handed } = await ran(spec, {
-    entityKey: undefined,
+    cellKey: undefined,
     items: [inputItem({ a: 1 }), inputItem(0, { payload: Buffer.from('hello') })],
   });
   assert.deepEqual(
@@ -792,14 +792,14 @@ test('plain text into an entry naming no codec never reaches the handler', async
 // --- merged sources ---------------------------------------------------------
 //
 // Where the test app's own `merged_input` and `transform_chain` carry the shape,
-// they are what runs. Both sink, as text, what their procedure returned for
+// they are what runs. Both sink, as text, what their tasklet returned for
 // each value it ran.
 
 const textItem = (channel, text) => inputItem(0, { channel, payload: Buffer.from(text) });
 
-/** One text payload on channel 0 handed to `entityKey`; `item` overrides the item's fields. */
-const ranText = (spec, entityKey, text, item = {}) =>
-  ran(spec, { entityKey, items: [{ ...textItem(0, text), ...item }] });
+/** One text payload on channel 0 handed to `cellKey`; `item` overrides the item's fields. */
+const ranText = (spec, cellKey, text, item = {}) =>
+  ran(spec, { cellKey, items: [{ ...textItem(0, text), ...item }] });
 
 /** The text each output of `effects` carried, in order. */
 const sunk = (effects) =>
@@ -809,7 +809,7 @@ const sunk = (effects) =>
 
 test('each merged source reaches the handler under its own mapping, in the order handed', async () => {
   const { effects } = await ran(fixtures.mergedInput, {
-    entityKey: 'AAPL',
+    cellKey: 'AAPL',
     items: [textItem(0, 'AAPL:1'), textItem(1, 'AAPL:2'), textItem(0, 'AAPL:3')],
   });
   assert.equal(effects.length, 3);
@@ -822,7 +822,7 @@ test('every merged source is keyed on its mapped value at the crossing', async (
   }
 });
 
-test('a procedure merged with an entry releases its mapped value to the merged node', async () => {
+test('a tasklet merged with an entry releases its mapped value to the merged node', async () => {
   const spec = defineOperative({
     factoryId: 'merged_hop',
     channels: (c) => {
@@ -833,7 +833,7 @@ test('a procedure merged with an entry releases its mapped value to the merged n
         .into(record('merged_hop_record'));
     },
   });
-  const { effects } = await ran(spec, { entityKey: undefined, items: [inputItem(7)] });
+  const { effects } = await ran(spec, { cellKey: undefined, items: [inputItem(7)] });
   assert.deepEqual(
     effects[0].outputs.map((output) => [output.consumer, decodeValue(output.payload)]),
     [[1, { produced: 7 }]],
@@ -878,20 +878,20 @@ test('a fan followed by keyBy answers every key at the crossing, once each', asy
 });
 
 // The core hands the whole payload to every key the crossing answered.
-test('an entity handed a fanned payload runs only the values keyed to it', async () => {
+test('a cell handed a fanned payload runs only the values keyed to it', async () => {
   const { effects } = await ranText(fixtures.transformChain, 'A', 'a:1,b:2,c:3,a:4');
   assert.deepEqual(sunk(effects), ['A:1', 'A:4']);
 });
 
-test('a fan into a static consumer runs each value on the entities it names, and [] on none', async () => {
+test('a fan into a static consumer runs each value on the cells it names, and [] on none', async () => {
   const keys = ['a', 'b'];
-  const entitiesFor = (trade) => keys.filter((key) => trade.startsWith(`${key}:`));
+  const cellsFor = (trade) => keys.filter((key) => trade.startsWith(`${key}:`));
   const spec = defineOperative({
     factoryId: 'static_fan',
     channels: (c) => {
       c.input('trades', { codec: 'text' })
         .flatMap((line) => line.split(','))
-        .into(record('static_fan_record', { entities: { keys, entitiesFor } }));
+        .into(record('static_fan_record', { cells: { keys, cellsFor } }));
     },
   });
   const payload = 'a:1,b:2,z:3,a:4';
@@ -907,7 +907,7 @@ test('a producer releases one frame per fanned value, and an array from map is o
       channels: (c) =>
         reshape(c.input('in').into(WorkflowProducer)).into(record(`${factoryId}_record`)),
     });
-    const { effects } = await ran(spec, { entityKey: undefined, items: [inputItem(10)] });
+    const { effects } = await ran(spec, { cellKey: undefined, items: [inputItem(10)] });
     return effects[0].outputs.map((output) => decodeValue(output.payload));
   };
   assert.deepEqual(

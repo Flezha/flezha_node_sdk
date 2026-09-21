@@ -1,16 +1,16 @@
 // Twins of the reference's durable structured workflow fixtures
 // (test/apps/rust_runner/src/workflow.rs and workflow_loop.rs) under the same
-// factory ids, procedure names, channel names and output bytes.
+// factory ids, tasklet names, channel names and output bytes.
 //
 // Entry payloads and plugin frames are UTF-8 text on the wire, as in the
 // reference: every entry names the text codec, and a bare `.sink(name)` sends a
 // string as UTF-8 here as it does there, so only a sink that prefixes its value
 // declares an encoder.
-// An inter-procedure hop between two Node procedures carries MessagePack, and
+// An inter-tasklet hop between two Node tasklets carries MessagePack, and
 // the core derives that channel's journal codec from the channel's kind, so no
 // fixture declares one.
 
-import { defineOperative, defineProcedure, defineWorkflow } from '@flezha/sdk';
+import { defineOperative, defineTasklet, defineWorkflow } from '@flezha/sdk';
 
 // -- the release gate -------------------------------------------------------
 
@@ -54,13 +54,13 @@ const insertSorted = (items, value) => {
  * after a resume folds to the state it already had.
  *
  * `emit` and `compensate` are the two axes that macro parameterises. `change`
- * and `gate` are the two the reference varies by hand-writing the procedure
+ * and `gate` are the two the reference varies by hand-writing the tasklet
  * instead — the value recorded, and whether this step waits for the release
  * gate BEFORE recording it. Carrying all four here is what lets every durable
- * procedure in this module be one call.
+ * tasklet in this module be one call.
  */
 const durableStep = (name, { change, emit, compensate, gate } = {}) =>
-  defineProcedure({
+  defineTasklet({
     name,
     initialState: () => ({ items: [] }),
     applyChange: (state, recorded) => insertSorted(state.items, recorded.insert),
@@ -82,7 +82,7 @@ const durableStep = (name, { change, emit, compensate, gate } = {}) =>
  * The reference's `stateless_step!` (workflow.rs:113-140): no state, no
  * change, the whole behaviour is the handler.
  */
-const statelessStep = (name, run) => defineProcedure({ name, run });
+const statelessStep = (name, run) => defineTasklet({ name, run });
 
 /** A terminal step that always fails, which is how a saga is made to unwind. */
 const failingStep = (name) =>
@@ -92,7 +92,7 @@ const failingStep = (name) =>
 
 // -- echo_workflow ----------------------------------------------------------
 //
-// A `once` workflow of one procedure (workflow.rs): its single pass is seeded
+// A `once` workflow of one tasklet (workflow.rs): its single pass is seeded
 // with the start values and emits them back, so the instance completes and the
 // controller deregisters it.
 
@@ -107,7 +107,7 @@ export const echoWorkflow = defineWorkflow({
 
 // -- commit_block_workflow / sync_durable_workflow --------------------------
 //
-// Proc A commits durable state, proc B blocks until the resumed runner sets
+// Task A commits durable state, task B blocks until the resumed runner sets
 // the release variable — so a SIGKILL lands with A's state already on the WAL
 // and B never finished. `sync_durable_workflow` is the same chain declaring
 // SYNCHRONOUS remote durability, which is what lets the kill-the-disk drill
@@ -133,7 +133,7 @@ export const syncDurableWorkflow = defineWorkflow({
 
 // -- optout_commit_block ----------------------------------------------------
 //
-// The opt-out twin with a live mid-chain signal: proc A's output also reaches
+// The opt-out twin with a live mid-chain signal: task A's output also reaches
 // a plugin sink, so the crash-resume drill can observe the mid-run point
 // without durable state. A crash re-runs the chain from the top, so the sink
 // sees A's marker once per run and no journal file exists.
@@ -151,9 +151,9 @@ export const optoutCommitBlock = defineWorkflow({
 
 // -- tier_commit_block_workflow ---------------------------------------------
 //
-// The effectively-once fixture. Proc A commits durable state AND emits
+// The effectively-once fixture. Task A commits durable state AND emits
 // `committed:<input>` under a stable key on a keyed hybrid channel, captured
-// into the atomic effect record; proc B blocks. A SIGKILL lands with A's
+// into the atomic effect record; task B blocks. A SIGKILL lands with A's
 // effect record durable and B unfinished, and the resume re-runs A — the
 // change is idempotent and the re-emit deterministic.
 
@@ -189,10 +189,10 @@ export const sagaBlockWorkflow = defineWorkflow({
 
 // -- outbox_block_workflow --------------------------------------------------
 //
-// The transactional outbox. Proc A commits durable state AND emits
+// The transactional outbox. Task A commits durable state AND emits
 // plugin-bound output on a hybrid channel — STAGED, so it reaches the sink
 // only after the controller has journaled and fsynced A's committed entry with
-// the output inside it and flushed the outbox. Proc B blocks, so a SIGKILL
+// the output inside it and flushed the outbox. Task B blocks, so a SIGKILL
 // lands with A committed and flushed and B unfinished.
 
 export const outboxBlockWorkflow = defineWorkflow({
@@ -207,10 +207,10 @@ export const outboxBlockWorkflow = defineWorkflow({
 
 // -- undo_outbox_workflow ---------------------------------------------------
 //
-// The compensation half of the transactional outbox. Proc UA commits, emits
+// The compensation half of the transactional outbox. Task UA commits, emits
 // its forward output on a hybrid plugin channel, and compensates by EMITTING
 // an undo record — plugin-bound, so it is staged and rides a compensated
-// journal entry rather than the wire. Proc C fails immediately, so the chain
+// journal entry rather than the wire. Task C fails immediately, so the chain
 // always rolls back; the hook BLOCKS, so on the first runner the undo is
 // emitted-but-never-journaled when the SIGKILL lands, proving staged undo
 // output cannot leak. The respawn re-runs the outstanding hook, whose done
@@ -240,7 +240,7 @@ export const undoOutboxWorkflow = defineWorkflow({
 //     BranchA ─┬─▶ BranchB ─▶ BranchD
 //              └─▶ BranchC
 //
-// The procedure TREE (workflow.rs:352). Every procedure commits durable state
+// The tasklet TREE (workflow.rs:352). Every tasklet commits durable state
 // and compensates by emitting an undo record, so both tree behaviours are
 // observable at one sink:
 //
@@ -252,8 +252,8 @@ export const undoOutboxWorkflow = defineWorkflow({
 //     blocking. A, B and C have all completed, so the rollback unwinds the two
 //     branches before the root they share: `undo-c`, `undo-b`, `undo-a`.
 //
-// The inter-proc channels are hybrid, which is what makes a non-leaf
-// procedure's forward and undo output visible at the sink.
+// The inter-task channels are hybrid, which is what makes a non-leaf
+// tasklet's forward and undo output visible at the sink.
 
 const BRANCH_FAIL_ENV = 'FLEZHA_BRANCH_FAIL';
 
@@ -338,7 +338,7 @@ export const diamondWorkflow = defineWorkflow({
 
 // -- retry_workflow ---------------------------------------------------------
 //
-// The per-entity retry ladder (workflow.rs:607). Proc RA commits durable
+// The per-cell retry ladder (workflow.rs:607). Task RA commits durable
 // state, forwards on a hybrid channel, and compensates by emitting an undo
 // record; `retry_flaky` fails its first FLEZHA_WORKFLOW_RETRY_FAILS attempts
 // (none by default — each scenario arms it) and then emits
@@ -348,8 +348,8 @@ export const diamondWorkflow = defineWorkflow({
 
 const RETRY_FAILS_ENV = 'FLEZHA_WORKFLOW_RETRY_FAILS';
 
-// Attempts made in this process. A retry re-runs the procedure of the same
-// instance in place and dispatch is entity-affine, so a module-level counter
+// Attempts made in this process. A retry re-runs the tasklet of the same
+// instance in place and dispatch is cell-affine, so a module-level counter
 // is the whole ladder's view even under a worker pool.
 let retryAttempts = 0;
 
@@ -378,7 +378,7 @@ export const retryWorkflow = defineWorkflow({
 //
 // chat_loop_workflow is the durable-loop + suspension shape
 // (workflow_loop.rs:8). One iteration per inbox item: TURN commits the turn to
-// Entity state, so a resumed iteration is visible in the WAL, and REPLY emits
+// Cell state, so a resumed iteration is visible in the WAL, and REPLY emits
 // the answer to the sink. Between turns the loop finds an empty inbox at a
 // committed boundary and PARKS — the instance is evicted and rehydrated by the
 // next message. The turn whose payload is the crash turn BLOCKS while the
@@ -391,12 +391,12 @@ export const retryWorkflow = defineWorkflow({
 // commits.
 //
 // stateless_loop_workflow is the same loop MINUS its stateful first
-// procedure: ChatReply alone holds no per-Entity state, so nothing writes an
-// Entity WAL and the instance's proc-journal reaches the driver only if it
+// tasklet: ChatReply alone holds no per-Cell state, so nothing writes an
+// Cell WAL and the instance's task-journal reaches the driver only if it
 // rides the bind itself.
 //
-// chat_rewind_workflow is the loop whose replying procedure can be undone. The
-// undo handle lives in Entity state, because a rewind's compensation is
+// chat_rewind_workflow is the loop whose replying tasklet can be undone. The
+// undo handle lives in Cell state, because a rewind's compensation is
 // rebuilt from the journal and is handed NO retained outputs, so the hook
 // reads the last thing it said, retracts it and pops it.
 
@@ -410,7 +410,7 @@ const recordTurn = durableStep('chat_turn', {
   gate: (input) => input === CRASH_TURN,
 }).definition;
 
-const ChatTurn = defineProcedure({
+const ChatTurn = defineTasklet({
   ...recordTurn,
   run: (input, ctx) => {
     if (input !== CLOSING_TURN) return recordTurn.run(input, ctx);
@@ -421,7 +421,7 @@ const ChatTurn = defineProcedure({
 
 const ChatReply = statelessStep('chat_reply', (input, ctx) => ctx.emit(`reply:${input}`));
 
-const ChatReplyUndoable = defineProcedure({
+const ChatReplyUndoable = defineTasklet({
   name: 'chat_reply_undoable',
   initialState: () => ({ said: [] }),
   applyChange: (state, change) => {
@@ -464,9 +464,9 @@ export const statelessLoopWorkflow = defineWorkflow({
 //
 // On each input it spawns `stateless_loop_workflow` once with no id and once
 // under the input as its id, and prints both results, because a handle's answer
-// is observable nowhere but in the procedure that read it (workflow_loop.rs).
+// is observable nowhere but in the tasklet that read it (workflow_loop.rs).
 
-const SpawnRequester = defineProcedure({
+const SpawnRequester = defineTasklet({
   name: 'spawn_requester',
   run: async (input, ctx) => {
     const factory = statelessLoopWorkflow.factoryId;
@@ -509,9 +509,9 @@ export const chatRewindWorkflow = defineWorkflow({
 // What `mix bench.workflow --scenario chain` drives (workflow_loop.rs:232): K
 // durable pass-through steps in a line, the payload unchanged, so the sink
 // receives the seed input and the bench reads its own seq and send timestamp
-// back. Each chain position needs its own procedure, so the sixteen are
+// back. Each chain position needs its own tasklet, so the sixteen are
 // generated rather than written out; the edge names follow the reference,
-// which spells them from the step TYPE rather than from the procedure name.
+// which spells them from the step TYPE rather than from the tasklet name.
 
 const benchSteps = Array.from({ length: 16 }, (_, at) => durableStep(`bench_s${at}`));
 
@@ -542,7 +542,7 @@ export const benchChainOptout4 = benchChain('bench_chain_optout_4', 4, false);
 
 const WAKE_AFTER_ENV = 'FLEZHA_BENCH_WAKE_AFTER_MS';
 
-const BenchTurn = defineProcedure({
+const BenchTurn = defineTasklet({
   name: 'bench_turn',
   initialState: () => ({ turns: 0, last: '' }),
   applyChange: (state, seen) => {

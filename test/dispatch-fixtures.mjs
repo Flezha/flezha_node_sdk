@@ -1,6 +1,6 @@
 // The builders the dispatch-shaped suites share: what one operative's dispatch
 // depends on, and the activation the core hands out.
-import { defineOperative, defineProcedure, validate } from '../dist/esm/index.js';
+import { defineOperative, defineTasklet, validate } from '../dist/esm/index.js';
 import { Registry, answer } from '../dist/esm/dispatch.js';
 
 /**
@@ -48,7 +48,7 @@ export function spawnBridge(
 }
 
 /**
- * Run `body(input, ctx)` as a procedure's `run` on one input, `'p'`, under activation
+ * Run `body(input, ctx)` as a tasklet's `run` on one input, `'p'`, under activation
  * token 7 with `bridge` for its spawns; answers that input's effect.
  */
 export async function handleOnce(bridge, body, item = {}) {
@@ -57,7 +57,7 @@ export async function handleOnce(bridge, body, item = {}) {
     channels: (c) =>
       c
         .input('in')
-        .into(defineProcedure({ name: 'once', run: body }))
+        .into(defineTasklet({ name: 'once', run: body }))
         .sink('out'),
   });
   const work = activationFor('once')({ token: 7n, items: [inputItem('p', item)] });
@@ -71,8 +71,8 @@ export const activationFor =
   (overrides = {}) => ({
     token: 1n,
     operative: 'op-1',
-    procedure: 0,
-    entityKey: 'k',
+    tasklet: 0,
+    cellKey: 'k',
     changeSeq: 0n,
     factory,
     kind: 'work',

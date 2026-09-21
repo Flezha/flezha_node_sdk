@@ -11,12 +11,12 @@
  * declaration never names, which the core has nothing to judge.
  *
  * Static typing catches a wrong edge type before the program runs (a
- * `.into(procedure)` whose producer's value the procedure's declared input
+ * `.into(tasklet)` whose producer's value the tasklet's declared input
  * does not accept is a compile error, pinned by the fixtures under
  * `types-tests/`); that backstop is unchanged and earlier than this one.
  */
 
-import type { ChannelKind, ChannelSpec, ClassSpec, ConsumerEdge, ProcNode } from './authoring.js';
+import type { ChannelKind, ChannelSpec, ClassSpec, ConsumerEdge, TaskNode } from './authoring.js';
 import { loadNative, type Native } from './native.js';
 import { DeclarationError } from './types.js';
 
@@ -38,7 +38,7 @@ export const FORMAT_ID_MSGPACK = 5;
 
 /** One consumer edge, as the core read it off the channel's chains. */
 export interface DerivedEdge {
-  procedure: number;
+  tasklet: number;
   /** Which of the channel's chains produced this edge; the host holds its closures. */
   chain: number;
 }
@@ -71,33 +71,33 @@ function refuse(spec: ClassSpec, handler: string | null, defect: string): never 
   throw new DeclarationError(spec.factoryId, handler, defect);
 }
 
-function clockOf(node: ProcNode): string {
-  return node.procedure.definition.clock ?? 'wall';
+function clockOf(node: TaskNode): string {
+  return node.tasklet.definition.clock ?? 'wall';
 }
 
-function entityMode(node: ProcNode): 'single' | 'static' | 'dynamic' {
-  const def = node.procedure.definition;
-  if (def.entities) return 'static';
-  if (def.dynamicEntities) return 'dynamic';
+function cellMode(node: TaskNode): 'single' | 'static' | 'dynamic' {
+  const def = node.tasklet.definition;
+  if (def.cells) return 'static';
+  if (def.dynamicCells) return 'dynamic';
   return 'single';
 }
 
 /**
- * The two defects the record cannot carry, per procedure.
+ * The two defects the record cannot carry, per tasklet.
  *
  * An event-time extractor and a migration are host closures: the declaration
  * names neither, so the core has nothing to read and these are the only
- * procedure-level refusals left on this side.
+ * tasklet-level refusals left on this side.
  */
-function checkProcedures(spec: ClassSpec): void {
-  for (const node of spec.procedures) {
+function checkTasklets(spec: ClassSpec): void {
+  for (const node of spec.tasklets) {
     checkClocks(spec, node);
     checkSchema(spec, node);
   }
 }
 
-function checkClocks(spec: ClassSpec, node: ProcNode): void {
-  const def = node.procedure.definition;
+function checkClocks(spec: ClassSpec, node: TaskNode): void {
+  const def = node.tasklet.definition;
   const clock = clockOf(node);
 
   if (clock === 'event_time' && !def.eventTime) {
@@ -118,8 +118,8 @@ function checkClocks(spec: ClassSpec, node: ProcNode): void {
   }
 }
 
-function checkSchema(spec: ClassSpec, node: ProcNode): void {
-  const def = node.procedure.definition;
+function checkSchema(spec: ClassSpec, node: TaskNode): void {
+  const def = node.tasklet.definition;
   if (def.minReadableSchemaVersion === undefined) return;
 
   const floor = def.minReadableSchemaVersion;
@@ -168,7 +168,7 @@ function refusalOf(spec: ClassSpec, error: Error): DeclarationError {
  * so the name this host addresses a channel by is the one the core registered.
  */
 export function validate(spec: ClassSpec, native: Native = loadNative()): DerivedDecl {
-  checkProcedures(spec);
+  checkTasklets(spec);
   let derived: DerivedDecl;
   try {
     const answer = native.checkClass(Buffer.from(JSON.stringify(toHostClassDecl(spec))));
@@ -210,21 +210,21 @@ function channelJson(channel: ChannelSpec): Record<string, unknown> {
   });
 }
 
-function procedureJson(spec: ClassSpec, node: ProcNode): Record<string, unknown> {
-  const def = node.procedure.definition;
+function taskletJson(spec: ClassSpec, node: TaskNode): Record<string, unknown> {
+  const def = node.tasklet.definition;
   return compact({
     name: node.name,
-    entity_mode: entityMode(node),
-    entity_keys: def.entities?.keys ?? [],
-    idle_ttl_ms: def.dynamicEntities?.idleTtlMs,
-    max_entities: def.dynamicEntities?.maxEntities,
-    entities_for_overridden: def.entities?.entitiesFor !== undefined,
+    cell_mode: cellMode(node),
+    cell_keys: def.cells?.keys ?? [],
+    idle_ttl_ms: def.dynamicCells?.idleTtlMs,
+    max_cells: def.dynamicCells?.maxCells,
+    cells_for_overridden: def.cells?.cellsFor !== undefined,
     compensate_overridden: def.compensate !== undefined,
     clock: def.clock ?? 'wall',
     mailbox_capacity: def.mailboxCapacity ?? 1024,
-    // A procedure that folds no change has the empty Change type, so a logical
+    // A tasklet that folds no change has the empty Change type, so a logical
     // clock over it would never advance; a class that journals nothing has it
-    // for every procedure.
+    // for every tasklet.
     change_is_nochange: !spec.persistent || def.applyChange === undefined,
     schema_version: def.schemaVersion ?? 1,
     min_readable_schema_version: def.minReadableSchemaVersion,
@@ -270,7 +270,7 @@ export function toHostClassDecl(spec: ClassSpec): Record<string, unknown> {
     compact_after_bytes: spec.compactAfterBytes,
     sync_durability: spec.syncDurability,
     channels: spec.channels.map(channelJson),
-    procedures: spec.procedures.map((node) => procedureJson(spec, node)),
+    tasklets: spec.tasklets.map((node) => taskletJson(spec, node)),
     workflow: spec.workflow
       ? compact({
           loop_mode: spec.workflow.loopMode,

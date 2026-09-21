@@ -96,7 +96,7 @@ export const msgpack: Codec<unknown> = {
 
 /**
  * The payload formats a channel names on `input` and `sink`. A payload between
- * two procedures names none: it stays in the MessagePack above.
+ * two tasklets names none: it stays in the MessagePack above.
  */
 export const CHANNEL_CODECS: readonly ChannelCodec[] = ['bytes', 'text', 'json', 'msgpack'];
 

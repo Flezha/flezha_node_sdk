@@ -61,8 +61,8 @@ export type NativeActivationKind =
 export interface NativeActivation {
   token: bigint;
   operative: string;
-  procedure: number;
-  entityKey?: string;
+  tasklet: number;
+  cellKey?: string;
   changeSeq: bigint;
   factory: string;
   kind: NativeActivationKind;

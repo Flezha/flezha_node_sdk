@@ -2,12 +2,12 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { defineProcedure, setLogger } from '../dist/esm/index.js';
+import { defineTasklet, setLogger } from '../dist/esm/index.js';
 import {
   installDeterminismWarnings,
   uninstallDeterminismWarnings,
 } from '../dist/esm/determinism.js';
-import { ProcedureTestHarness } from '../dist/esm/testing.js';
+import { TaskletTestHarness } from '../dist/esm/testing.js';
 
 function capture() {
   const lines = [];
@@ -24,14 +24,14 @@ test('an ambient clock read names the file, the line and the replacement', async
   const lines = capture();
   installDeterminismWarnings();
   try {
-    const Ambient = defineProcedure({
+    const Ambient = defineTasklet({
       name: 'ambient_clock',
       run: () => {
         Date.now();
         return undefined;
       },
     });
-    await ProcedureTestHarness.of(Ambient).input(1);
+    await TaskletTestHarness.of(Ambient).input(1);
     const warning = lines.find((line) => line.includes('Date.now()'));
     assert.ok(warning, `expected a warning, got ${JSON.stringify(lines)}`);
     assert.match(warning, /ambient_clock/);
@@ -46,7 +46,7 @@ test('new Date() with no argument is reported, and with one is not', async () =>
   const lines = capture();
   installDeterminismWarnings();
   try {
-    const Mixed = defineProcedure({
+    const Mixed = defineTasklet({
       name: 'mixed_clock',
       run: (_input, ctx) => {
         const derived = new Date(Number(ctx.now()));
@@ -55,7 +55,7 @@ test('new Date() with no argument is reported, and with one is not', async () =>
         return undefined;
       },
     });
-    await ProcedureTestHarness.of(Mixed).input(1);
+    await TaskletTestHarness.of(Mixed).input(1);
     assert.equal(lines.filter((line) => line.includes('new Date()')).length, 1);
   } finally {
     uninstallDeterminismWarnings();
@@ -66,7 +66,7 @@ test('random identifiers are reported and the invocation still completes', async
   const lines = capture();
   installDeterminismWarnings();
   try {
-    const Random = defineProcedure({
+    const Random = defineTasklet({
       name: 'random_id',
       run: () => {
         Math.random();
@@ -74,7 +74,7 @@ test('random identifiers are reported and the invocation still completes', async
         return 'finished';
       },
     });
-    const applied = await ProcedureTestHarness.of(Random).input(1);
+    const applied = await TaskletTestHarness.of(Random).input(1);
     assert.deepEqual(applied.emits, ['finished'], 'the warning does not abort the invocation');
     assert.ok(lines.some((line) => line.includes('Math.random()')));
     assert.ok(lines.some((line) => line.includes('crypto.randomUUID()')));
@@ -88,14 +88,14 @@ test('one site reports once, however hot the loop', async () => {
   const lines = capture();
   installDeterminismWarnings();
   try {
-    const Hot = defineProcedure({
+    const Hot = defineTasklet({
       name: 'hot_loop',
       run: () => {
         for (let i = 0; i < 50; i += 1) Math.random();
         return undefined;
       },
     });
-    await ProcedureTestHarness.of(Hot).input(1);
+    await TaskletTestHarness.of(Hot).input(1);
     assert.equal(lines.filter((line) => line.includes('Math.random()')).length, 1);
   } finally {
     uninstallDeterminismWarnings();

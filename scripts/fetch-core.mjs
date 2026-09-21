@@ -55,8 +55,11 @@ const host = `${process.platform}-${process.arch}`;
 const corePlatform = CORE_PLATFORMS[host];
 if (!corePlatform) refuse(`no core release asset is published for ${host}`);
 
-const { NATIVE_PLATFORMS } = await import(pathToFileURL(resolve(root, 'dist/esm/platforms.js')))
-  .catch(() => refuse('dist/esm/platforms.js does not exist; build the package first: npm run build'));
+const { NATIVE_PLATFORMS } = await import(
+  pathToFileURL(resolve(root, 'dist/esm/platforms.js'))
+).catch(() =>
+  refuse('dist/esm/platforms.js does not exist; build the package first: npm run build'),
+);
 const platform = NATIVE_PLATFORMS.find(
   (entry) => entry.os === process.platform && entry.cpu === process.arch,
 );

@@ -10,7 +10,7 @@
 
 import { encodeValue, plainPayload } from './codec.js';
 import { applyTransforms, isStructuredWorkflow } from './authoring.js';
-import type { ChannelSpec, ClassSpec, ConsumerEdge, ProcNode } from './authoring.js';
+import type { ChannelSpec, ClassSpec, ConsumerEdge, TaskNode } from './authoring.js';
 import type {
   Native,
   NativeItemEffect,
@@ -18,7 +18,7 @@ import type {
   NativeOutput,
   NativeTimerOp,
 } from './native.js';
-import { entityIdentity, stableId } from './identity.js';
+import { cellIdentity, stableId } from './identity.js';
 import { readOnlyState } from './state.js';
 import {
   EmitError,
@@ -97,11 +97,11 @@ function resultOf(json: string): SpawnResult {
 
 export interface InvocationInput {
   spec: ClassSpec;
-  node: ProcNode;
-  /** Channels this procedure produces on, in declaration order. */
+  node: TaskNode;
+  /** Channels this tasklet produces on, in declaration order. */
   outgoing: ChannelSpec[];
   operative: string;
-  entityKey: string | undefined;
+  cellKey: string | undefined;
   changeSeq: bigint;
   now: bigint;
   replay: boolean;
@@ -111,13 +111,13 @@ export interface InvocationInput {
   bridge: SpawnBridge;
 }
 
-function metaList(metadata: Record<string, string> | undefined, procedure: string): NativeMeta[] {
+function metaList(metadata: Record<string, string> | undefined, tasklet: string): NativeMeta[] {
   if (!metadata) return [];
   return Object.entries(metadata).map(([key, value]) => {
     if (key.startsWith(RESERVED_PREFIX)) {
       throw new EmitError(
-        `${procedure}: metadata key \`${key}\` is inside the reserved \`${RESERVED_PREFIX}\` ` +
-          'namespace, which the runtime stamps itself (entity identity, sequence, key and ' +
+        `${tasklet}: metadata key \`${key}\` is inside the reserved \`${RESERVED_PREFIX}\` ` +
+          'namespace, which the runtime stamps itself (cell identity, sequence, key and ' +
           'offset); choose a key outside it',
       );
     }
@@ -145,7 +145,7 @@ export class Invocation implements Ctx<unknown, unknown, unknown> {
     this.live = input.state;
   }
 
-  /** The state after this item's changes folded — what the entity keeps. */
+  /** The state after this item's changes folded — what the cell keeps. */
   get currentState(): unknown {
     return this.live;
   }
@@ -154,8 +154,8 @@ export class Invocation implements Ctx<unknown, unknown, unknown> {
     return readOnlyState(this.input.node.name, this.live);
   }
 
-  get entityKey(): string | undefined {
-    return this.input.entityKey;
+  get cellKey(): string | undefined {
+    return this.input.cellKey;
   }
 
   get replay(): boolean {
@@ -170,17 +170,17 @@ export class Invocation implements Ctx<unknown, unknown, unknown> {
     if (!this.identityBytes) {
       // Lazily, because most invocations never ask and the identity is the
       // one part of the derivation that costs an allocation.
-      this.identityBytes = entityIdentity(
+      this.identityBytes = cellIdentity(
         this.input.operative,
         this.input.node.name,
-        this.input.entityKey ?? '',
+        this.input.cellKey ?? '',
       );
     }
     return stableId(this.identityBytes, this.input.changeSeq, this.ordinal++);
   }
 
   change(change: unknown): void {
-    const definition = this.input.node.procedure.definition;
+    const definition = this.input.node.tasklet.definition;
     if (!definition.applyChange) {
       throw new EmitError(
         `${this.input.node.name}: recorded a change but declares no applyChange; a change ` +
@@ -198,13 +198,13 @@ export class Invocation implements Ctx<unknown, unknown, unknown> {
   }
 
   /**
-   * Hand one input to the procedure's `run` body. A returned value is emitted;
+   * Hand one input to the tasklet's `run` body. A returned value is emitted;
    * `undefined` emits nothing, which is the warmup gate. A body that emits
    * through the context returns nothing, so the two spellings compose rather
    * than conflict.
    */
   async handle(value: unknown): Promise<void> {
-    const definition = this.input.node.procedure.definition;
+    const definition = this.input.node.tasklet.definition;
     const returned = await definition.run(value as never, this as never);
     if (returned !== undefined) this.emit(returned);
   }
@@ -242,7 +242,7 @@ export class Invocation implements Ctx<unknown, unknown, unknown> {
     return {
       target: 'edge',
       channel: channel.index,
-      consumer: edge.procedure,
+      consumer: edge.tasklet,
       pluginChannel: undefined,
       key: undefined,
       eventTime: undefined,
@@ -265,16 +265,16 @@ export class Invocation implements Ctx<unknown, unknown, unknown> {
     value: unknown,
     options: EmitOptions | undefined,
   ): NativeOutput[] {
-    const extractor = this.input.spec.procedures[edge.procedure]?.procedure.definition.eventTime;
+    const extractor = this.input.spec.tasklets[edge.tasklet]?.tasklet.definition.eventTime;
 
     // Producer-side, in declaration order: the core routes on `(edge, key)`
     // and never evaluates a host closure.
     return applyTransforms(edge.transforms, value).map((transformed): NativeOutput => ({
       target: 'edge',
       channel: channel.index,
-      consumer: edge.procedure,
+      consumer: edge.tasklet,
       pluginChannel: undefined,
-      key: options?.key ?? edge.keyBy?.(transformed) ?? this.input.entityKey,
+      key: options?.key ?? edge.keyBy?.(transformed) ?? this.input.cellKey,
       eventTime: extractor ? BigInt(extractor(transformed)) : undefined,
       metadata: metaList(options?.metadata, this.input.node.name),
       payload: encodeValue(transformed),
@@ -290,11 +290,11 @@ export class Invocation implements Ctx<unknown, unknown, unknown> {
     value: unknown,
     options: EmitOptions | undefined,
   ): NativeOutput {
-    const key = options?.key ?? this.input.entityKey;
+    const key = options?.key ?? this.input.cellKey;
     if (channel.keyed && key === undefined) {
       throw new EmitError(
         `${this.input.node.name}: emits on keyed channel \`${channel.name}\` with no key, ` +
-          'and has no entity key of its own to fall back on; pass { key } on the emit',
+          'and has no cell key of its own to fall back on; pass { key } on the emit',
       );
     }
     const metadata = metaList(options?.metadata, this.input.node.name);
@@ -325,9 +325,9 @@ export class Invocation implements Ctx<unknown, unknown, unknown> {
     key: string | undefined,
   ): void {
     if (channel.keyed && !this.input.spec.effectivelyOnce) {
-      const entity = `${this.input.operative}/${this.input.node.name}/${this.input.entityKey ?? ''}`;
+      const cell = `${this.input.operative}/${this.input.node.name}/${this.input.cellKey ?? ''}`;
       metadata.push(
-        { key: 'flz.entity', value: entity },
+        { key: 'flz.cell', value: cell },
         { key: 'flz.seq', value: `${this.input.changeSeq}.${this.emitOrdinal}` },
         { key: 'flz.key', value: key ?? '' },
       );

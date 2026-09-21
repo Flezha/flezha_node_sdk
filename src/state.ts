@@ -15,17 +15,17 @@
  */
 
 import { decodeValue } from './codec.js';
-import type { ProcedureDefinition } from './types.js';
+import type { TaskletDefinition } from './types.js';
 
 const RAW = Symbol('flezha.state.raw');
 
 export class StateMutationError extends Error {
   constructor(
-    readonly procedure: string,
+    readonly tasklet: string,
     readonly path: string,
   ) {
     super(
-      `${procedure}: state.${path} was assigned directly. Declared state is rebuilt from ` +
+      `${tasklet}: state.${path} was assigned directly. Declared state is rebuilt from ` +
         `its recorded changes on restart, so a direct assignment is lost there and reported ` +
         `nowhere. Record it instead: ctx.change({ ... }), which applyChange folds into the ` +
         `state on both the live path and the replay one.`,
@@ -34,7 +34,7 @@ export class StateMutationError extends Error {
   }
 }
 
-function guard<T extends object>(procedure: string, target: T, path: string): T {
+function guard<T extends object>(tasklet: string, target: T, path: string): T {
   const cache = new WeakMap<object, unknown>();
   const wrap = (value: unknown, at: string): unknown => {
     if (value === null || typeof value !== 'object') return value;
@@ -49,22 +49,13 @@ function guard<T extends object>(procedure: string, target: T, path: string): T 
         return wrap(next, at ? `${at}.${String(property)}` : String(property));
       },
       set(_inner, property) {
-        throw new StateMutationError(
-          procedure,
-          at ? `${at}.${String(property)}` : String(property),
-        );
+        throw new StateMutationError(tasklet, at ? `${at}.${String(property)}` : String(property));
       },
       defineProperty(_inner, property) {
-        throw new StateMutationError(
-          procedure,
-          at ? `${at}.${String(property)}` : String(property),
-        );
+        throw new StateMutationError(tasklet, at ? `${at}.${String(property)}` : String(property));
       },
       deleteProperty(_inner, property) {
-        throw new StateMutationError(
-          procedure,
-          at ? `${at}.${String(property)}` : String(property),
-        );
+        throw new StateMutationError(tasklet, at ? `${at}.${String(property)}` : String(property));
       },
     });
     cache.set(value, proxied);
@@ -77,9 +68,9 @@ function guard<T extends object>(procedure: string, target: T, path: string): T 
  * The read-only view a handler receives. A non-object state (a number, a
  * string) is returned as-is: there is nothing to assign to.
  */
-export function readOnlyState<S>(procedure: string, state: S): S {
+export function readOnlyState<S>(tasklet: string, state: S): S {
   if (state === null || typeof state !== 'object') return state;
-  return guard(procedure, state as unknown as object, '') as unknown as S;
+  return guard(tasklet, state as unknown as object, '') as unknown as S;
 }
 
 /** The value behind a view, for `applyChange` and the restore fold. */
@@ -95,11 +86,11 @@ export interface RestoreBody {
   fromVersion?: number;
 }
 
-type AnyDefinition = ProcedureDefinition<never, never, unknown, unknown>;
+type AnyDefinition = TaskletDefinition<never, never, unknown, unknown>;
 
 /**
  * Decode one durable body, choosing between the three things it could be:
- * a payload from an older schema version, one the procedure declared its own
+ * a payload from an older schema version, one the tasklet declared its own
  * codec for, or the MessagePack default.
  *
  * One function rather than the same three-way choice written at each of the
@@ -110,13 +101,13 @@ export function decodeBody(
   definition: AnyDefinition,
   which: 'state' | 'change',
   body: RestoreBody,
-  procedure: string,
+  tasklet: string,
 ): unknown {
   if (body.fromVersion !== undefined) {
     const migration = which === 'state' ? definition.migrateState : definition.migrateChange;
     if (!migration) {
       throw new Error(
-        `${procedure} was handed a ${which} record written at schema version ` +
+        `${tasklet} was handed a ${which} record written at schema version ` +
           `${body.fromVersion} and declares no migrate${which === 'state' ? 'State' : 'Change'}; ` +
           'declare one, or raise minReadableSchemaVersion so the record is refused rather ' +
           'than misread',
@@ -129,7 +120,7 @@ export function decodeBody(
 }
 
 /**
- * Rebuild an entity's state: the declared starting value, the snapshot
+ * Rebuild a cell's state: the declared starting value, the snapshot
  * baseline when there is one, then every change folded on top in order.
  *
  * This IS the restore, and both callers are the real thing — the dispatcher
@@ -140,23 +131,23 @@ export function decodeBody(
 export function foldRestore(
   definition: AnyDefinition,
   payload: { snapshot?: RestoreBody; changes?: RestoreBody[] },
-  entityKey: string | undefined,
-  procedure: string,
+  cellKey: string | undefined,
+  tasklet: string,
 ): unknown {
-  let state = definition.initialState?.(entityKey);
+  let state = definition.initialState?.(cellKey);
   if (payload.snapshot) {
-    state = decodeBody(definition, 'state', payload.snapshot, procedure);
+    state = decodeBody(definition, 'state', payload.snapshot, tasklet);
   }
   for (const body of payload.changes ?? []) {
     if (!definition.applyChange) {
       throw new Error(
-        `${procedure} was handed a change log but declares no applyChange; a procedure that ` +
+        `${tasklet} was handed a change log but declares no applyChange; a tasklet that ` +
           'records no changes should have no durable records to fold',
       );
     }
     definition.applyChange(
       state as never,
-      decodeBody(definition, 'change', body, procedure) as never,
+      decodeBody(definition, 'change', body, tasklet) as never,
     );
   }
   return state;

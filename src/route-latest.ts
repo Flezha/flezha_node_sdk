@@ -1,19 +1,19 @@
 /**
  * The latest-document router `routeLatest` expands to.
  *
- * A dynamically keyed procedure cannot receive a broadcast: inside a
+ * A dynamically keyed tasklet cannot receive a broadcast: inside a
  * partitioned member a computed key is admitted against that member's key
  * range, so fanning a document out over a remembered key set would emit keys
  * this member may no longer own. The router delivers on a key's own next
  * traffic item instead, so every key it emits is one that traffic just proved
  * this member owns. The price is one item of latency per key.
  *
- * The expansion is a merge into this single-entity procedure, whose state
+ * The expansion is a merge into this single-cell tasklet, whose state
  * rides the ordinary change journal: no runtime feature of its own.
  */
 
 import { encodeValue } from './codec.js';
-import type { ProcedureDefinition, RoutedDocument } from './types.js';
+import type { TaskletDefinition, RoutedDocument } from './types.js';
 
 /** A document off the document stream, or the key one traffic item carried. */
 export type RouterInput = { document: unknown } | { key: string };
@@ -33,7 +33,7 @@ function sameDocument(left: unknown, right: unknown): boolean {
   return Buffer.compare(encodeValue(left), encodeValue(right)) === 0;
 }
 
-export const latestRouter: ProcedureDefinition<
+export const latestRouter: TaskletDefinition<
   RouterInput,
   RoutedDocument<unknown>,
   RouterState,

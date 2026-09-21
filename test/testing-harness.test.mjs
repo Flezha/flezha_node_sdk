@@ -1,13 +1,13 @@
-// The procedure test harness, and the replay-equality gate it exists for.
+// The tasklet test harness, and the replay-equality gate it exists for.
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { defineProcedure, encodeValue } from '../dist/esm/index.js';
-import { ProcedureTestHarness, ReplayMismatch } from '../dist/esm/testing.js';
+import { defineTasklet, encodeValue } from '../dist/esm/index.js';
+import { TaskletTestHarness, ReplayMismatch } from '../dist/esm/testing.js';
 
-const Window = defineProcedure({
+const Window = defineTasklet({
   name: 'rolling_window',
-  dynamicEntities: {},
+  dynamicCells: {},
   initialState: () => ({ samples: [] }),
   applyChange: (state, change) => {
     if (change.push !== undefined) state.samples.push(change.push);
@@ -39,7 +39,7 @@ test('a defined handler runs with no runner and no controller', async () => {
 });
 
 test('inputs, emits and the recorded change log are inspectable', async () => {
-  const harness = ProcedureTestHarness.of(Window, { entityKey: 'AAPL' });
+  const harness = TaskletTestHarness.of(Window, { cellKey: 'AAPL' });
   assert.deepEqual((await harness.input(3)).emits, []);
   assert.deepEqual((await harness.input(6)).emits, []);
   assert.deepEqual((await harness.input(9)).emits, [6]);
@@ -61,7 +61,7 @@ test('the replay gate reports both states when the fold does not rebuild one', a
   // that is not a pure function of (state, change): the live fold and the
   // replay fold then disagree, and only a restart would otherwise show it.
   let folds = 0;
-  const Impure = defineProcedure({
+  const Impure = defineTasklet({
     name: 'impure_fold',
     initialState: () => ({ total: 0 }),
     applyChange: (state, change) => {
@@ -73,7 +73,7 @@ test('the replay gate reports both states when the fold does not rebuild one', a
       return undefined;
     },
   });
-  const harness = ProcedureTestHarness.of(Impure);
+  const harness = TaskletTestHarness.of(Impure);
   await harness.input(2);
   await harness.input(2);
   assert.throws(
@@ -87,7 +87,7 @@ test('the replay gate reports both states when the fold does not rebuild one', a
 });
 
 test('a timer fires with ctx.now() at its scheduled time', async () => {
-  const Session = defineProcedure({
+  const Session = defineTasklet({
     name: 'session',
     initialState: () => ({ closedAt: null }),
     applyChange: (state, change) => {
@@ -101,7 +101,7 @@ test('a timer fires with ctx.now() at its scheduled time', async () => {
       ctx.change({ closedAt: ctx.now() });
     },
   });
-  const harness = ProcedureTestHarness.of(Session, { now: 1_000n });
+  const harness = TaskletTestHarness.of(Session, { now: 1_000n });
   const applied = await harness.input('hello');
   assert.deepEqual(applied.timers, [
     { kind: 'processing_time', scheduledAt: 6_000n, register: true },
@@ -112,8 +112,8 @@ test('a timer fires with ctx.now() at its scheduled time', async () => {
 });
 
 test('the clock the next input is served at can be advanced', async () => {
-  const Clocked = defineProcedure({ name: 'clocked', run: (_i, ctx) => ctx.now() });
-  const harness = ProcedureTestHarness.of(Clocked, { now: 10n });
+  const Clocked = defineTasklet({ name: 'clocked', run: (_i, ctx) => ctx.now() });
+  const harness = TaskletTestHarness.of(Clocked, { now: 10n });
   assert.deepEqual((await harness.input(1)).emits, [10n]);
   harness.advanceBy(5n);
   assert.deepEqual((await harness.input(1)).emits, [15n]);
@@ -122,7 +122,7 @@ test('the clock the next input is served at can be advanced', async () => {
 });
 
 test('a harness can be built from a restore payload', async () => {
-  const harness = ProcedureTestHarness.withPayload(Window, {
+  const harness = TaskletTestHarness.withPayload(Window, {
     snapshot: encodeValue({ samples: [1, 2] }),
     changes: [encodeValue({ push: 3 })],
   });
@@ -131,7 +131,7 @@ test('a harness can be built from a restore payload', async () => {
 });
 
 test('a payload stamped at an older version reaches the declared migration', () => {
-  const Migrating = defineProcedure({
+  const Migrating = defineTasklet({
     name: 'migrating',
     schemaVersion: 2,
     minReadableSchemaVersion: 1,
@@ -145,7 +145,7 @@ test('a payload stamped at an older version reaches the declared migration', () 
     },
     run: () => undefined,
   });
-  const harness = ProcedureTestHarness.withPayload(Migrating, {
+  const harness = TaskletTestHarness.withPayload(Migrating, {
     snapshot: new Uint8Array([1, 2, 3]),
     fromVersion: 1,
   });
@@ -154,14 +154,14 @@ test('a payload stamped at an older version reaches the declared migration', () 
 
 test('stableId is distinct within an invocation and stable across a replay', async () => {
   const seen = [];
-  const Ids = defineProcedure({
+  const Ids = defineTasklet({
     name: 'ids',
     run: (_input, ctx) => {
       seen.push(ctx.stableId(), ctx.stableId());
     },
   });
-  await ProcedureTestHarness.of(Ids, { entityKey: 'k' }).input(1);
-  await ProcedureTestHarness.of(Ids, { entityKey: 'k' }).input(1);
+  await TaskletTestHarness.of(Ids, { cellKey: 'k' }).input(1);
+  await TaskletTestHarness.of(Ids, { cellKey: 'k' }).input(1);
   assert.notEqual(seen[0], seen[1], 'two calls in one invocation differ');
   assert.equal(seen[0], seen[2], 'the first call of a replayed invocation matches');
   assert.equal(seen[1], seen[3]);
@@ -169,14 +169,14 @@ test('stableId is distinct within an invocation and stable across a replay', asy
 });
 
 test('a reserved metadata key is refused naming the key', async () => {
-  const Meta = defineProcedure({
+  const Meta = defineTasklet({
     name: 'meta',
     run: (_input, ctx) => {
       ctx.emit('v', { metadata: { 'flz.key': 'mine' } });
     },
   });
   await assert.rejects(
-    () => ProcedureTestHarness.of(Meta).input(1),
+    () => TaskletTestHarness.of(Meta).input(1),
     (error) => error.message.includes('flz.key') && error.message.includes('reserved'),
   );
 });
@@ -184,19 +184,19 @@ test('a reserved metadata key is refused naming the key', async () => {
 test('a string and an object output are reported exactly as emitted', async () => {
   // The harness reads its sink back as MessagePack, so a string output is the
   // string rather than the bytes a plugin would receive.
-  const Emitter = defineProcedure({
+  const Emitter = defineTasklet({
     name: 'emitter',
     run: (input, ctx) => {
       ctx.emit({ said: input });
       return `echo: ${input}`;
     },
   });
-  const harness = ProcedureTestHarness.of(Emitter);
+  const harness = TaskletTestHarness.of(Emitter);
   assert.deepEqual((await harness.input('hi')).emits, [{ said: 'hi' }, 'echo: hi']);
 });
 
 test('a spawn answers a handle already resolved to a new instance', async () => {
-  const Spawner = defineProcedure({
+  const Spawner = defineTasklet({
     name: 'spawner',
     run: async (input, ctx) => [
       ctx.spawnWorkflow('worker', input).tryResult(),
@@ -204,7 +204,7 @@ test('a spawn answers a handle already resolved to a new instance', async () => 
       await ctx.spawnWorkflow('worker', input, { id: 'w1' }).wait(),
     ],
   });
-  const { emits } = await ProcedureTestHarness.of(Spawner).input('p');
+  const { emits } = await TaskletTestHarness.of(Spawner).input('p');
   assert.deepEqual(emits, [
     [
       { id: 'worker-aaaaaaaaaaaaaaab', outcome: 'spawned' },

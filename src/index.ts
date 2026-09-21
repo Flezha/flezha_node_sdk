@@ -2,15 +2,15 @@
  * `@flezha/sdk` — the Flezha SDK for Node.
  *
  * The runner kernel is `flz_core`, reached through its C ABI: it owns
- * transport, ordering, per-entity exclusivity, durability, retries, timers,
+ * transport, ordering, per-cell exclusivity, durability, retries, timers,
  * credit, routing and the workflow driver. This package supplies threads and
  * user code, and nothing else.
  */
 
 export { Admin } from './admin.js';
 export type { StartOptions, StartOutcome, StartResult } from './admin.js';
-export { defineOperative, defineProcedure, defineWorkflow } from './authoring.js';
-export type { ChannelSpec, ClassSpec, Link, ProcNode } from './authoring.js';
+export { defineOperative, defineTasklet, defineWorkflow } from './authoring.js';
+export type { ChannelSpec, ClassSpec, Link, TaskNode } from './authoring.js';
 export type { SpawnHandle } from './ctx.js';
 export {
   assertRepresentable,
@@ -51,22 +51,22 @@ export type {
   CodecOptions,
   ClockKind,
   Ctx,
-  DynamicEntities,
+  DynamicCells,
   EmitOptions,
   IfRunning,
   LoopMode,
   Merge,
   OperativeDefinition,
   OverflowPolicy,
-  Procedure,
-  ProcedureDefinition,
+  Tasklet,
+  TaskletDefinition,
   RollbackMode,
   RoutedDocument,
   ShortFormDefinition,
   SpawnOptions,
   SpawnOutcome,
   SpawnResult,
-  StaticEntities,
+  StaticCells,
   Stream,
   TimerFiring,
   TimerKind,

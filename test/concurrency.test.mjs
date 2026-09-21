@@ -15,7 +15,7 @@ import { Worker } from 'node:worker_threads';
 import {
   ACTIVATION_SCHEMA_VERSION,
   defineOperative,
-  defineProcedure,
+  defineTasklet,
   loadNative,
 } from '../dist/esm/index.js';
 import { answer } from '../dist/esm/dispatch.js';
@@ -32,9 +32,9 @@ import {
 // `depsFor` submits each spec, so this file needs the process context too.
 loadNative().contextNew(ACTIVATION_SCHEMA_VERSION);
 
-const Accumulate = defineProcedure({
+const Accumulate = defineTasklet({
   name: 'accumulate',
-  dynamicEntities: {},
+  dynamicCells: {},
   initialState: () => ({ seen: [] }),
   applyChange: (state, change) => {
     state.seen.push(change.value);
@@ -62,12 +62,12 @@ const activation = activationFor('ordering');
 const work = (token, key, values) =>
   activation({
     token,
-    entityKey: key,
+    cellKey: key,
     changeSeq: BigInt(token),
     items: values.map((value) => inputItem({ key, value }, { now: 0n })),
   });
 
-test('inputs for one entity are processed in enqueue order', async () => {
+test('inputs for one cell are processed in enqueue order', async () => {
   const shared = deps();
   const first = await answer(work(1n, 'a', ['x', 'y']), shared);
   const second = await answer(work(2n, 'a', ['z']), shared);
@@ -77,7 +77,7 @@ test('inputs for one entity are processed in enqueue order', async () => {
   assert.deepEqual(emitted, [['x'], ['x', 'y'], ['x', 'y', 'z']]);
 });
 
-test('two entities do not see each other state', async () => {
+test('two cells do not see each other state', async () => {
   const shared = deps();
   await answer(work(1n, 'a', ['x']), shared);
   const other = await answer(work(2n, 'b', ['q']), shared);

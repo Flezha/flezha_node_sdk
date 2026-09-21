@@ -1,8 +1,8 @@
-// Fixtures whose subject is persisted Entity state: the keyed upsert the bench
+// Fixtures whose subject is persisted Cell state: the keyed upsert the bench
 // shares, and the counter and resume twins — the same partition as
 // test/apps/python_runner/fixtures_state.py and the reference's state.rs.
 
-import { decodeValue, defineOperative, defineProcedure } from '@flezha/sdk';
+import { decodeValue, defineOperative, defineTasklet } from '@flezha/sdk';
 
 /** The reference parses `i64` and reads an unparsable input as 0. */
 const asInt = (input) => (/^-?\d+$/.test(String(input)) ? Number(input) : 0);
@@ -13,8 +13,8 @@ const asInt = (input) => (/^-?\d+$/.test(String(input)) ? Number(input) : 0);
 // `checkpoint_store` and `bench_checkpoint` are the same keyed upsert under
 // three acknowledgement postures; only the handler differs.
 
-const keyedUpsertProcedure = (name, run) =>
-  defineProcedure({
+const keyedUpsertTasklet = (name, run) =>
+  defineTasklet({
     name,
     initialState: () => ({ values: {} }),
     applyChange: (state, change) => {
@@ -36,15 +36,15 @@ const upsert = (input, ctx) => {
   ctx.emit(`${key}=${value}`, { key });
 };
 
-const TierStore = keyedUpsertProcedure('tier_store_procedure', (input, ctx) => {
+const TierStore = keyedUpsertTasklet('tier_store_tasklet', (input, ctx) => {
   // Dead-letter e2e: a "poison" value fails every attempt, exhausting the
-  // retry budget so the tier-on atomic park advances the entity past it.
+  // retry budget so the tier-on atomic park advances the cell past it.
   if (splitKeyed(input)[1] === 'poison') throw new Error('poison value');
   upsert(input, ctx);
 });
 
 // `tier_store`'s twin, whose interval closes on a `commit:` input.
-const CheckpointStore = keyedUpsertProcedure('checkpoint_store_procedure', (input, ctx) => {
+const CheckpointStore = keyedUpsertTasklet('checkpoint_store_tasklet', (input, ctx) => {
   if (splitKeyed(input)[0] === 'commit') {
     ctx.checkpoint();
     return;
@@ -53,10 +53,10 @@ const CheckpointStore = keyedUpsertProcedure('checkpoint_store_procedure', (inpu
 });
 
 // `checkpoint_store` driven by a DECLARED cadence rather than an input.
-const BenchCheckpoint = keyedUpsertProcedure('bench_checkpoint_procedure', upsert);
+const BenchCheckpoint = keyedUpsertTasklet('bench_checkpoint_tasklet', upsert);
 
 // The same keyed upsert under both durability postures, so the round-trip
-// bench can isolate the cost of per-Entity persistence.
+// bench can isolate the cost of per-Cell persistence.
 const keyedUpsert = (factoryId, options = {}) =>
   defineOperative({
     factoryId,
@@ -70,7 +70,7 @@ const keyedUpsert = (factoryId, options = {}) =>
     },
   });
 
-// Per-entity persistence off: this is the heap-only posture the bench isolates
+// Per-cell persistence off: this is the heap-only posture the bench isolates
 // against the durable one.
 export const benchKeyedNoPersist = keyedUpsert('bench_keyed_nopersist', { persistent: false });
 export const benchKeyed = keyedUpsert('bench_keyed');
@@ -101,11 +101,11 @@ export const checkpointStore = defineOperative({
   },
 });
 
-// The same procedure declared `outputsAtCheckpoint`: the interval's outputs
+// The same tasklet declared `outputsAtCheckpoint`: the interval's outputs
 // are held with its changes and ship inside its checkpoint record.
 // `checkpointEvery` is deliberately absent so the test drives the close itself
 // — with `commit:` for the batch case, and with the delay alone for the
-// quiet-Entity case.
+// quiet-Cell case.
 export const checkpointBatchedStore = defineOperative({
   factoryId: 'checkpoint_batched_store',
   channels: (c) => {
@@ -118,7 +118,7 @@ const envInt = (key, fallback) => Number(process.env[key]) || fallback;
 
 // `checkpoint_store` driven by a DECLARED cadence instead of a `commit:` input:
 // acknowledging every `FLEZHA_BENCH_CHECKPOINT_EVERY` inputs (default 500) per
-// Entity. `FLEZHA_BENCH_CHECKPOINT_OUTPUTS=at_checkpoint` (with
+// Cell. `FLEZHA_BENCH_CHECKPOINT_OUTPUTS=at_checkpoint` (with
 // `FLEZHA_BENCH_CHECKPOINT_DELAY_MS`) additionally holds the interval's outputs
 // until it closes.
 export const benchCheckpoint = defineOperative({
@@ -139,8 +139,8 @@ export const benchCheckpoint = defineOperative({
 // -- store_input ------------------------------------------------------------
 
 // The durable-state reference: every input is appended through a change.
-const StoreInput = defineProcedure({
-  name: 'store_input_procedure',
+const StoreInput = defineTasklet({
+  name: 'store_input_tasklet',
   initialState: () => ({ binary_inputs: [], text_inputs: [] }),
   applyChange: (state, change) => {
     state.text_inputs.push(change.push_text);
@@ -160,13 +160,13 @@ export const storeInput = defineOperative({
 
 // -- stateful_counter / persistence_off_counter -----------------------------
 
-const CounterEntry = defineProcedure({
-  name: 'counter_entry_procedure',
+const CounterEntry = defineTasklet({
+  name: 'counter_entry_tasklet',
   run: (input) => asInt(input),
 });
 
-const Counter = defineProcedure({
-  name: 'counter_procedure',
+const Counter = defineTasklet({
+  name: 'counter_tasklet',
   initialState: () => ({ value: 0 }),
   applyChange: (state, change) => {
     state.value += change.delta;
@@ -183,24 +183,24 @@ export const statefulCounter = defineOperative({
   },
 });
 
-// The same topology with per-Entity persistence off, under the reference's
+// The same topology with per-Cell persistence off, under the reference's
 // node names: the toggle is a class property, not a different computation.
 export const persistenceOffCounter = defineOperative({
   factoryId: 'persistence_off_counter',
   persistent: false,
   channels: (c) => {
     c.input('input', { codec: 'text' })
-      .into(CounterEntry, 'persistence_off_entry_procedure')
+      .into(CounterEntry, 'persistence_off_entry_tasklet')
       .named('ticks')
-      .into(Counter, 'persistence_off_counter_procedure');
+      .into(Counter, 'persistence_off_counter_tasklet');
   },
 });
 
 // -- coalescing_counter -----------------------------------------------------
 
 // Wire format: `<interval>:<ts>:<delta>`; a missing or unparsable part reads 0.
-const TickEntry = defineProcedure({
-  name: 'tick_entry_procedure',
+const TickEntry = defineTasklet({
+  name: 'tick_entry_tasklet',
   run: (input) => {
     const [interval, ts, ...rest] = String(input).split(':');
     return { interval: asInt(interval), ts: asInt(ts), delta: asInt(rest.join(':')) };
@@ -211,8 +211,8 @@ const TickEntry = defineProcedure({
 // trait method. The SDK carries no coalesce-key seam, so the change ships
 // uncoalesced — a throughput property, not a semantic one: the fold is
 // idempotent per `(interval, ts)` either way, so replay produces the same state.
-const Tick = defineProcedure({
-  name: 'tick_procedure',
+const Tick = defineTasklet({
+  name: 'tick_tasklet',
   initialState: () => ({ last: 0 }),
   applyChange: (state, change) => {
     state.last = change.delta;
@@ -233,8 +233,8 @@ export const coalescingCounter = defineOperative({
 
 // Emits the running total, so a resume is observable on the wire. Default +
 // change replay rebuilds the total on restore; no snapshot fast path needed.
-const ResumeProbe = defineProcedure({
-  name: 'resume_probe_procedure',
+const ResumeProbe = defineTasklet({
+  name: 'resume_probe_tasklet',
   initialState: () => ({ total: 0 }),
   applyChange: (state, change) => {
     state.total += change.add;
@@ -257,7 +257,7 @@ export const resumeProbe = defineOperative({
 // -- schema_evolution_v1 / schema_evolution_v2 ------------------------------
 //
 // The same class either side of a deploy that edits its own state type. Both
-// halves declare the SAME procedure name, so an operative started under v1 and
+// halves declare the SAME tasklet name, so an operative started under v1 and
 // restarted under v2 restores from the very WAL v1 wrote — which is what a
 // deploy does, with the two binaries collapsed into one fixture file.
 //
@@ -265,7 +265,7 @@ export const resumeProbe = defineOperative({
 // through a declared migration. Output is `total:currency` so the e2e can read
 // the migrated field off the wire.
 
-const EvolvingCartV1 = defineProcedure({
+const EvolvingCartV1 = defineTasklet({
   name: 'evolving_cart',
   initialState: () => ({ total: 0 }),
   applyChange: (state, change) => {
@@ -279,7 +279,7 @@ const EvolvingCartV1 = defineProcedure({
   },
 });
 
-const EvolvingCartV2 = defineProcedure({
+const EvolvingCartV2 = defineTasklet({
   name: 'evolving_cart',
   schemaVersion: 2,
   minReadableSchemaVersion: 1,
@@ -306,11 +306,11 @@ const EvolvingCartV2 = defineProcedure({
   },
 });
 
-const evolvingCart = (factoryId, procedure) =>
+const evolvingCart = (factoryId, tasklet) =>
   defineOperative({
     factoryId,
     channels: (c) => {
-      c.input('input', { codec: 'text' }).into(procedure).sink('total');
+      c.input('input', { codec: 'text' }).into(tasklet).sink('total');
     },
   });
 

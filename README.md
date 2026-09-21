@@ -1,7 +1,7 @@
 # @flezha/sdk
 
 A poll host over `flz_core`, the runner kernel the Rust and Java SDKs also
-drive. The kernel owns transport, ordering, per-entity exclusivity, durability,
+drive. The kernel owns transport, ordering, per-cell exclusivity, durability,
 retries, timers, credit, routing and the workflow driver. This package supplies
 threads and user code, and nothing else.
 
@@ -54,7 +54,7 @@ nothing. That is why the refusal at load is explicit about what is missing.
 ## Writing an operative
 
 ```ts
-import { createRunner, defineOperative, defineProcedure } from '@flezha/sdk';
+import { createRunner, defineOperative, defineTasklet } from '@flezha/sdk';
 
 interface Trade {
   symbol: string;
@@ -66,7 +66,7 @@ interface Candle {
   close: number;
 }
 
-const Ohlc = defineProcedure({
+const Ohlc = defineTasklet({
   name: 'ohlc',
   initialState: () => ({ close: 0 }),
   applyChange: (state, change: { close: number }) => {

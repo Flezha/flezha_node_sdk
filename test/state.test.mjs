@@ -2,10 +2,10 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { defineProcedure, StateMutationError } from '../dist/esm/index.js';
-import { ProcedureTestHarness } from '../dist/esm/testing.js';
+import { defineTasklet, StateMutationError } from '../dist/esm/index.js';
+import { TaskletTestHarness } from '../dist/esm/testing.js';
 
-const Counter = defineProcedure({
+const Counter = defineTasklet({
   name: 'counter',
   initialState: () => ({ total: 0, tags: { last: '' } }),
   applyChange: (state, change) => {
@@ -19,14 +19,14 @@ const Counter = defineProcedure({
 });
 
 test('a change folds live and the handler reads the folded state', async () => {
-  const harness = ProcedureTestHarness.of(Counter);
+  const harness = TaskletTestHarness.of(Counter);
   assert.deepEqual((await harness.input(3)).emits, [3]);
   assert.deepEqual((await harness.input(4)).emits, [7]);
   assert.equal(harness.currentState.total, 7);
 });
 
 test('a direct assignment is refused naming the field and the change path', async () => {
-  const Bad = defineProcedure({
+  const Bad = defineTasklet({
     name: 'bad',
     initialState: () => ({ total: 0 }),
     applyChange: (state, change) => {
@@ -36,7 +36,7 @@ test('a direct assignment is refused naming the field and the change path', asyn
       ctx.state.total = 99;
     },
   });
-  const harness = ProcedureTestHarness.of(Bad);
+  const harness = TaskletTestHarness.of(Bad);
   await assert.rejects(
     () => harness.input(1),
     (error) =>
@@ -47,7 +47,7 @@ test('a direct assignment is refused naming the field and the change path', asyn
 });
 
 test('the guard reaches a nested field, where the loss is the same', async () => {
-  const Nested = defineProcedure({
+  const Nested = defineTasklet({
     name: 'nested',
     initialState: () => ({ tags: { last: '' } }),
     applyChange: (state, change) => {
@@ -57,7 +57,7 @@ test('the guard reaches a nested field, where the loss is the same', async () =>
       ctx.state.tags.last = 'x';
     },
   });
-  const harness = ProcedureTestHarness.of(Nested);
+  const harness = TaskletTestHarness.of(Nested);
   await assert.rejects(
     () => harness.input(1),
     (error) => error.message.includes('state.tags.last'),
@@ -65,14 +65,14 @@ test('the guard reaches a nested field, where the loss is the same', async () =>
 });
 
 test('applyChange retains its ability to mutate', async () => {
-  const harness = ProcedureTestHarness.of(Counter);
+  const harness = TaskletTestHarness.of(Counter);
   await harness.input(5);
   harness.replayEquals();
   assert.equal(harness.currentState.total, 5);
 });
 
 test('deleting a field is refused too', async () => {
-  const Deleter = defineProcedure({
+  const Deleter = defineTasklet({
     name: 'deleter',
     initialState: () => ({ total: 0 }),
     applyChange: (state, change) => {
@@ -83,7 +83,7 @@ test('deleting a field is refused too', async () => {
     },
   });
   await assert.rejects(
-    () => ProcedureTestHarness.of(Deleter).input(1),
+    () => TaskletTestHarness.of(Deleter).input(1),
     (error) => error instanceof StateMutationError,
   );
 });

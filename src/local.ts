@@ -4,8 +4,8 @@
  * `LocalOperative.start` takes the class spec you deploy and runs the
  * `channels` graph it already declares — no local-mode member on the
  * definition, no second declaration. What runs is the deployed machinery:
- * entry decode, edge transforms and keying, one Entity per resolved key with
- * its own mailbox, the retry ladder, and inter-procedure delivery performed
+ * entry decode, edge transforms and keying, one Cell per resolved key with
+ * its own mailbox, the retry ladder, and inter-tasklet delivery performed
  * by the runtime.
  *
  * State is held in memory and nothing is durable. Durability, plugins,
@@ -62,7 +62,7 @@ export class LocalOperative {
       run.#dispatchId = native.registerDispatch((activation) => {
         void dispatch(activation, native, deps);
       });
-      // The fetchers are what run the procedures; local mode does not touch
+      // The fetchers are what run the tasklets; local mode does not touch
       // them. Not `start`, which is the one call that dials a controller.
       native.startHost();
       run.#draining = run.#drain();
@@ -75,7 +75,7 @@ export class LocalOperative {
 
   /**
    * Deliver every value released on the sink `channel` to `callback`, in
-   * release order. A sink channel takes the producing procedure's name
+   * release order. A sink channel takes the producing tasklet's name
    * unless the declaration `named` it.
    */
   onSink(channel: string, callback: (output: SinkOutput) => void): this {
@@ -103,7 +103,7 @@ export class LocalOperative {
     await this.#native.localRunUntilIdle(budgetMs);
   }
 
-  /** End the run and release its Entities. Idempotent. */
+  /** End the run and release its Cells. Idempotent. */
   async close(): Promise<void> {
     if (this.#closed) {
       return;
@@ -119,7 +119,7 @@ export class LocalOperative {
       // graph did produce. Dropping the run drops the sender, so this ends at
       // the first empty read rather than waiting.
       this.#native.localStop();
-      for (let output = await this.#native.localNextOutput(0); output !== null; ) {
+      for (let output = await this.#native.localNextOutput(0); output !== null;) {
         this.#deliver(output);
         output = await this.#native.localNextOutput(0);
       }
