@@ -9,6 +9,7 @@ import {
   ACTIVATION_SCHEMA_VERSION,
   SpawnAlreadyRunningError,
   SpawnError,
+  SpawnFactoryNotWorkflowError,
   SpawnFactoryUnknownError,
   SpawnRefusedError,
   SpawnTimeoutError,
@@ -132,6 +133,7 @@ test('each failure the core answers is thrown as its own class', async () => {
   const classes = {
     already_running: SpawnAlreadyRunningError,
     factory_unknown: SpawnFactoryUnknownError,
+    factory_not_workflow: SpawnFactoryNotWorkflowError,
     refused: SpawnRefusedError,
     timeout: SpawnTimeoutError,
     unavailable: SpawnUnavailableError,

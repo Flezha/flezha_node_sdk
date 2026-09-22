@@ -54,7 +54,7 @@ nothing. That is why the refusal at load is explicit about what is missing.
 ## Writing an operative
 
 ```ts
-import { createRunner, defineOperative, defineTasklet } from '@flezha/sdk';
+import { createRunner, defineStream, defineTasklet } from '@flezha/sdk';
 
 interface Trade {
   symbol: string;
@@ -78,7 +78,7 @@ const Ohlc = defineTasklet({
   },
 });
 
-export default defineOperative({
+export default defineStream({
   factoryId: 'candles',
   channels: (c) => {
     c.input<Trade>('trades')

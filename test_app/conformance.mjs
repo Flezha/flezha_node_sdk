@@ -21,7 +21,7 @@ import { fileURLToPath } from 'node:url';
 import {
   ACTIVATION_SCHEMA_VERSION,
   DeclarationError,
-  defineOperative,
+  defineStream,
   defineTasklet,
   defineWorkflow,
   loadNative,
@@ -115,13 +115,15 @@ function palette(role, mailbox) {
 
 /**
  * The facts a row states before its graph is built: which class kind to
- * declare, whether it journals, and each tasklet's mailbox capacity — all
- * three are declaration options here, not fluent calls.
+ * declare, whether it journals, whether it declares synchronous durability,
+ * and each tasklet's mailbox capacity — all four are declaration options here,
+ * not fluent calls.
  */
 function preScan(steps) {
   const mailbox = new Map();
   let workflow = false;
   let persistent = false;
+  let syncDurability = false;
   for (const step of steps) {
     const [head, rest] = splitHead(step);
     if (rest === undefined) continue;
@@ -129,29 +131,28 @@ function preScan(steps) {
     if (head === 'class') {
       if (verb === 'workflow') workflow = true;
       if (verb === 'persistent') persistent = true;
+      if (verb === 'sync_durability') syncDurability = true;
     } else if (verb === 'mailbox') {
       mailbox.set(head, Number(arg));
     }
   }
-  return { mailbox, workflow, persistent };
+  return { mailbox, workflow, persistent, syncDurability };
 }
 
 /** `class.<flag>[(value)]` on the builder the declaration receives. */
 function classFlag(builder, rest) {
   const [flag, value] = call(rest);
   switch (flag) {
-    // Both are declaration options, read by `preScan`.
+    // Declaration options, read by `preScan`.
     case 'persistent':
     case 'workflow':
+    case 'sync_durability':
       return;
     case 'effectively_once':
       builder.effectivelyOnce();
       return;
     case 'checkpoint_ack':
       builder.checkpointAck();
-      return;
-    case 'sync_durability':
-      builder.syncDurability();
       return;
     case 'checkpoint_every':
       builder.checkpointEvery(Number(value));
@@ -173,7 +174,7 @@ function specOf(row) {
     .split(';')
     .map((step) => step.trim())
     .filter(Boolean);
-  const { mailbox, workflow, persistent } = preScan(steps);
+  const { mailbox, workflow, persistent, syncDurability } = preScan(steps);
   const tasklets = new Map();
   const taskletFor = (role) => {
     if (!tasklets.has(role)) tasklets.set(role, palette(role, mailbox.get(role)));
@@ -269,9 +270,10 @@ function specOf(row) {
     }
   };
 
-  return workflow
-    ? defineWorkflow({ factoryId: row.topology, persistent, channels })
-    : defineOperative({ factoryId: row.topology, persistent, channels });
+  // Either kind is declared with what the row wrote, so a setting the kind
+  // does not carry reaches the core, which refuses it by name.
+  const define = workflow ? defineWorkflow : defineStream;
+  return define({ factoryId: row.topology, persistent, syncDurability, channels });
 }
 
 /** The class a topology id declares — the cited twins by name, the rest by steps. */
@@ -286,10 +288,9 @@ export function specForTopology(topology) {
 /**
  * Whether a row needs a surface this builder does not carry.
  *
- * `detached`, `raw_flags` and `raw_class_flags` are in no builder's list: a
- * fluent handle cannot name a node nothing wired, `outputsAtCheckpoint(ms)`
- * cannot write the flag without its delay, and a tier key is gated behind the
- * class kind. The fixture header states all three.
+ * `detached` and `raw_flags` are in no builder's list: a fluent handle cannot
+ * name a node nothing wired, and `outputsAtCheckpoint(ms)` cannot write the
+ * flag without its delay. The fixture header states both.
  */
 function skipped(row) {
   return row.needs !== '-' && !SURFACES.includes(row.needs);
@@ -308,7 +309,7 @@ function derivedOf(declaration) {
 }
 
 // ---------------------------------------------------------------------------
-// The §5 short form. Node refuses a malformed declaration where `defineOperative`
+// The §5 short form. Node refuses a malformed declaration where `defineStream`
 // or `defineWorkflow` runs and a duplicate factory id where the registry takes
 // the second spec, so every row this SDK can write boots for real.
 
@@ -343,7 +344,7 @@ function shorthandSteps(row) {
  * stream, any later one as a workflow, so a collision crosses kinds.
  */
 function declareShorthand(declaration, index) {
-  const define = index === 0 ? defineOperative : defineWorkflow;
+  const define = index === 0 ? defineStream : defineWorkflow;
   return define({
     factoryId: declaration.factoryId,
     sink: declaration.sink,

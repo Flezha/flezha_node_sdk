@@ -12,7 +12,7 @@
  * at registration and covered by `test/authoring.test.mjs`.
  */
 
-import { defineOperative, defineTasklet, defineWorkflow } from '../src/index.js';
+import { defineStream, defineTasklet, defineWorkflow } from '../src/index.js';
 
 interface Trade {
   symbol: string;
@@ -47,14 +47,14 @@ const Count = defineTasklet({
 
 // The topology this is all about: it compiles, and every refusal below is a
 // deviation from it.
-export const wellTyped = defineOperative({
+export const wellTyped = defineStream({
   factoryId: 'well_typed',
   channels: (c) => {
     c.input<Trade>('trades').into(Ohlc).into(Publish).sink();
   },
 });
 
-export const refusals = defineOperative({
+export const refusals = defineStream({
   factoryId: 'refusals',
   channels: (c) => {
     // A producer wired to a consumer whose declared input it does not satisfy.
@@ -144,7 +144,7 @@ const BadEmit = defineTasklet<Trade, Candle>({
   },
 });
 
-export const moreRefusals = defineOperative({
+export const moreRefusals = defineStream({
   factoryId: 'more_refusals',
   channels: (c) => {
     c.input<Trade>('j').branch([(edge) => edge.into(BadChange), (edge) => edge.into(BadEmit)]);
@@ -153,7 +153,7 @@ export const moreRefusals = defineOperative({
 
 // The §5 short form: one tasklet's fields and its `run` body in place of a
 // `channels` body, at the function whose name is its kind.
-export const shortForm = defineOperative({
+export const shortForm = defineStream({
   factoryId: 'short_form',
   sink: 'out',
   codec: 'text',
@@ -174,16 +174,41 @@ export const statefulShortForm = defineWorkflow({
 });
 
 // @ts-expect-error a short form carries its body in place of a topology body, never beside one
-defineOperative({ factoryId: 'both', run: (line: string) => line, channels: () => {} });
+defineStream({ factoryId: 'both', run: (line: string) => line, channels: () => {} });
 
 // @ts-expect-error the kind is the function's own name, never a field
 defineWorkflow({ factoryId: 'kinded', kind: 'workflow', run: (line: string) => line });
 
 // @ts-expect-error a short form's tasklet is named after its `factoryId`
-defineOperative({ factoryId: 'named', name: 'other', run: (line: string) => line });
+defineStream({ factoryId: 'named', name: 'other', run: (line: string) => line });
 
-// @ts-expect-error a class-level setting is the full form
-defineWorkflow({ factoryId: 'looped', loopMode: 'chained', run: (line: string) => line });
+// A workflow short form writes its loop mode, the one class-level setting it carries.
+export const loopedShortForm = defineWorkflow({
+  factoryId: 'looped',
+  loopMode: 'per_input',
+  run: (line: string) => line,
+});
+
+// @ts-expect-error any other class-level setting is the full form
+defineWorkflow({ factoryId: 'rolled', rollbackMode: 'keep_progress', run: (line: string) => line });
+
+// @ts-expect-error `forever` is not a loop mode
+defineWorkflow({ factoryId: 'forever', loopMode: 'forever', run: (line: string) => line });
+
+// @ts-expect-error a stream has no loop mode
+defineStream({ factoryId: 'streamed', loopMode: 'per_input', run: (line: string) => line });
+
+// @ts-expect-error retry is the edge's `retryMax`, never a workflow setting
+defineWorkflow({ factoryId: 'retried', retryAttempts: 0, channels: () => {} });
+
+export const syncDurable = defineWorkflow({
+  factoryId: 'sync_durable',
+  syncDurability: true,
+  channels: (c) => {
+    // @ts-expect-error synchronous durability is the definition's field, never a builder call
+    c.syncDurability();
+  },
+});
 
 // @ts-expect-error a tasklet carries no sink; the short form is an operative
 defineTasklet({ name: 'sinking', sink: 'out', run: (line: string) => line });

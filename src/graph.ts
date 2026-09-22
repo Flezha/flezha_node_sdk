@@ -232,29 +232,6 @@ function taskletJson(spec: ClassSpec, node: TaskNode): Record<string, unknown> {
 }
 
 /**
- * The tier, checkpoint and correction keys, which only a stream class puts on
- * the wire. The core refuses `effectively_once` and `correction_window_ms` on
- * a workflow class outright, and the checkpoint family rests on a checkpoint
- * acknowledgement that refusal leaves unreachable there.
- *
- * The spec keeps the flag either way: `Ctx.stampIdentity` reads it to decide
- * whether a keyed plugin frame carries its own identity, so gating the
- * declaration must not gate the in-process tier.
- */
-function streamTierJson(spec: ClassSpec): Record<string, unknown> {
-  if (spec.kind !== 'stream') return {};
-  return {
-    effectively_once: spec.effectivelyOnce,
-    checkpoint_ack: spec.checkpointAck,
-    checkpoint_every: spec.checkpointEvery,
-    checkpoint_outputs: spec.checkpointOutputs,
-    checkpoint_max_delay_ms: spec.checkpointMaxDelayMs,
-    correction_window_ms: spec.correctionWindowMs,
-    beyond_window_policy: spec.beyondWindowPolicy,
-  };
-}
-
-/**
  * The declaration the core deserializes. Every key here is pinned by
  * `test/fixtures/host_class_decl_keys.txt`, which this package's own test
  * reads: a key the core learns that Node cannot spell fails that test.
@@ -266,7 +243,15 @@ export function toHostClassDecl(spec: ClassSpec): Record<string, unknown> {
     sdk_lang: SDK_LANG_NODE,
     sdk_version: SDK_VERSION,
     change_format_id: FORMAT_ID_MSGPACK,
-    ...streamTierJson(spec),
+    // Every key for either kind: the core judges each kind's settings and
+    // refuses one the kind does not carry by name.
+    effectively_once: spec.effectivelyOnce,
+    checkpoint_ack: spec.checkpointAck,
+    checkpoint_every: spec.checkpointEvery,
+    checkpoint_outputs: spec.checkpointOutputs,
+    checkpoint_max_delay_ms: spec.checkpointMaxDelayMs,
+    correction_window_ms: spec.correctionWindowMs,
+    beyond_window_policy: spec.beyondWindowPolicy,
     compact_after_bytes: spec.compactAfterBytes,
     sync_durability: spec.syncDurability,
     channels: spec.channels.map(channelJson),
@@ -275,9 +260,6 @@ export function toHostClassDecl(spec: ClassSpec): Record<string, unknown> {
       ? compact({
           loop_mode: spec.workflow.loopMode,
           rollback_mode: spec.workflow.rollbackMode,
-          retry_attempts: spec.workflow.retryAttempts,
-          retry_backoff_ms: spec.workflow.retryBackoffMs,
-          barrier_retry_attempts: spec.workflow.barrierRetryAttempts,
           max_duration_ms: spec.workflow.maxDurationMs,
           wake_after_ms: spec.workflow.wakeAfterMs,
         })

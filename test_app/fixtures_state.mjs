@@ -2,7 +2,7 @@
 // shares, and the counter and resume twins — the same partition as
 // test/apps/python_runner/fixtures_state.py and the reference's state.rs.
 
-import { decodeValue, defineOperative, defineTasklet } from '@flezha/sdk';
+import { decodeValue, defineStream, defineTasklet } from '@flezha/sdk';
 
 /** The reference parses `i64` and reads an unparsable input as 0. */
 const asInt = (input) => (/^-?\d+$/.test(String(input)) ? Number(input) : 0);
@@ -58,7 +58,7 @@ const BenchCheckpoint = keyedUpsertTasklet('bench_checkpoint_tasklet', upsert);
 // The same keyed upsert under both durability postures, so the round-trip
 // bench can isolate the cost of per-Cell persistence.
 const keyedUpsert = (factoryId, options = {}) =>
-  defineOperative({
+  defineStream({
     factoryId,
     ...options,
     channels: (c) => {
@@ -80,7 +80,7 @@ export const benchKeyed = keyedUpsert('bench_keyed');
 // Declared DropNothing: a durable-input-log operative that shed at its mailbox
 // would hold the min-watermark on the shed offset forever while the log behind
 // it kept growing.
-export const tierStore = defineOperative({
+export const tierStore = defineStream({
   factoryId: 'tier_store',
   channels: (c) => {
     c.effectivelyOnce();
@@ -93,7 +93,7 @@ export const tierStore = defineOperative({
   },
 });
 
-export const checkpointStore = defineOperative({
+export const checkpointStore = defineStream({
   factoryId: 'checkpoint_store',
   channels: (c) => {
     c.effectivelyOnce().checkpointAck();
@@ -106,7 +106,7 @@ export const checkpointStore = defineOperative({
 // `checkpointEvery` is deliberately absent so the test drives the close itself
 // — with `commit:` for the batch case, and with the delay alone for the
 // quiet-Cell case.
-export const checkpointBatchedStore = defineOperative({
+export const checkpointBatchedStore = defineStream({
   factoryId: 'checkpoint_batched_store',
   channels: (c) => {
     c.effectivelyOnce().checkpointAck().outputsAtCheckpoint(1_500);
@@ -121,7 +121,7 @@ const envInt = (key, fallback) => Number(process.env[key]) || fallback;
 // Cell. `FLEZHA_BENCH_CHECKPOINT_OUTPUTS=at_checkpoint` (with
 // `FLEZHA_BENCH_CHECKPOINT_DELAY_MS`) additionally holds the interval's outputs
 // until it closes.
-export const benchCheckpoint = defineOperative({
+export const benchCheckpoint = defineStream({
   factoryId: 'bench_checkpoint',
   channels: (c) => {
     c.effectivelyOnce().checkpointEvery(envInt('FLEZHA_BENCH_CHECKPOINT_EVERY', 500));
@@ -151,7 +151,7 @@ const StoreInput = defineTasklet({
   },
 });
 
-export const storeInput = defineOperative({
+export const storeInput = defineStream({
   factoryId: 'store_input',
   channels: (c) => {
     c.input('input', { codec: 'text' }).into(StoreInput).sink('sink');
@@ -176,7 +176,7 @@ const Counter = defineTasklet({
   },
 });
 
-export const statefulCounter = defineOperative({
+export const statefulCounter = defineStream({
   factoryId: 'stateful_counter',
   channels: (c) => {
     c.input('input', { codec: 'text' }).into(CounterEntry).named('ticks').into(Counter);
@@ -185,7 +185,7 @@ export const statefulCounter = defineOperative({
 
 // The same topology with per-Cell persistence off, under the reference's
 // node names: the toggle is a class property, not a different computation.
-export const persistenceOffCounter = defineOperative({
+export const persistenceOffCounter = defineStream({
   factoryId: 'persistence_off_counter',
   persistent: false,
   channels: (c) => {
@@ -222,7 +222,7 @@ const Tick = defineTasklet({
   },
 });
 
-export const coalescingCounter = defineOperative({
+export const coalescingCounter = defineStream({
   factoryId: 'coalescing_counter',
   channels: (c) => {
     c.input('input', { codec: 'text' }).into(TickEntry).named('ticks').into(Tick);
@@ -247,7 +247,7 @@ const ResumeProbe = defineTasklet({
   },
 });
 
-export const resumeProbe = defineOperative({
+export const resumeProbe = defineStream({
   factoryId: 'resume_probe',
   channels: (c) => {
     c.input('input', { codec: 'text' }).into(ResumeProbe).sink('total');
@@ -307,7 +307,7 @@ const EvolvingCartV2 = defineTasklet({
 });
 
 const evolvingCart = (factoryId, tasklet) =>
-  defineOperative({
+  defineStream({
     factoryId,
     channels: (c) => {
       c.input('input', { codec: 'text' }).into(tasklet).sink('total');

@@ -8,7 +8,7 @@
 
 import { BroadcastChannel } from 'node:worker_threads';
 
-import { defineOperative, defineTasklet, defineWorkflow } from '@flezha/sdk';
+import { defineStream, defineTasklet, defineWorkflow } from '@flezha/sdk';
 
 import { prefix } from './fixture_support.mjs';
 
@@ -22,7 +22,7 @@ const DoNothing = defineTasklet({
   run: (input) => input,
 });
 
-export const doNothing = defineOperative({
+export const doNothing = defineStream({
   factoryId: 'do_nothing',
   channels: (c) => {
     c.input('input', { codec: 'text' }).into(DoNothing).sink('echo');
@@ -32,7 +32,7 @@ export const doNothing = defineOperative({
 // Echo with a declared DropNothing on its entry mailbox. `do_nothing` is the
 // merge-blocking bench factory and must not change; this keeps the round-trip
 // bench's back-pressure posture independent of it.
-export const benchEcho = defineOperative({
+export const benchEcho = defineStream({
   factoryId: 'bench_echo',
   channels: (c) => {
     c.input('input', { codec: 'text' }).onFull('drop_nothing').into(DoNothing).sink('echo');
@@ -49,7 +49,7 @@ const CompareFilter = defineTasklet({
   run: (input, ctx) => (ctx.state.comparable === input ? input : undefined),
 });
 
-export const compareFilter = defineOperative({
+export const compareFilter = defineStream({
   factoryId: 'compare_filter',
   channels: (c) => {
     c.input('input', { codec: 'text' }).into(CompareFilter).sink('sink');
@@ -84,7 +84,7 @@ const passThrough = (name, options = {}) =>
 const StaticEntry = staticEntry('static_entry_tasklet');
 const StaticDownstream = passThrough('static_downstream_tasklet');
 
-export const staticCell = defineOperative({
+export const staticCell = defineStream({
   factoryId: 'static_cell',
   channels: (c) => {
     c.input('input', { codec: 'text' })
@@ -100,7 +100,7 @@ const MacroStaticDownstream = passThrough('macro_static_downstream_tasklet');
 
 // The reference pipeline sugar leaves the hop unnamed and lets the sink name
 // the producing channel.
-export const sugarStaticCell = defineOperative({
+export const sugarStaticCell = defineStream({
   factoryId: 'sugar_static_cell',
   channels: (c) => {
     c.input('input', { codec: 'text' })
@@ -113,7 +113,7 @@ export const sugarStaticCell = defineOperative({
 const MixedMacroEntry = passThrough('mixed_macro_entry_tasklet');
 const MixedHandDownstream = passThrough('mixed_hand_downstream');
 
-export const mixedOperative = defineOperative({
+export const mixedOperative = defineStream({
   factoryId: 'mixed_operative',
   channels: (c) => {
     c.input('input', { codec: 'text' })
@@ -130,14 +130,14 @@ export const mixedOperative = defineOperative({
 // of a `channels` body; the function's name is its kind. No tasklet is
 // declared beside them.
 
-export const sugarDoNothing = defineOperative({
+export const sugarDoNothing = defineStream({
   factoryId: 'sugar_do_nothing',
   sink: 'sugar_do_nothing_echo',
   codec: 'text',
   run: (input) => input,
 });
 
-export const sugarStoreInput = defineOperative({
+export const sugarStoreInput = defineStream({
   factoryId: 'sugar_store_input',
   sink: 'sugar_store_sink',
   codec: 'text',
@@ -151,7 +151,7 @@ export const sugarStoreInput = defineOperative({
   },
 });
 
-export const sugarNamedInput = defineOperative({
+export const sugarNamedInput = defineStream({
   factoryId: 'sugar_named_input',
   sink: 'sugar_named_input_sink',
   input: 'prices',
@@ -167,8 +167,18 @@ export const sugarWorkflow = defineWorkflow({
   run: (input) => input,
 });
 
+// The one class-level setting a short form writes: one pass per message, so
+// the instance runs on after the first.
+export const sugarWorkflowPerInput = defineWorkflow({
+  factoryId: 'sugar_workflow_per_input',
+  sink: 'sugar_workflow_per_input_out',
+  codec: 'text',
+  loopMode: 'per_input',
+  run: (input) => input,
+});
+
 // No sink: the entry feeds a tasklet that only keeps state.
-export const sugarStateOnly = defineOperative({
+export const sugarStateOnly = defineStream({
   factoryId: 'sugar_state_only',
   input: 'ticks',
   codec: 'text',
@@ -210,7 +220,7 @@ const HybridConsumer = defineTasklet({
   },
 });
 
-export const hybridChannel = defineOperative({
+export const hybridChannel = defineStream({
   factoryId: 'hybrid_channel',
   channels: (c) => {
     c.input('input', { codec: 'text' })
@@ -246,7 +256,7 @@ const MergeLabel = defineTasklet({
   run: (input) => `${input.source}:${input.payload}`,
 });
 
-export const mergedInput = defineOperative({
+export const mergedInput = defineStream({
   factoryId: 'merged_input',
   channels: (c) => {
     c.merge()
@@ -266,7 +276,7 @@ export const mergedInput = defineOperative({
 
 const TransformLabel = passThrough('transform_label_tasklet', { dynamicCells: {} });
 
-export const transformChain = defineOperative({
+export const transformChain = defineStream({
   factoryId: 'transform_chain',
   channels: (c) => {
     c.input('trades', { codec: 'text' })
@@ -296,7 +306,7 @@ const StressB = stress('stress_b', () => ['p0']);
 const StressC = stress('stress_c', () => ['p0']);
 const StressD = stress('stress_d', () => ['p0']);
 
-export const cellStress = defineOperative({
+export const cellStress = defineStream({
   factoryId: 'cell_stress',
   channels: (c) => {
     c.input('input', { codec: 'text' })
@@ -324,7 +334,7 @@ const PoisonProbe = defineTasklet({
   },
 });
 
-export const poisonProbe = defineOperative({
+export const poisonProbe = defineStream({
   factoryId: 'poison_probe',
   channels: (c) => {
     c.input('input', { codec: 'text' }).retryBackoffMs(25).into(PoisonProbe).sink('out');
@@ -353,7 +363,7 @@ const WedgeProbe = defineTasklet({
   },
 });
 
-export const wedgeProbe = defineOperative({
+export const wedgeProbe = defineStream({
   factoryId: 'wedge_probe',
   channels: (c) => {
     c.input('input', { codec: 'text' }).into(WedgeProbe).sink('out');
@@ -388,7 +398,7 @@ const Candle = defineTasklet({
   },
 });
 
-export const candle = defineOperative({
+export const candle = defineStream({
   factoryId: 'candle',
   channels: (c) => {
     c.effectivelyOnce().correctionWindow(600_000);
@@ -423,7 +433,7 @@ const SessionTimeout = defineTasklet({
   },
 });
 
-export const sessionTimeout = defineOperative({
+export const sessionTimeout = defineStream({
   factoryId: 'session_timeout',
   channels: (c) => {
     c.input('input', { codec: 'text' }).into(SessionTimeout).sink('kafka');
@@ -447,7 +457,7 @@ const boundedMailboxTasklet = (name) =>
   });
 
 const boundedMailbox = (policy) =>
-  defineOperative({
+  defineStream({
     factoryId: `bounded_mailbox_${policy}`,
     channels: (c) => {
       c.input(`${policy}_input`, { codec: 'text' })
@@ -482,7 +492,7 @@ const PartitionRelay = defineTasklet({
   },
 });
 
-export const partitionRelay = defineOperative({
+export const partitionRelay = defineStream({
   factoryId: 'partition_relay',
   channels: (c) => {
     c.input('in', { codec: 'text' }).keyBy(prefix).into(PartitionRelay).keyed().sink('input');
@@ -506,7 +516,7 @@ const DynamicCell = defineTasklet({
   },
 });
 
-export const dynamicCell = defineOperative({
+export const dynamicCell = defineStream({
   factoryId: 'dynamic_cell',
   channels: (c) => {
     c.input('input', { codec: 'text' })

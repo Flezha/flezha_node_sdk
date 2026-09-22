@@ -23,6 +23,7 @@ import { readOnlyState } from './state.js';
 import {
   EmitError,
   SpawnAlreadyRunningError,
+  SpawnFactoryNotWorkflowError,
   SpawnFactoryUnknownError,
   SpawnRefusedError,
   SpawnTimeoutError,
@@ -47,6 +48,7 @@ const WAIT_MS = 0xffff_ffff;
 const FAILURES = {
   already_running: SpawnAlreadyRunningError,
   factory_unknown: SpawnFactoryUnknownError,
+  factory_not_workflow: SpawnFactoryNotWorkflowError,
   refused: SpawnRefusedError,
   timeout: SpawnTimeoutError,
   unavailable: SpawnUnavailableError,
@@ -335,7 +337,21 @@ export class Invocation implements Ctx<unknown, unknown, unknown> {
     this.emitOrdinal += 1;
   }
 
+  /**
+   * A workflow's stage commit carries no timer, so one registered there would
+   * never fire; each timer call refuses before it records anything.
+   */
+  private refuseTimersInWorkflow(call: string): void {
+    if (isStructuredWorkflow(this.input.spec)) {
+      throw new Error(
+        `TimersUnavailable: ${this.input.node.name}: ${call} inside a workflow; only a stream ` +
+          "operative's tasklets register timers",
+      );
+    }
+  }
+
   timerAfter(ms: number | bigint): bigint {
+    this.refuseTimersInWorkflow('timerAfter');
     // Anchored on `now()`, never an ambient read: that is what makes a
     // replayed invocation register the timestamp the live one did.
     const at = this.input.now + BigInt(ms);
@@ -344,12 +360,14 @@ export class Invocation implements Ctx<unknown, unknown, unknown> {
   }
 
   timerAtEventTime(at: number | bigint): bigint {
+    this.refuseTimersInWorkflow('timerAtEventTime');
     const scheduledAt = BigInt(at);
     this.timers.push({ kind: 'event_time', scheduledAt, register: true });
     return scheduledAt;
   }
 
   cancelTimer(kind: TimerKind, at: bigint): void {
+    this.refuseTimersInWorkflow('cancelTimer');
     this.timers.push({ kind, scheduledAt: at, register: false });
   }
 

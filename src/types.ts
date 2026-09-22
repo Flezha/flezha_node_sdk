@@ -306,8 +306,6 @@ export interface ChannelBuilder {
   correctionWindow(ms: number): ChannelBuilder;
   beyondWindowPolicy(policy: BeyondWindowPolicy): ChannelBuilder;
   compactAfterBytes(bytes: number): ChannelBuilder;
-  /** Synchronous remote durability. Workflow classes only. */
-  syncDurability(): ChannelBuilder;
   /**
    * Declare a controller-fed entry channel carrying values of type `T`.
    * `{ codec }` names the payload's format instead of a decoder; with neither,
@@ -346,11 +344,12 @@ export interface OperativeDefinition {
 }
 
 /**
- * The §5 short form, taken by `defineOperative` and `defineWorkflow`: one
+ * The §5 short form, taken by `defineStream` and `defineWorkflow`: one
  * tasklet's fields and its `run` body in place of a `channels` body. It
  * generates an entry channel into a tasklet named `factoryId`, and that
  * tasklet's output into the `sink` plugin channel when one is written. Every
- * class-level setting stays at its default; a class-level setting is the full
+ * class-level setting stays at its default, but a workflow's `loopMode`, which
+ * `defineWorkflow` also takes here; any other class-level setting is the full
  * form.
  */
 export interface ShortFormDefinition<TIn, TOut, TState, TChange> extends Omit<
@@ -366,19 +365,14 @@ export interface ShortFormDefinition<TIn, TOut, TState, TChange> extends Omit<
   codec?: ChannelCodec;
 }
 
-export interface WorkflowDefinition {
-  factoryId: string;
-  persistent?: boolean;
+/** The definition `defineStream` takes, and a workflow's own options. */
+export interface WorkflowDefinition extends OperativeDefinition {
   loopMode?: LoopMode;
   rollbackMode?: RollbackMode;
-  retryAttempts?: number;
-  retryBackoffMs?: number;
-  barrierRetryAttempts?: number;
   maxDurationMs?: number;
   wakeAfterMs?: number;
+  /** Synchronous remote durability. */
   syncDurability?: boolean;
-  /** The tasklets the workflow runs, wired over a channels graph. */
-  channels: (builder: ChannelBuilder) => void;
 }
 
 /**
@@ -406,6 +400,9 @@ export class SpawnAlreadyRunningError extends SpawnError {}
 
 /** No connected runner on any controller node registers the factory. */
 export class SpawnFactoryUnknownError extends SpawnError {}
+
+/** The factory is registered as a stream, and a spawn starts only a workflow. */
+export class SpawnFactoryNotWorkflowError extends SpawnError {}
 
 /** The controller refused the spawn: authorization, quota, shutdown or a failed start. */
 export class SpawnRefusedError extends SpawnError {}

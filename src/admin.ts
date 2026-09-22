@@ -25,8 +25,6 @@ export interface StartOptions {
    * second one; with one, a second start leaves the running operative untouched.
    */
   id?: string;
-  /** `'stream'` (the default) or `'workflow'`. */
-  kind?: string;
   /** The values the factory is seeded with, keyed by tasklet. */
   init_values?: unknown;
   /** The start options, as `flz operative start` takes them. */

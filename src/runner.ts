@@ -73,7 +73,7 @@ export function specsFrom(specifier: string, module: unknown): ClassSpec[] {
   if (specs.length === 0) {
     throw new Error(
       `handler module \`${specifier}\` exports no operative; export the value ` +
-        '`defineOperative(...)` or `defineWorkflow(...)` returned',
+        '`defineStream(...)` or `defineWorkflow(...)` returned',
     );
   }
   return specs;

@@ -13,7 +13,7 @@ import test from 'node:test';
 import {
   ACTIVATION_SCHEMA_VERSION,
   DeclarationError,
-  defineOperative,
+  defineStream,
   defineTasklet,
   defineWorkflow,
   encodeValue,
@@ -22,6 +22,7 @@ import {
   toHostClassDecl,
   validate,
 } from '../dist/esm/index.js';
+import * as sdk from '../dist/esm/index.js';
 import { TaskletTestHarness } from '../dist/esm/testing.js';
 import { EmitError } from '../dist/esm/types.js';
 
@@ -57,7 +58,7 @@ const derivedChannels = (spec) =>
 test('a graph builds and its topology reaches the declaration', () => {
   const first = echo('first');
   const second = echo('second');
-  const spec = defineOperative({
+  const spec = defineStream({
     factoryId: 'chain',
     channels: (c) => {
       c.input('in').into(first).into(second).sink();
@@ -99,7 +100,7 @@ test('keyBy declares a dynamic consumer and the key reaches the channel', () => 
       return input;
     },
   });
-  const spec = defineOperative({
+  const spec = defineStream({
     factoryId: 'keyed',
     channels: (c) => {
       c.input('in')
@@ -121,7 +122,7 @@ test('keyBy declares a dynamic consumer and the key reaches the channel', () => 
 // advances. The refusal is the core's `UnservableClock`; what is asserted here
 // is that this builder writes the fact it reads.
 test('a tasklet that folds no change declares it, and a logical clock over it is refused', () => {
-  const spec = defineOperative({
+  const spec = defineStream({
     factoryId: 'unservable',
     channels: (c) =>
       c
@@ -137,7 +138,7 @@ test('a tasklet that folds no change declares it, and a logical clock over it is
 test('a refusal reaches the author under the core’s own names', () => {
   const target = echo('target');
   const refused = refusal(() =>
-    defineOperative({
+    defineStream({
       factoryId: 'edge_already_wired',
       channels: (c) => {
         const edge = c.input('in');
@@ -157,7 +158,7 @@ test('a refusal reaches the author under the core’s own names', () => {
 // The one refusal this builder raises under a core name reads the way the core's do.
 test('a node identity collision is refused under the core’s name, in the message too', () => {
   const refused = refusal(() =>
-    defineOperative({
+    defineStream({
       factoryId: 'collision',
       channels: (c) => {
         const entry = c.input('in');
@@ -176,7 +177,7 @@ test('a node identity collision is refused under the core’s name, in the messa
 test('a named edge names the channel, not the consuming node', () => {
   const first = echo('first');
   const second = echo('second');
-  const spec = defineOperative({
+  const spec = defineStream({
     factoryId: 'named_edge',
     channels: (c) => {
       c.input('in').into(first).named('hop').into(second).sink();
@@ -196,7 +197,7 @@ test('a named edge names the channel, not the consuming node', () => {
 
 test('a second mention under its own node name is a second node', () => {
   const step = echo('step');
-  const spec = defineOperative({
+  const spec = defineStream({
     factoryId: 'twice_over',
     channels: (c) => {
       c.input('in').into(step).into(step, 'step_again').sink();
@@ -213,7 +214,7 @@ test('two tasklets claiming one node identity are refused', () => {
   const refused = refusal(() => {
     const first = defineTasklet({ name: 'same', run: (i) => i });
     const second = defineTasklet({ name: 'same', run: (i) => i });
-    return defineOperative({
+    return defineStream({
       factoryId: 'collide',
       channels: (c) => {
         c.input('in').branch([(edge) => edge.into(first), (edge) => edge.into(second)]);
@@ -226,7 +227,7 @@ test('two tasklets claiming one node identity are refused', () => {
 test('an event-time clock without an extractor is refused', () => {
   const refused = refusal(() => {
     const task = defineTasklet({ name: 'windowed', clock: 'event_time', run: (i) => i });
-    return defineOperative({
+    return defineStream({
       factoryId: 'no_extractor',
       channels: (c) => c.input('in').into(task).sink(),
     });
@@ -241,7 +242,7 @@ test('an event-time clock without an extractor is refused', () => {
 // core derives the acknowledgement granularity from any of them, so no order
 // of calls can clear another's.
 test('the checkpoint options compose in any order, and none clears another', () => {
-  const spec = defineOperative({
+  const spec = defineStream({
     factoryId: 'compose',
     channels: (c) => {
       c.effectivelyOnce();
@@ -262,7 +263,7 @@ test('the checkpoint options compose in any order, and none clears another', () 
 test('two tasklets each terminate on their own sink, named by their node', () => {
   const a = echo('a');
   const b = echo('b');
-  const spec = defineOperative({
+  const spec = defineStream({
     factoryId: 'one_sink_twice',
     channels: (c) => {
       c.input('in').branch([(edge) => edge.into(a).sink(), (edge) => edge.into(b).sink()]);
@@ -279,13 +280,13 @@ test('two tasklets each terminate on their own sink, named by their node', () =>
 });
 
 test('the sink names the channel, and the no-argument form leaves it derived', () => {
-  const named = defineOperative({
+  const named = defineStream({
     factoryId: 'sink_named',
     channels: (c) => {
       c.input('in').into(echo('producer')).sink('items_output');
     },
   });
-  const derived = defineOperative({
+  const derived = defineStream({
     factoryId: 'sink_derived',
     channels: (c) => {
       c.input('in').into(echo('producer')).sink();
@@ -309,7 +310,7 @@ test('the sink names the channel, and the no-argument form leaves it derived', (
 });
 
 test('a channel named by both named() and sink() is refused naming both', () => {
-  const spec = defineOperative({
+  const spec = defineStream({
     factoryId: 'named_twice',
     channels: (c) => {
       c.input('in').into(echo('producer')).named('a').sink('b');
@@ -322,7 +323,7 @@ test('a channel named by both named() and sink() is refused naming both', () => 
 });
 
 test('a channel option with nothing wired after it still reaches the channel', () => {
-  const renamed = defineOperative({
+  const renamed = defineStream({
     factoryId: 'trailing_named',
     channels: (c) => {
       c.input('in').into(echo('producer')).named('renamed');
@@ -333,7 +334,7 @@ test('a channel option with nothing wired after it still reaches the channel', (
     ['in', 'renamed'],
   );
   const keyed = refusal(() =>
-    defineOperative({
+    defineStream({
       factoryId: 'trailing_keyed',
       channels: (c) => {
         c.input('in').into(echo('producer')).keyed();
@@ -344,7 +345,7 @@ test('a channel option with nothing wired after it still reaches the channel', (
 });
 
 test('two channels naming one sink is refused as a duplicate sink name', () => {
-  const spec = defineOperative({
+  const spec = defineStream({
     factoryId: 'one_sink_two_channels',
     channels: (c) => {
       c.input('in').branch([
@@ -427,7 +428,7 @@ test('a sink names the channel a forwarded frame carries', () => {
   // The channel name is what a forwarded frame carries and what selects the
   // receiving operative's entry channel, so the name an author writes on the
   // sink has to be the one that rides the wire.
-  const spec = defineOperative({
+  const spec = defineStream({
     factoryId: 'named_sink',
     channels: (c) => {
       c.input('in').into(echo('relay')).sink('input');
@@ -444,7 +445,7 @@ test('a sink names the channel a forwarded frame carries', () => {
 // NODE, never from the sink it terminates on — the sink's name is the plugin's,
 // and several channels may name one sink.
 test('an unnamed edge terminating on a sink takes the producing node’s name', () => {
-  const spec = defineOperative({
+  const spec = defineStream({
     factoryId: 'unnamed_sink',
     channels: (c) => {
       c.input('in').into(echo('plain')).sink();
@@ -475,7 +476,7 @@ test('an unnamed edge terminating on a sink takes the producing node’s name', 
 
 test('a held handle wired twice is one channel with two consumers', () => {
   const producer = echo('producer');
-  const spec = defineOperative({
+  const spec = defineStream({
     factoryId: 'fan_out',
     channels: (c) => {
       const edge = c.input('in').into(producer);
@@ -497,7 +498,7 @@ test('branch(...) and two into(...) statements derive the identical topology', (
   const graph = (factoryId, wire) =>
     JSON.stringify(
       derivedChannels(
-        defineOperative({
+        defineStream({
           factoryId,
           channels: (c) => wire(c.input('in').into(echo('producer'))),
         }),
@@ -515,7 +516,7 @@ test('branch(...) and two into(...) statements derive the identical topology', (
 });
 
 test('sink(...) returns the handle, so a consumer wires behind it', () => {
-  const spec = defineOperative({
+  const spec = defineStream({
     factoryId: 'hybrid',
     channels: (c) => {
       c.input('in').into(echo('producer')).sink('hybrid_indicator').into(echo('consumer'));
@@ -539,7 +540,7 @@ test('sink(...) returns the handle, so a consumer wires behind it', () => {
 });
 
 test('keyed() reaches the channel of a handle that also declares a sink', () => {
-  const spec = defineOperative({
+  const spec = defineStream({
     factoryId: 'keyed_hybrid',
     channels: (c) => {
       c.input('in').into(echo('producer')).keyed().sink('mid').into(echo('consumer'));
@@ -550,7 +551,7 @@ test('keyed() reaches the channel of a handle that also declares a sink', () => 
 });
 
 test('a transform declared before one into(...) reaches that consumer only', () => {
-  const spec = defineOperative({
+  const spec = defineStream({
     factoryId: 'per_edge_transform',
     channels: (c) => {
       const edge = c.input('in').into(echo('producer'));
@@ -576,7 +577,7 @@ test('a transform declared before one into(...) reaches that consumer only', () 
 
 test('a bare re-declared edge is a no-op, not a second edge', () => {
   const target = echo('target');
-  const spec = defineOperative({
+  const spec = defineStream({
     factoryId: 'edge_redeclared_bare',
     channels: (c) => {
       const edge = c.input('in');
@@ -591,23 +592,81 @@ test('a bare re-declared edge is a no-op, not a second edge', () => {
   );
 });
 
-// The reference declares exactly this — `tier_commit_block_workflow` opens with
-// `c.effectively_once()` on a workflow class in Rust and Java — so the flag is
-// read where the workflow spec is assembled rather than written as `false`. It
-// stays off the wire: the core refuses `effectively_once` on a workflow class,
-// and Java's `HostClassDeclaration.forWorkflow` never writes it either.
+test('a stream-only builder call on a workflow reaches the core and is refused by its name', () => {
+  for (const [name, call] of [
+    ['EffectivelyOnceOnWorkflow', (c) => c.effectivelyOnce()],
+    ['CheckpointOnWorkflow', (c) => c.checkpointEvery(500)],
+    ['CorrectionWindowOnWorkflow', (c) => c.correctionWindow(60_000)],
+  ]) {
+    const { refusals, message } = refusal(() =>
+      defineWorkflow({
+        factoryId: 'w',
+        channels: (c) => {
+          call(c);
+          c.input('in').into(echo('p'));
+        },
+      }),
+    );
+    assert.deepEqual(refusals, [name], message);
+    assert.ok(message.includes(name), message);
+  }
+});
 
-test('a workflow class carries its effectivelyOnce() declaration', () => {
-  const spec = defineWorkflow({
-    factoryId: 'tier_workflow',
-    channels: (c) => {
-      c.effectivelyOnce();
-      c.input('in').into(echo('producer')).keyed().sink('out');
-    },
-  });
-  validate(spec);
-  assert.equal(spec.effectivelyOnce, true);
-  assert.equal('effectively_once' in toHostClassDecl(spec), false);
+test('synchronous durability is the definition field, declared by a workflow, refused on a stream', () => {
+  const channels = (c) => {
+    assert.equal(c.syncDurability, undefined, 'the builder carries no syncDurability call');
+    c.input('in').into(echo('p'));
+  };
+  const workflow = defineWorkflow({ factoryId: 'sd', syncDurability: true, channels });
+  validate(workflow);
+  assert.equal(toHostClassDecl(workflow).sync_durability, true);
+
+  const { refusals, message } = refusal(() =>
+    defineStream({ factoryId: 'sd_stream', syncDurability: true, channels }),
+  );
+  assert.deepEqual(refusals, ['SyncDurabilityOnStream'], message);
+});
+
+test('a workflow setting on a stream is refused in either form, naming it', () => {
+  const forms = {
+    full: { channels: (c) => c.input('in').into(echo('p')) },
+    short: { sink: 'out', run: (input) => input },
+  };
+  for (const [field, value] of [
+    ['loopMode', 'per_input'],
+    ['rollbackMode', 'keep_progress'],
+    ['maxDurationMs', 60_000],
+    ['wakeAfterMs', 1_000],
+  ]) {
+    for (const [form, body] of Object.entries(forms)) {
+      assert.throws(
+        () => defineStream({ factoryId: 'streamed', [field]: value, ...body }),
+        (error) =>
+          error instanceof DeclarationError &&
+          error.factoryId === 'streamed' &&
+          error.message.includes(`\`${field}\``) &&
+          error.message.includes('only a workflow carries'),
+        `${field} on a ${form}-form stream`,
+      );
+    }
+  }
+});
+
+test('an unknown loop mode or rollback mode is refused at definition, naming the value', () => {
+  const channels = (c) => c.input('in').into(echo('p'));
+  for (const [field, value, form] of [
+    ['loopMode', 'forever', { channels }],
+    ['rollbackMode', 'sometimes', { channels }],
+    ['loopMode', 'forever', { sink: 'out', run: (input) => input }],
+  ]) {
+    assert.throws(
+      () => defineWorkflow({ factoryId: 'moded', [field]: value, ...form }),
+      (error) =>
+        error instanceof DeclarationError &&
+        error.message.includes(`\`${value}\``) &&
+        error.message.includes(field),
+    );
+  }
 });
 
 // -- channel codecs -------------------------------------------------------------
@@ -619,7 +678,7 @@ test('a workflow class carries its effectivelyOnce() declaration', () => {
 const CODEC_CASES = member('test/fixtures/channel_codecs.txt');
 
 const codecSpec = (input = [], sink = []) =>
-  defineOperative({
+  defineStream({
     factoryId: 'codecs',
     channels: (c) => {
       c.input('in', ...input)
@@ -714,7 +773,7 @@ test('an unknown codec name is refused naming the operative, the channel and the
 
 test('a codec and a callable together are refused', () => {
   const unnamed = () =>
-    defineOperative({
+    defineStream({
       factoryId: 'codecs',
       channels: (c) => {
         c.input('in')
@@ -760,7 +819,7 @@ test('two sources merge into one node, each edge applying its own mapping', () =
 });
 
 test('a tasklet output and an entry are both merge sources', () => {
-  const spec = defineOperative({
+  const spec = defineStream({
     factoryId: 'merged_hop',
     channels: (c) => {
       const parsed = c.input('raw').into(echo('parse'));
@@ -782,7 +841,7 @@ test('a tasklet output and an entry are both merge sources', () => {
 test('a merge is refused by the core’s names', () => {
   const target = echo('target');
   const refused = (channels) =>
-    refusal(() => defineOperative({ factoryId: 'merge_refused', channels })).refusals;
+    refusal(() => defineStream({ factoryId: 'merge_refused', channels })).refusals;
 
   assert.deepEqual(
     refused((c) => c.merge().from(c.input('in'), identity).into(target)),
@@ -818,7 +877,7 @@ test('a merge is refused by the core’s names', () => {
 });
 
 test('the router is a merge into the route_latest node, and a named one is its own node', () => {
-  const spec = defineOperative({
+  const spec = defineStream({
     factoryId: 'routers',
     channels: (c) => {
       const trades = c.input('trades');
@@ -841,7 +900,7 @@ test('the router is a merge into the route_latest node, and a named one is its o
 });
 
 test('the router hands each key each document once, on that key’s own traffic', async () => {
-  const spec = defineOperative({
+  const spec = defineStream({
     factoryId: 'routed',
     channels: (c) => {
       c.routeLatest(c.input('config'), c.input('trades'), (trade) => trade.symbol).into(
@@ -893,8 +952,8 @@ const declared = (spec) => ({ decl: toHostClassDecl(spec), derived: validate(spe
 
 // Each twin is the full form: a `channels` body still declares one.
 test('a stream short form is its hand-written twin', () => {
-  const short = defineOperative({ factoryId: 'upcase', sink: 'out', codec: 'text', run: upper });
-  const twin = defineOperative({
+  const short = defineStream({ factoryId: 'upcase', sink: 'out', codec: 'text', run: upper });
+  const twin = defineStream({
     factoryId: 'upcase',
     channels: (c) => {
       c.input('input', { codec: 'text' })
@@ -927,6 +986,34 @@ test('a workflow short form is its hand-written once workflow', () => {
   assert.equal(short.kind, 'workflow');
   assert.equal(short.workflow.loopMode, 'once');
   assert.deepEqual(declared(short), declared(twin));
+});
+
+test('a workflow short form declares its loop mode as the full form does', () => {
+  const short = defineWorkflow({
+    factoryId: 'chat',
+    sink: 'replies',
+    codec: 'text',
+    loopMode: 'per_input',
+    run: upper,
+  });
+  const twin = defineWorkflow({
+    factoryId: 'chat',
+    loopMode: 'per_input',
+    channels: (c) => {
+      c.input('input', { codec: 'text' })
+        .into(defineTasklet({ name: 'chat', run: upper }))
+        .sink('replies');
+    },
+  });
+
+  assert.equal(short.workflow.loopMode, 'per_input');
+  assert.equal(toHostClassDecl(short).workflow.loop_mode, 'per_input');
+  assert.deepEqual(declared(short), declared(twin));
+});
+
+test('the stream is declared with defineStream, and no defineOperative is exported', () => {
+  assert.equal(sdk.defineStream, defineStream);
+  assert.equal('defineOperative' in sdk, false);
 });
 
 test('a short form with no sink wires its entry into the tasklet and no plugin channel', async () => {
@@ -976,7 +1063,7 @@ test('every tasklet field a short form carries reaches its generated tasklet', (
 
   for (const [define, fields] of [
     [defineWorkflow, keyed],
-    [defineOperative, dynamic],
+    [defineStream, dynamic],
   ]) {
     const node = define({ factoryId: 'fielded', sink: 'out', ...fields }).tasklets[0];
     assert.equal(node.name, 'fielded');
@@ -987,17 +1074,17 @@ test('every tasklet field a short form carries reaches its generated tasklet', (
 });
 
 test('a field a short form does not carry is refused under the operative, naming it and why', () => {
-  const kind = '`defineOperative` or `defineWorkflow`';
+  const kind = '`defineStream` or `defineWorkflow`';
   for (const [define, field, value, why] of [
-    [defineOperative, 'persistent', false, 'full form'],
-    [defineOperative, 'effectivelyOnce', true, 'full form'],
-    [defineOperative, 'correctionWindow', 5_000, 'full form'],
-    [defineWorkflow, 'loopMode', 'chained', 'full form'],
-    [defineWorkflow, 'retryAttempts', 3, 'full form'],
+    [defineStream, 'persistent', false, 'full form'],
+    [defineStream, 'effectivelyOnce', true, 'full form'],
+    [defineStream, 'correctionWindow', 5_000, 'full form'],
+    [defineWorkflow, 'rollbackMode', 'keep_progress', 'full form'],
+    [defineWorkflow, 'syncDurability', true, 'full form'],
     [defineWorkflow, 'maxDurationMs', 60_000, 'full form'],
-    [defineOperative, 'name', 'other', 'named after its `factoryId`'],
+    [defineStream, 'name', 'other', 'named after its `factoryId`'],
     [defineWorkflow, 'name', 'other', 'named after its `factoryId`'],
-    [defineOperative, 'kind', 'stream', kind],
+    [defineStream, 'kind', 'stream', kind],
     [defineWorkflow, 'kind', 'workflow', kind],
   ]) {
     const { factoryId, handler, message } = refusal(() =>
@@ -1009,7 +1096,7 @@ test('a field a short form does not carry is refused under the operative, naming
 });
 
 test('a short-form key or a tasklet field beside a channels body is refused, naming it', () => {
-  for (const define of [defineOperative, defineWorkflow]) {
+  for (const define of [defineStream, defineWorkflow]) {
     for (const [key, value] of [
       ['sink', 'out'],
       ['input', 'prices'],
@@ -1027,7 +1114,7 @@ test('a short-form key or a tasklet field beside a channels body is refused, nam
 });
 
 test('a run body beside a channels body is refused as ShortFormWithTopology', () => {
-  for (const define of [defineOperative, defineWorkflow]) {
+  for (const define of [defineStream, defineWorkflow]) {
     const { refusals, message } = refusal(() =>
       define({ factoryId: 'both', sink: 'out', run: upper, channels: () => {} }),
     );
@@ -1039,7 +1126,7 @@ test('a run body beside a channels body is refused as ShortFormWithTopology', ()
 });
 
 test('a definition with neither body is refused, naming both', () => {
-  for (const define of [defineOperative, defineWorkflow]) {
+  for (const define of [defineStream, defineWorkflow]) {
     const { factoryId, message } = refusal(() => define({ factoryId: 'bodiless' }));
     assert.equal(factoryId, 'bodiless');
     assert.ok(message.includes('`run`') && message.includes('`channels`'), message);
@@ -1048,12 +1135,12 @@ test('a definition with neither body is refused, naming both', () => {
 
 test('a definition with no factory id is refused, naming it', () => {
   for (const factoryId of [undefined, '', '  ']) {
-    const { message } = refusal(() => defineOperative({ factoryId, sink: 'out', run: upper }));
+    const { message } = refusal(() => defineStream({ factoryId, sink: 'out', run: upper }));
     assert.ok(message.includes('`factoryId`'), message);
   }
 });
 
-test('an operative field on a tasklet is refused, naming it and defineOperative', () => {
+test('an operative field on a tasklet is refused, naming it and defineStream', () => {
   for (const [field, value] of [
     ['kind', 'stream'],
     ['sink', 'out'],
@@ -1063,13 +1150,13 @@ test('an operative field on a tasklet is refused, naming it and defineOperative'
     const { message } = refusal(() =>
       defineTasklet({ name: 'upcase', [field]: value, run: upper }),
     );
-    assert.ok(message.includes(`\`${field}\``) && message.includes('`defineOperative`'), message);
+    assert.ok(message.includes(`\`${field}\``) && message.includes('`defineStream`'), message);
   }
 });
 
 test('a short form under a factory id already held is refused across kinds', () => {
   const registry = new Registry();
-  registry.add(defineOperative({ factoryId: 'twice', sink: 'out', run: upper }));
+  registry.add(defineStream({ factoryId: 'twice', sink: 'out', run: upper }));
   assert.throws(
     () => registry.add(defineWorkflow({ factoryId: 'twice', sink: 'twin_sink', run: upper })),
     (error) => error.message.startsWith('DuplicateFactoryId') && error.message.includes('twice'),

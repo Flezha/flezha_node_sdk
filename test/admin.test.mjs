@@ -20,8 +20,8 @@ function answering(answer) {
 
 test('a start without an id sends none and answers the generated id', async () => {
   const { admin, calls } = answering({ id: 'echo-k7m2qzxw4pd3fn2a', outcome: 'started' });
-  const started = await admin.startOperative('echo', { kind: 'stream' });
-  assert.deepEqual(calls, [['Operative.start', [{ factory_id: 'echo', kind: 'stream' }]]]);
+  const started = await admin.startOperative('echo');
+  assert.deepEqual(calls, [['Operative.start', [{ factory_id: 'echo' }]]]);
   assert.deepEqual(started, { id: 'echo-k7m2qzxw4pd3fn2a', outcome: 'started' });
 });
 

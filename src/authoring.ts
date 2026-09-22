@@ -22,9 +22,11 @@ import {
   type ChannelBuilder,
   type ChannelCodec,
   type CodecOptions,
+  type LoopMode,
   type Merge,
   type OperativeDefinition,
   type OverflowPolicy,
+  type RollbackMode,
   type Tasklet,
   type TaskletDefinition,
   type RoutedDocument,
@@ -113,11 +115,8 @@ export interface ChannelSpec {
 }
 
 export interface WorkflowSpec {
-  loopMode: 'once' | 'per_input' | 'chained';
-  rollbackMode: 'all_or_nothing' | 'keep_progress';
-  retryAttempts?: number;
-  retryBackoffMs?: number;
-  barrierRetryAttempts?: number;
+  loopMode: LoopMode;
+  rollbackMode: RollbackMode;
   maxDurationMs?: number;
   wakeAfterMs?: number;
 }
@@ -159,7 +158,7 @@ export function defineTasklet<TIn, TOut = never, TState = void, TChange = never>
       '<tasklet>',
       definition.name ?? null,
       `declares ${operativeFields}, which a tasklet does not carry; the short form is declared ` +
-        'with `defineOperative` or `defineWorkflow`, whose name is its kind',
+        'with `defineStream` or `defineWorkflow`, whose name is its kind',
     );
   }
   if (!definition.name || !definition.name.trim()) {
@@ -242,19 +241,29 @@ const TASKLET_FIELDS = Object.keys({
 >);
 
 /**
- * The full form's class-level settings: a workflow definition's options and the
- * builder calls that set one on the class. The short form keeps each at its
- * default.
+ * A workflow definition's own options, which a stream definition carries none
+ * of in either form. Keyed by the type, so an option the workflow definition
+ * gains is listed here or does not compile. `syncDurability` is not among
+ * them: the core refuses it on a stream by its own name.
+ */
+const WORKFLOW_SETTINGS = Object.keys({
+  loopMode: true,
+  rollbackMode: true,
+  maxDurationMs: true,
+  wakeAfterMs: true,
+} satisfies Record<
+  Exclude<keyof WorkflowDefinition, keyof OperativeDefinition | 'syncDurability'>,
+  true
+>) as (keyof WorkflowDefinition)[];
+
+/**
+ * The full form's class-level settings: a definition's options and the builder
+ * calls that set one on the class. The short form keeps each at its default;
+ * a workflow's loop mode is the one setting it may write.
  */
 const CLASS_SETTINGS = [
   'persistent',
-  'loopMode',
-  'rollbackMode',
-  'retryAttempts',
-  'retryBackoffMs',
-  'barrierRetryAttempts',
-  'maxDurationMs',
-  'wakeAfterMs',
+  ...WORKFLOW_SETTINGS.filter((key) => key !== 'loopMode'),
   'syncDurability',
   'effectivelyOnce',
   'checkpointAck',
@@ -263,7 +272,7 @@ const CLASS_SETTINGS = [
   'correctionWindow',
   'beyondWindowPolicy',
   'compactAfterBytes',
-] as const satisfies readonly (keyof WorkflowDefinition | keyof ChannelBuilder)[];
+] satisfies readonly (keyof WorkflowDefinition | keyof ChannelBuilder)[];
 
 /** The keys among `keys` a definition writes, quoted as a refusal names them, or `''`. */
 function written(definition: object, keys: readonly string[]): string {
@@ -272,12 +281,12 @@ function written(definition: object, keys: readonly string[]): string {
 }
 
 /**
- * A definition as `defineOperative` and `defineWorkflow` read it: the full
+ * A definition as `defineStream` and `defineWorkflow` read it: the full
  * form's fields with `channels` optional, which a short form also is, since
- * it carries `run` in place of `channels` and writes no class-level setting.
+ * it carries `run` in place of `channels` and writes no class-level setting
+ * but a workflow's loop mode.
  */
-type EitherForm<D extends OperativeDefinition | WorkflowDefinition> = Omit<D, 'channels'> &
-  Partial<Pick<D, 'channels'>>;
+type EitherForm<D extends OperativeDefinition> = Omit<D, 'channels'> & Partial<Pick<D, 'channels'>>;
 
 /**
  * The channels body a definition wires: its own `channels`, or, for a §5 short
@@ -292,13 +301,23 @@ type EitherForm<D extends OperativeDefinition | WorkflowDefinition> = Omit<D, 'c
  * skips by name.
  */
 function channelsOf(
-  definition: EitherForm<OperativeDefinition | WorkflowDefinition>,
+  definition: EitherForm<OperativeDefinition>,
+  kind: ClassSpec['kind'],
 ): (builder: Builder) => void {
   if (typeof definition.factoryId !== 'string' || !definition.factoryId.trim()) {
     throw new DeclarationError(
       '<operative>',
       null,
       'an operative declares a non-empty `factoryId`',
+    );
+  }
+  const foreign = kind === 'stream' ? written(definition, WORKFLOW_SETTINGS) : '';
+  if (foreign) {
+    throw new DeclarationError(
+      definition.factoryId,
+      null,
+      `declares ${foreign}, which only a workflow carries; a stream has no loop, rollback or ` +
+        'lifecycle setting, so the operative is declared with `defineWorkflow` or without it',
     );
   }
   const { channels } = definition;
@@ -338,7 +357,7 @@ function channelsOf(
       definition.factoryId,
       null,
       'declares `kind` on a short form; the kind is the name of the function that declares it ' +
-        '(`defineOperative` or `defineWorkflow`), not a field',
+        '(`defineStream` or `defineWorkflow`), not a field',
     );
   }
   if (written(definition, ['name'])) {
@@ -397,7 +416,6 @@ class Builder implements ChannelBuilder {
   correctionWindowMsValue?: number;
   beyondWindowPolicyValue: BeyondWindowPolicy = 'process_as_arrival';
   compactAfterBytesValue?: number;
-  syncDurabilityFlag = false;
   /** The next merge's group id, which ties its sources together across channels. */
   mergeGroups = 0;
 
@@ -439,11 +457,6 @@ class Builder implements ChannelBuilder {
 
   compactAfterBytes(bytes: number): ChannelBuilder {
     this.compactAfterBytesValue = bytes;
-    return this;
-  }
-
-  syncDurability(): ChannelBuilder {
-    this.syncDurabilityFlag = true;
     return this;
   }
 
@@ -848,25 +861,73 @@ function applyPending(channel: ChannelSpec, pending: PendingEdge): void {
   if (pending.keyed) channel.keyed = true;
 }
 
-function buildGraph(definition: EitherForm<OperativeDefinition | WorkflowDefinition>): Builder {
-  const builder = new Builder(definition.factoryId);
-  channelsOf(definition)(builder);
-  return builder;
-}
-
 /**
  * Define a stream operative from its channels graph, or, as the §5 short form,
  * from one tasklet's fields and `run` body.
  */
-export function defineOperative(definition: OperativeDefinition): ClassSpec;
-export function defineOperative<TIn, TOut = never, TState = void, TChange = never>(
+export function defineStream(definition: OperativeDefinition): ClassSpec;
+export function defineStream<TIn, TOut = never, TState = void, TChange = never>(
   definition: ShortFormDefinition<TIn, TOut, TState, TChange>,
 ): ClassSpec;
-export function defineOperative(definition: EitherForm<OperativeDefinition>): ClassSpec {
-  const builder = buildGraph(definition);
+export function defineStream(definition: EitherForm<OperativeDefinition>): ClassSpec {
+  return classSpec(definition, 'stream');
+}
+
+/**
+ * The values each workflow mode takes, keyed by its type so a value the type
+ * gains is listed here or does not compile. A `.mjs` author has no type
+ * checker, so a misspelt mode is refused where it is written.
+ */
+const WORKFLOW_MODES: { [F in 'loopMode' | 'rollbackMode']: Record<WorkflowSpec[F], true> } = {
+  loopMode: { once: true, per_input: true, chained: true },
+  rollbackMode: { all_or_nothing: true, keep_progress: true },
+};
+
+/**
+ * Define a workflow operative from the tasklets its channels graph wires,
+ * or, as the §5 short form, a workflow of one tasklet's fields and `run`
+ * body, `once` unless it writes its `loopMode`.
+ */
+export function defineWorkflow(definition: WorkflowDefinition): ClassSpec;
+export function defineWorkflow<TIn, TOut = never, TState = void, TChange = never>(
+  definition: ShortFormDefinition<TIn, TOut, TState, TChange> &
+    Pick<WorkflowDefinition, 'loopMode'>,
+): ClassSpec;
+export function defineWorkflow(definition: EitherForm<WorkflowDefinition>): ClassSpec {
+  const spec = classSpec(definition, 'workflow');
+  const workflow: WorkflowSpec = {
+    loopMode: definition.loopMode ?? 'once',
+    rollbackMode: definition.rollbackMode ?? 'all_or_nothing',
+    maxDurationMs: definition.maxDurationMs,
+    wakeAfterMs: definition.wakeAfterMs,
+  };
+  for (const [field, modes] of Object.entries(WORKFLOW_MODES)) {
+    const value = workflow[field as keyof typeof WORKFLOW_MODES];
+    if (!Object.hasOwn(modes, value)) {
+      throw new DeclarationError(
+        spec.factoryId,
+        null,
+        `unknown ${field} \`${value}\`; a ${field} is one of ${Object.keys(modes).join(', ')}`,
+      );
+    }
+  }
+  return { ...spec, workflow };
+}
+
+/**
+ * The class a definition of either kind declares: every field the builder
+ * recorded and `syncDurability` as written, so a setting the kind does not
+ * carry reaches the core and is refused there by name, never dropped here.
+ */
+function classSpec(
+  definition: EitherForm<OperativeDefinition> & Pick<WorkflowDefinition, 'syncDurability'>,
+  kind: ClassSpec['kind'],
+): ClassSpec {
+  const builder = new Builder(definition.factoryId);
+  channelsOf(definition, kind)(builder);
   return {
     factoryId: definition.factoryId,
-    kind: 'stream',
+    kind,
     persistent: definition.persistent ?? true,
     effectivelyOnce: builder.effectivelyOnceFlag,
     checkpointAck: builder.checkpointAckFlag,
@@ -876,43 +937,9 @@ export function defineOperative(definition: EitherForm<OperativeDefinition>): Cl
     correctionWindowMs: builder.correctionWindowMsValue,
     beyondWindowPolicy: builder.beyondWindowPolicyValue,
     compactAfterBytes: builder.compactAfterBytesValue,
-    syncDurability: builder.syncDurabilityFlag,
-    tasklets: builder.tasklets,
-    channels: builder.channels,
-  };
-}
-
-/**
- * Define a workflow operative from the tasklets its channels graph wires,
- * or, as the §5 short form, a `once` workflow from one tasklet's fields and
- * `run` body.
- */
-export function defineWorkflow(definition: WorkflowDefinition): ClassSpec;
-export function defineWorkflow<TIn, TOut = never, TState = void, TChange = never>(
-  definition: ShortFormDefinition<TIn, TOut, TState, TChange>,
-): ClassSpec;
-export function defineWorkflow(definition: EitherForm<WorkflowDefinition>): ClassSpec {
-  const builder = buildGraph(definition);
-  return {
-    factoryId: definition.factoryId,
-    kind: 'workflow',
-    persistent: definition.persistent ?? true,
-    effectivelyOnce: builder.effectivelyOnceFlag,
-    checkpointAck: false,
-    checkpointOutputs: 'as_produced',
-    beyondWindowPolicy: 'process_as_arrival',
     syncDurability: definition.syncDurability ?? false,
     tasklets: builder.tasklets,
     channels: builder.channels,
-    workflow: {
-      loopMode: definition.loopMode ?? 'once',
-      rollbackMode: definition.rollbackMode ?? 'all_or_nothing',
-      retryAttempts: definition.retryAttempts,
-      retryBackoffMs: definition.retryBackoffMs,
-      barrierRetryAttempts: definition.barrierRetryAttempts,
-      maxDurationMs: definition.maxDurationMs,
-      wakeAfterMs: definition.wakeAfterMs,
-    },
   };
 }
 

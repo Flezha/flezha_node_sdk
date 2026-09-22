@@ -43,6 +43,7 @@
       "sugar_store_input",
       "sugar_named_input",
       "sugar_workflow",
+      "sugar_workflow_per_input",
       "sugar_state_only"
     ],
     "liveness": ["wedge_probe"],
@@ -86,6 +87,7 @@
       "chat_rewind_workflow",
       "reply_block_loop_workflow",
       "retry_workflow",
+      "workflow_timer_refused",
       "branch_workflow",
       "diamond_workflow",
       "bench_chain_1",

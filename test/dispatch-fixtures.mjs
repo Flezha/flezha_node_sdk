@@ -1,6 +1,6 @@
 // The builders the dispatch-shaped suites share: what one operative's dispatch
 // depends on, and the activation the core hands out.
-import { defineOperative, defineTasklet, validate } from '../dist/esm/index.js';
+import { defineStream, defineTasklet, validate } from '../dist/esm/index.js';
 import { Registry, answer } from '../dist/esm/dispatch.js';
 
 /**
@@ -52,7 +52,7 @@ export function spawnBridge(
  * token 7 with `bridge` for its spawns; answers that input's effect.
  */
 export async function handleOnce(bridge, body, item = {}) {
-  const spec = defineOperative({
+  const spec = defineStream({
     factoryId: 'once',
     channels: (c) =>
       c

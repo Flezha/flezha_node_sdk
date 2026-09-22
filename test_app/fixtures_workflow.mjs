@@ -10,7 +10,7 @@
 // the core derives that channel's journal codec from the channel's kind, so no
 // fixture declares one.
 
-import { defineOperative, defineTasklet, defineWorkflow } from '@flezha/sdk';
+import { defineStream, defineTasklet, defineWorkflow } from '@flezha/sdk';
 
 // -- the release gate -------------------------------------------------------
 
@@ -151,11 +151,11 @@ export const optoutCommitBlock = defineWorkflow({
 
 // -- tier_commit_block_workflow ---------------------------------------------
 //
-// The effectively-once fixture. Task A commits durable state AND emits
-// `committed:<input>` under a stable key on a keyed hybrid channel, captured
-// into the atomic effect record; task B blocks. A SIGKILL lands with A's
-// effect record durable and B unfinished, and the resume re-runs A — the
-// change is idempotent and the re-emit deterministic.
+// The hybrid mid-chain shape the conformance table's `commit_block_chain` twin
+// is transcribed from. Task A commits durable state AND emits
+// `committed:<input>` under a stable key on a keyed channel that both reaches a
+// plugin sink and feeds task B, which blocks until the resumed runner sets the
+// release variable.
 
 const TierCommitA = durableStep('tier_commit_a', {
   emit: (input, ctx) => ctx.emit(`committed:${input}`, { key: 'job' }),
@@ -164,7 +164,6 @@ const TierCommitA = durableStep('tier_commit_a', {
 export const tierCommitBlockWorkflow = defineWorkflow({
   factoryId: 'tier_commit_block_workflow',
   channels: (c) => {
-    c.effectivelyOnce();
     c.input('in', { codec: 'text' }).into(TierCommitA).keyed().sink('mid').into(BlockB);
   },
 });
@@ -277,9 +276,6 @@ const BranchD = statelessStep('branch_d', async (input, ctx) => {
 
 export const branchWorkflow = defineWorkflow({
   factoryId: 'branch_workflow',
-  // Fail fast: the compensation scenario is about the rollback order, not the
-  // ladder that precedes it.
-  retryAttempts: 0,
   channels: (c) => {
     // One channel, two consumers: THE fan-out. Both branches read exactly what
     // BranchA released on it (held handle, wired twice).
@@ -290,6 +286,9 @@ export const branchWorkflow = defineWorkflow({
     mid
       .into(BranchB)
       .sink('bmid', (value) => Buffer.from(`b:${value}`, 'utf8'))
+      // Fail fast: the compensation scenario is about the rollback order, not
+      // the ladder that precedes it.
+      .retryMax(1)
       .into(BranchD)
       .sink('d_out');
     mid.into(BranchC).sink('c_out');
@@ -351,16 +350,16 @@ const RETRY_FAILS_ENV = 'FLEZHA_WORKFLOW_RETRY_FAILS';
 // Attempts made in this process. A retry re-runs the tasklet of the same
 // instance in place and dispatch is cell-affine, so a module-level counter
 // is the whole ladder's view even under a worker pool.
-let retryAttempts = 0;
+let flakyAttempts = 0;
 
 const armedFailures = () => Number.parseInt(process.env[RETRY_FAILS_ENV] ?? '0', 10) || 0;
 
 const RetryA = durableStep('retry_a', { compensate: undoing('undone') });
 
 const RetryFlaky = statelessStep('retry_flaky', (input, ctx) => {
-  retryAttempts += 1;
-  if (retryAttempts <= armedFailures()) throw new Error(`flaky attempt ${retryAttempts}`);
-  ctx.emit(`attempt:${retryAttempts}:${input}`);
+  flakyAttempts += 1;
+  if (flakyAttempts <= armedFailures()) throw new Error(`flaky attempt ${flakyAttempts}`);
+  ctx.emit(`attempt:${flakyAttempts}:${input}`);
 });
 
 export const retryWorkflow = defineWorkflow({
@@ -371,6 +370,23 @@ export const retryWorkflow = defineWorkflow({
       .sink('mid', (value) => Buffer.from(`res:${value}`, 'utf8'))
       .into(RetryFlaky)
       .sink('out');
+  },
+});
+
+// -- workflow_timer_refused -------------------------------------------------
+//
+// A workflow tasklet registering a processing-time timer. A workflow's stage
+// commit carries no timer, so the context refuses the call naming
+// `TimersUnavailable`: the tasklet fails and the instance ends in error.
+
+const TimerInWorkflow = statelessStep('workflow_timer_refused', (_input, ctx) => {
+  ctx.timerAfter(60_000);
+});
+
+export const workflowTimerRefused = defineWorkflow({
+  factoryId: 'workflow_timer_refused',
+  channels: (c) => {
+    c.input('input', { codec: 'text' }).into(TimerInWorkflow);
   },
 });
 
@@ -507,7 +523,7 @@ const SpawnRequester = defineTasklet({
   },
 });
 
-export const spawnRequester = defineOperative({
+export const spawnRequester = defineStream({
   factoryId: 'spawn_requester',
   channels: (c) => {
     c.input('in', { codec: 'text' }).into(SpawnRequester).sink('out');
@@ -540,7 +556,7 @@ const SpawnOnceRequester = defineTasklet({
     reportSpawn('once', ctx.spawnWorkflow(typedOnceWorkflow.factoryId, { text: input })),
 });
 
-export const spawnOnceRequester = defineOperative({
+export const spawnOnceRequester = defineStream({
   factoryId: 'spawn_once_requester',
   channels: (c) => {
     c.input('in', { codec: 'text' }).into(SpawnOnceRequester).sink('out');

@@ -8,7 +8,7 @@ import test from 'node:test';
 
 import {
   ACTIVATION_SCHEMA_VERSION,
-  defineOperative,
+  defineStream,
   defineTasklet,
   defineWorkflow,
   loadNative,
@@ -32,8 +32,8 @@ function pinned(section) {
     .map((line) => line.slice(section.length + 1));
 }
 
-/** Every stream-side option the Node surface has a spelling for. */
-function fullyDeclaredStream() {
+/** Every stream-side option the Node surface has a spelling for, on a class `define` declares. */
+function fullyDeclaredStream(define = defineStream) {
   const dynamic = defineTasklet({
     name: 'full_dynamic',
     dynamicCells: { idleTtlMs: 30_000, maxCells: 64 },
@@ -54,7 +54,7 @@ function fullyDeclaredStream() {
       return input;
     },
   });
-  return defineOperative({
+  return define({
     factoryId: 'node_decl_full',
     persistent: true,
     channels: (c) => {
@@ -82,7 +82,7 @@ function fullyDeclaredStatic() {
     cells: { keys: ['a', 'b'], cellsFor: () => ['a'] },
     run: (input) => input,
   });
-  return defineOperative({
+  return defineStream({
     factoryId: 'node_decl_static',
     channels: (c) => c.input('in').into(statik).sink(),
   });
@@ -93,9 +93,6 @@ function fullyDeclaredWorkflow() {
     factoryId: 'node_decl_workflow',
     loopMode: 'per_input',
     rollbackMode: 'keep_progress',
-    retryAttempts: 5,
-    retryBackoffMs: 250,
-    barrierRetryAttempts: 4,
     maxDurationMs: 120_000,
     wakeAfterMs: 30_000,
     syncDurability: true,
@@ -169,44 +166,16 @@ test('the builder invents no key the core never learned', () => {
   check('workflow', new Set(Object.keys(workflow.workflow)));
 });
 
-// --- the keys a workflow class may not put on the wire ----------------------
+// --- the stream-only keys on a workflow class -------------------------------
 //
-// `flz_core::host::register::refuse_workflow_facts` refuses `effectively_once`
-// and `correction_window_ms` on a workflow class outright, and
-// `refuse_tier_facts` refuses the checkpoint family without the checkpoint
-// acknowledgement the first refusal leaves unreachable there. One builder
-// serves both kinds, so the gate lives in it.
+// One builder serves both kinds and neither drops what it recorded:
+// `flz_core::host::register::refuse_workflow_facts` is what refuses a tier,
+// checkpoint or correction key on a workflow class, by name.
 
-const REFUSED_ON_WORKFLOW = [
-  'effectively_once',
-  'checkpoint_ack',
-  'checkpoint_every',
-  'checkpoint_outputs',
-  'checkpoint_max_delay_ms',
-  'correction_window_ms',
-  'beyond_window_policy',
-];
-
-/** The stream fixture's spec re-kinded: every refused key populated at once. */
-function tierSpec(kind) {
-  return {
-    ...fullyDeclaredStream(),
-    factoryId: `node_decl_${kind}_tier`,
-    kind,
-    workflow: kind === 'workflow' ? fullyDeclaredWorkflow().workflow : undefined,
-  };
-}
-
-test('a workflow class declares none of the keys the core refuses on one', () => {
-  const decl = toHostClassDecl(tierSpec('workflow'));
-  const emitted = REFUSED_ON_WORKFLOW.filter((key) => key in decl);
-  assert.deepEqual(emitted, [], `keys the core refuses on a workflow class: ${emitted.join(', ')}`);
-});
-
-test('a stream class still declares every one of them', () => {
-  const decl = toHostClassDecl(tierSpec('stream'));
-  const missing = REFUSED_ON_WORKFLOW.filter((key) => !(key in decl));
-  assert.deepEqual(missing, [], `stream keys the gate dropped: ${missing.join(', ')}`);
+test('a workflow class declares every key its builder recorded, as a stream does', () => {
+  const { workflow, ...declared } = toHostClassDecl(fullyDeclaredStream(defineWorkflow));
+  assert.ok(workflow, 'a workflow class carries its workflow section');
+  assert.deepEqual(declared, toHostClassDecl(fullyDeclaredStream()));
 });
 
 // --- the cross-language topology golden ------------------------------------
@@ -254,7 +223,7 @@ function hybridChannel() {
     run: (input, ctx) => ctx.emit(input),
   });
   const consumer = defineTasklet({ name: 'hybrid_consumer_tasklet', run: () => {} });
-  return defineOperative({
+  return defineStream({
     factoryId: 'hybrid_channel',
     channels: (c) => {
       c.input('input').into(producer).sink('hybrid_indicator', bytes).into(consumer);
@@ -271,7 +240,6 @@ function commitBlockChain() {
   return defineWorkflow({
     factoryId: 'commit_block_chain',
     channels: (c) => {
-      c.effectivelyOnce();
       c.input('in').into(commitA).keyed().sink('mid', bytes).into(blockB);
     },
   });
@@ -293,7 +261,7 @@ test('the structured workflow topology is the reference, channel for channel', (
 test('a merge source serialises as the core’s merge link, keyed after its mapping', () => {
   const merged = (name) => defineTasklet({ name, dynamicCells: {}, run: (i) => i });
   const decl = toHostClassDecl(
-    defineOperative({
+    defineStream({
       factoryId: 'node_decl_merge',
       channels: (c) => {
         for (const [first, second, into] of [

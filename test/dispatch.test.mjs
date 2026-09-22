@@ -10,7 +10,7 @@ import {
   ACTIVATION_SCHEMA_VERSION,
   DeclarationError,
   decodeValue,
-  defineOperative,
+  defineStream,
   defineTasklet,
   defineWorkflow,
   encodeValue,
@@ -64,7 +64,7 @@ const Counter = defineTasklet({
   },
 });
 
-const Spec = defineOperative({
+const Spec = defineStream({
   factoryId: 'counters',
   channels: (c) => {
     c.input('in')
@@ -108,7 +108,7 @@ test('a throwing handler is a retryable verdict and stops the batch', async () =
       return input;
     },
   });
-  const spec = defineOperative({
+  const spec = defineStream({
     factoryId: 'throwing_op',
     channels: (c) => c.input('in').into(Throwing).sink(),
   });
@@ -132,7 +132,7 @@ test('a rejected promise is answered the same way a throw is', async () => {
       throw Object.assign(new Error('gave up'), { nonRetryable: true });
     },
   });
-  const spec = defineOperative({
+  const spec = defineStream({
     factoryId: 'rejecting_op',
     channels: (c) => c.input('in').into(Rejecting).sink(),
   });
@@ -197,7 +197,7 @@ test('the JSON handover carries a bigint and a byte array without narrowing', as
     },
     run: () => undefined,
   });
-  const spec = defineOperative({
+  const spec = defineStream({
     factoryId: 'wide_op',
     channels: (c) => c.input('in').into(Wide).sink(),
   });
@@ -270,7 +270,7 @@ test('one payload failing its prepare does not fail the others', async () => {
     },
     run: (input) => input,
   });
-  const spec = defineOperative({
+  const spec = defineStream({
     factoryId: 'windowed_op',
     channels: (c) =>
       c
@@ -344,9 +344,9 @@ test('a module specifier is imported and its operatives registered', async () =>
   const module = join(dir, 'handlers.mjs');
   writeFileSync(
     module,
-    `import { defineOperative, defineTasklet } from '${new URL('../dist/esm/index.js', import.meta.url).pathname}';\n` +
+    `import { defineStream, defineTasklet } from '${new URL('../dist/esm/index.js', import.meta.url).pathname}';\n` +
       `const Echo = defineTasklet({ name: 'echo', run: (i) => i });\n` +
-      `export default defineOperative({ factoryId: 'from_specifier', channels: (c) => c.input('in').into(Echo).sink() });\n`,
+      `export default defineStream({ factoryId: 'from_specifier', channels: (c) => c.input('in').into(Echo).sink() });\n`,
   );
   const registry = await loadRegistry([module]);
   assert.ok(registry.get('from_specifier'), "the module's operative was registered");
@@ -363,14 +363,14 @@ for (const [build, load, file, bind, exporting] of [
     'esm',
     loadRegistry,
     'handlers.mjs',
-    (sdk) => `import { defineOperative, defineTasklet } from '${sdk}';`,
+    (sdk) => `import { defineStream, defineTasklet } from '${sdk}';`,
     'export default',
   ],
   [
     'cjs',
     createRequire(import.meta.url)('../dist/cjs/runner.js').loadRegistry,
     'handlers.cjs',
-    (sdk) => `const { defineOperative, defineTasklet } = require('${sdk}');`,
+    (sdk) => `const { defineStream, defineTasklet } = require('${sdk}');`,
     'module.exports =',
   ],
 ]) {
@@ -380,7 +380,7 @@ for (const [build, load, file, bind, exporting] of [
       module,
       `${bind(new URL(`../dist/${build}/index.js`, import.meta.url).pathname)}\n` +
         `const Echo = defineTasklet({ name: 'echo', run: (i) => i });\n` +
-        `${exporting} defineOperative({ factoryId: 'by_relative_path', channels: (c) => c.input('in').into(Echo).sink() });\n`,
+        `${exporting} defineStream({ factoryId: 'by_relative_path', channels: (c) => c.input('in').into(Echo).sink() });\n`,
     );
     const registry = await load([`./${relative(process.cwd(), module)}`]);
     assert.ok(registry.get('by_relative_path'), "the module's operative was registered");
@@ -404,10 +404,10 @@ test('a refusal raised while a handler module is imported keeps its own name', a
   const module = join(dir, 'handlers.mjs');
   writeFileSync(
     module,
-    `import { defineOperative, defineTasklet } from '${new URL('../dist/esm/index.js', import.meta.url).pathname}';\n` +
+    `import { defineStream, defineTasklet } from '${new URL('../dist/esm/index.js', import.meta.url).pathname}';\n` +
       `const A = defineTasklet({ name: 'twin', run: (i) => i });\n` +
       `const B = defineTasklet({ name: 'twin', run: (i) => i });\n` +
-      `export default defineOperative({ factoryId: 'module_scope', channels: (c) => {\n` +
+      `export default defineStream({ factoryId: 'module_scope', channels: (c) => {\n` +
       `  const s = c.input('in'); s.into(A); s.into(B);\n` +
       `} });\n`,
   );
@@ -470,7 +470,7 @@ const StampEmitter = defineTasklet({
 
 // One keyed plugin channel: the topology every SDK can express, and where the
 // per-emit ordinal has to be right.
-const StampSpec = defineOperative({
+const StampSpec = defineStream({
   factoryId: 'stamps',
   channels: (c) => {
     c.input('in')
@@ -490,7 +490,7 @@ const PlainEmitter = defineTasklet({
   },
 });
 
-const MixedSpec = defineOperative({
+const MixedSpec = defineStream({
   factoryId: 'stamps_mixed',
   channels: (c) => {
     c.input('in')
@@ -565,7 +565,7 @@ test('user metadata survives beside the stamps and cannot spoof one', async () =
       ctx.emit('v', { metadata: { user: 'meta' } });
     },
   });
-  const spec = defineOperative({
+  const spec = defineStream({
     factoryId: 'stamps_user',
     channels: (c) => {
       c.input('in')
@@ -645,7 +645,7 @@ const payloadOf = (output) =>
   output.target === 'plugin' ? jsonOf(output.payload) : decodeValue(output.payload);
 
 const WorkflowSpec = defineWorkflow({ factoryId: 'wf_emit', channels: workflowGraph });
-const StreamTwinSpec = defineOperative({ factoryId: 'wf_emit_stream', channels: workflowGraph });
+const StreamTwinSpec = defineStream({ factoryId: 'wf_emit_stream', channels: workflowGraph });
 
 test('a structured workflow releases one untransformed edge output per emit', async () => {
   const result = await answer(
@@ -680,6 +680,37 @@ test("an edge payload is the encoder's own bytes, with nothing layered on top", 
     );
   }
   assert.deepEqual(outputs[1].payload, encodeValue(10));
+});
+
+test('every timer call inside a workflow tasklet fails naming TimersUnavailable', async () => {
+  const calls = {
+    timerAfter: (ctx) => ctx.timerAfter(1_000),
+    timerAtEventTime: (ctx) => ctx.timerAtEventTime(5_000n),
+    cancelTimer: (ctx) => ctx.cancelTimer('processing_time', 2_000n),
+  };
+  for (const [call, arm] of Object.entries(calls)) {
+    let refused;
+    const Arms = defineTasklet({
+      name: 'arms',
+      run: (_, ctx) => {
+        try {
+          arm(ctx);
+        } catch (error) {
+          refused = error;
+        }
+      },
+    });
+    const spec = defineWorkflow({
+      factoryId: `wf_timer_${call}`,
+      channels: (c) => c.input('in').into(Arms),
+    });
+    const { effects } = await answer(
+      activationFor(spec.factoryId)({ items: [inputItem(1)] }),
+      depsFor(spec),
+    );
+    assert.match(String(refused?.message), new RegExp(`^TimersUnavailable: arms: ${call}`));
+    assert.deepEqual(effects[0].timers, [], `${call} recorded a timer op before refusing`);
+  }
 });
 
 test('the same graph on a stream class releases one output per consumer', async () => {
@@ -751,7 +782,7 @@ const completingGraph = (c) => c.input('in').into(Completing).sink('out');
 
 for (const [kind, define] of [
   ['workflow', defineWorkflow],
-  ['stream', defineOperative],
+  ['stream', defineStream],
 ]) {
   test(`a ${kind} tasklet's complete rides its effect, the last call winning`, async () => {
     const spec = define({ factoryId: `complete_${kind}`, channels: completingGraph });
@@ -772,7 +803,7 @@ for (const [kind, define] of [
 // item is reported unreadable (the entrance's failure, not the handler's), so
 // the core parks it under the entry channel, and the handler is never handed it.
 test('plain text into an entry naming no codec is unreadable and never reaches the handler', async () => {
-  const spec = defineOperative({
+  const spec = defineStream({
     factoryId: 'json_entry',
     channels: (c) => {
       c.input('in').into(record('json_entry_tasklet'));
@@ -791,7 +822,7 @@ test('plain text into an entry naming no codec is unreadable and never reaches t
 });
 
 test('bytes that are not UTF-8 into a text entry are unreadable', async () => {
-  const spec = defineOperative({
+  const spec = defineStream({
     factoryId: 'text_entry',
     channels: (c) => {
       c.input('in', { codec: 'text' }).into(record('text_entry_tasklet'));
@@ -809,8 +840,8 @@ test('bytes that are not UTF-8 into a text entry are unreadable', async () => {
 // An entry edge's transform runs at the entrance too, so its failure is the
 // entrance's; a handler throwing on a value that did decode stays a handler
 // failure, which is what the retry ladder is for.
-test("an entry edge transform that throws is unreadable, a handler that throws is not", async () => {
-  const spec = defineOperative({
+test('an entry edge transform that throws is unreadable, a handler that throws is not', async () => {
+  const spec = defineStream({
     factoryId: 'entry_edge',
     channels: (c) => {
       c.input('in', { codec: 'text' })
@@ -876,7 +907,7 @@ test('every merged source is keyed on its mapped value at the crossing', async (
 });
 
 test('a tasklet merged with an entry releases its mapped value to the merged node', async () => {
-  const spec = defineOperative({
+  const spec = defineStream({
     factoryId: 'merged_hop',
     channels: (c) => {
       const produced = c.input('raw').into(WorkflowProducer);
@@ -899,7 +930,7 @@ test('a tasklet merged with an entry releases its mapped value to the merged nod
 // input, the crossing answers every value's key, and a producer releases one
 // frame per value.
 
-const FanSpec = defineOperative({
+const FanSpec = defineStream({
   factoryId: 'fan',
   channels: (c) => {
     c.input('lines', { codec: 'text' })
@@ -939,7 +970,7 @@ test('a cell handed a fanned payload runs only the values keyed to it', async ()
 test('a fan into a static consumer runs each value on the cells it names, and [] on none', async () => {
   const keys = ['a', 'b'];
   const cellsFor = (trade) => keys.filter((key) => trade.startsWith(`${key}:`));
-  const spec = defineOperative({
+  const spec = defineStream({
     factoryId: 'static_fan',
     channels: (c) => {
       c.input('trades', { codec: 'text' })
@@ -955,7 +986,7 @@ test('a fan into a static consumer runs each value on the cells it names, and []
 
 test('a producer releases one frame per fanned value, and an array from map is one value', async () => {
   const released = async (factoryId, reshape) => {
-    const spec = defineOperative({
+    const spec = defineStream({
       factoryId,
       channels: (c) =>
         reshape(c.input('in').into(WorkflowProducer)).into(record(`${factoryId}_record`)),
@@ -979,8 +1010,8 @@ test('a module exporting short forms registers each, of the kind its function na
   const module = join(dir, 'short.mjs');
   writeFileSync(
     module,
-    `import { defineOperative, defineWorkflow } from '${new URL('../dist/esm/index.js', import.meta.url).pathname}';\n` +
-      `export const upcase = defineOperative({ factoryId: 'short_form', sink: 'out', run: (i) => i });\n` +
+    `import { defineStream, defineWorkflow } from '${new URL('../dist/esm/index.js', import.meta.url).pathname}';\n` +
+      `export const upcase = defineStream({ factoryId: 'short_form', sink: 'out', run: (i) => i });\n` +
       `export const place = defineWorkflow({ factoryId: 'short_workflow', sink: 'placed', input: 'order', run: (i) => i });\n`,
   );
   const registry = await loadRegistry([module]);
@@ -1012,8 +1043,8 @@ test('unregisterFactory undoes a pre-run registration and names an unknown one',
   const module = join(dir, 'one.mjs');
   writeFileSync(
     module,
-    `import { defineOperative } from '${new URL('../dist/esm/index.js', import.meta.url).pathname}';\n` +
-      `export const one = defineOperative({ factoryId: 'unregister_me', sink: 'out', run: (i) => i });\n`,
+    `import { defineStream } from '${new URL('../dist/esm/index.js', import.meta.url).pathname}';\n` +
+      `export const one = defineStream({ factoryId: 'unregister_me', sink: 'out', run: (i) => i });\n`,
   );
   const runner = createRunner('unregister_ns');
   await runner.registerFactory(module);
@@ -1029,8 +1060,8 @@ test('a post-start registerFactory declares against the core and the workers', a
   const module = join(dir, 'late.mjs');
   writeFileSync(
     module,
-    `import { defineOperative } from '${new URL('../dist/esm/index.js', import.meta.url).pathname}';\n` +
-      `export const late = defineOperative({ factoryId: 'late_form', sink: 'out', run: (i) => i });\n`,
+    `import { defineStream } from '${new URL('../dist/esm/index.js', import.meta.url).pathname}';\n` +
+      `export const late = defineStream({ factoryId: 'late_form', sink: 'out', run: (i) => i });\n`,
   );
 
   // A started runner is one that holds a core and a registry. Standing those in

@@ -14,7 +14,7 @@ import { Worker } from 'node:worker_threads';
 
 import {
   ACTIVATION_SCHEMA_VERSION,
-  defineOperative,
+  defineStream,
   defineTasklet,
   loadNative,
 } from '../dist/esm/index.js';
@@ -45,7 +45,7 @@ const Accumulate = defineTasklet({
   },
 });
 
-const Spec = defineOperative({
+const Spec = defineStream({
   factoryId: 'ordering',
   channels: (c) =>
     c

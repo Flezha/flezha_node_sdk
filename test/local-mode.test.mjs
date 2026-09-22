@@ -10,7 +10,7 @@ import assert from 'node:assert/strict';
 import { dirname } from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
-import { LocalOperative, defineOperative, defineTasklet } from '../dist/esm/index.js';
+import { LocalOperative, defineStream, defineTasklet } from '../dist/esm/index.js';
 
 import { read } from './contract.mjs';
 
@@ -43,7 +43,7 @@ const Tally = defineTasklet({
   },
 });
 
-const WordCount = defineOperative({
+const WordCount = defineStream({
   factoryId: 'local_word_count_node',
   channels: (c) => {
     c.input('lines', { codec: 'text' })
@@ -151,7 +151,7 @@ const Defaults = defineTasklet({
   },
 });
 
-const DefaultCodecs = defineOperative({
+const DefaultCodecs = defineStream({
   factoryId: 'local_default_codecs_node',
   channels: (c) => {
     c.input('in').into(Defaults).sink('out');
@@ -190,7 +190,7 @@ test('a spawn with no controller anywhere is unavailable, from either read', asy
   });
   const released = [];
   const run = LocalOperative.start(
-    defineOperative({
+    defineStream({
       factoryId: 'local_spawner_node',
       channels: (c) => c.input('in', { codec: 'text' }).into(Spawner).sink('out'),
     }),

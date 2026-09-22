@@ -9,7 +9,7 @@
 
 export { Admin } from './admin.js';
 export type { StartOptions, StartOutcome, StartResult } from './admin.js';
-export { defineOperative, defineTasklet, defineWorkflow } from './authoring.js';
+export { defineStream, defineTasklet, defineWorkflow } from './authoring.js';
 export type { ChannelSpec, ClassSpec, Link, TaskNode } from './authoring.js';
 export type { SpawnHandle } from './ctx.js';
 export {
@@ -39,6 +39,7 @@ export {
   DeclarationError,
   SpawnAlreadyRunningError,
   SpawnError,
+  SpawnFactoryNotWorkflowError,
   SpawnFactoryUnknownError,
   SpawnRefusedError,
   SpawnTimeoutError,
