@@ -88,6 +88,7 @@
       "reply_block_loop_workflow",
       "retry_workflow",
       "workflow_timer_refused",
+      "static_cell_workflow",
       "branch_workflow",
       "diamond_workflow",
       "bench_chain_1",

@@ -2,7 +2,7 @@
 
 A poll host over `flz_core`, the runner kernel the Rust and Java SDKs also
 drive. The kernel owns transport, ordering, per-cell exclusivity, durability,
-retries, timers, credit, routing and the workflow driver. This package supplies
+retries, timers, credit, routing and workflow runs. This package supplies
 threads and user code, and nothing else.
 
 ```bash

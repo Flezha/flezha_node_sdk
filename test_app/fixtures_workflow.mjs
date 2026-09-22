@@ -390,6 +390,27 @@ export const workflowTimerRefused = defineWorkflow({
   },
 });
 
+// -- static_cell_workflow ---------------------------------------------------
+//
+// A per-input loop whose one tasklet declares three static cells and routes
+// every message to two of them; each cell that runs emits `<cell key>:<message>`,
+// so one message yields exactly two outputs (workflow.rs).
+
+const StaticCellStep = defineTasklet({
+  name: 'static_cell_step',
+  cells: { keys: ['a', 'b', 'c'], cellsFor: () => ['a', 'b'] },
+  run: (input, ctx) => ctx.emit(`${ctx.cellKey}:${input}`),
+});
+
+export const staticCellWorkflow = defineWorkflow({
+  factoryId: 'static_cell_workflow',
+  loopMode: 'per_input',
+  maxDurationMs: 600_000,
+  channels: (c) => {
+    c.input('in', { codec: 'text' }).into(StaticCellStep).sink('out');
+  },
+});
+
 // -- the durable loop family ------------------------------------------------
 //
 // chat_loop_workflow is the durable-loop + suspension shape
