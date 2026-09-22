@@ -57,6 +57,7 @@ function fullyDeclaredStream(define = defineStream) {
   return define({
     factoryId: 'node_decl_full',
     persistent: true,
+    sleepWhenIdle: true,
     channels: (c) => {
       c.effectivelyOnce();
       c.checkpointEvery(500);

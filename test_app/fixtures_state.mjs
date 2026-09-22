@@ -4,6 +4,8 @@
 
 import { decodeValue, defineStream, defineTasklet } from '@flezha/sdk';
 
+import { prefix } from './fixture_support.mjs';
+
 /** The reference parses `i64` and reads an unparsable input as 0. */
 const asInt = (input) => (/^-?\d+$/.test(String(input)) ? Number(input) : 0);
 
@@ -193,6 +195,34 @@ export const persistenceOffCounter = defineStream({
       .into(CounterEntry, 'persistence_off_entry_tasklet')
       .named('ticks')
       .into(Counter, 'persistence_off_counter_tasklet');
+  },
+});
+
+// -- sleeping_counter -------------------------------------------------------
+//
+// A stream that sleeps when idle: `key:delta` inputs fold into one running
+// total per key, and every input emits `key=total` on the `totals` sink. The
+// sleep e2e reads the total after a wake to prove the Cell came back with the
+// state it slept with.
+
+const SleepingCounter = defineTasklet({
+  name: 'sleeping_counter_tasklet',
+  initialState: () => ({ value: 0 }),
+  applyChange: (state, change) => {
+    state.value += change.delta;
+  },
+  run: (input, ctx) => {
+    const [key, delta] = splitKeyed(input);
+    ctx.change({ delta: asInt(delta) });
+    return `${key}=${ctx.state.value}`;
+  },
+});
+
+export const sleepingCounter = defineStream({
+  factoryId: 'sleeping_counter',
+  sleepWhenIdle: true,
+  channels: (c) => {
+    c.input('input', { codec: 'text' }).keyBy(prefix).into(SleepingCounter).sink('totals');
   },
 });
 

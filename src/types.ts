@@ -340,6 +340,11 @@ export interface OperativeDefinition {
   factoryId: string;
   /** Whether change bytes are flushed to the per-cell WAL. Default true. */
   persistent?: boolean;
+  /**
+   * Whether an idle instance is written out and dropped from memory until its
+   * next input. Default `persistent` for a workflow, false for a stream.
+   */
+  sleepWhenIdle?: boolean;
   channels: (builder: ChannelBuilder) => void;
 }
 

@@ -116,14 +116,15 @@ function palette(role, mailbox) {
 /**
  * The facts a row states before its graph is built: which class kind to
  * declare, whether it journals, whether it declares synchronous durability,
- * and each tasklet's mailbox capacity — all four are declaration options here,
- * not fluent calls.
+ * whether it sleeps when idle, and each tasklet's mailbox capacity, all five
+ * declaration options here, not fluent calls.
  */
 function preScan(steps) {
   const mailbox = new Map();
   let workflow = false;
   let persistent = false;
   let syncDurability = false;
+  let sleepWhenIdle;
   for (const step of steps) {
     const [head, rest] = splitHead(step);
     if (rest === undefined) continue;
@@ -132,11 +133,12 @@ function preScan(steps) {
       if (verb === 'workflow') workflow = true;
       if (verb === 'persistent') persistent = true;
       if (verb === 'sync_durability') syncDurability = true;
+      if (verb === 'sleep_when_idle') sleepWhenIdle = true;
     } else if (verb === 'mailbox') {
       mailbox.set(head, Number(arg));
     }
   }
-  return { mailbox, workflow, persistent, syncDurability };
+  return { mailbox, workflow, persistent, syncDurability, sleepWhenIdle };
 }
 
 /** `class.<flag>[(value)]` on the builder the declaration receives. */
@@ -147,6 +149,7 @@ function classFlag(builder, rest) {
     case 'persistent':
     case 'workflow':
     case 'sync_durability':
+    case 'sleep_when_idle':
       return;
     case 'effectively_once':
       builder.effectivelyOnce();
@@ -174,7 +177,7 @@ function specOf(row) {
     .split(';')
     .map((step) => step.trim())
     .filter(Boolean);
-  const { mailbox, workflow, persistent, syncDurability } = preScan(steps);
+  const { mailbox, workflow, persistent, syncDurability, sleepWhenIdle } = preScan(steps);
   const tasklets = new Map();
   const taskletFor = (role) => {
     if (!tasklets.has(role)) tasklets.set(role, palette(role, mailbox.get(role)));
@@ -273,7 +276,7 @@ function specOf(row) {
   // Either kind is declared with what the row wrote, so a setting the kind
   // does not carry reaches the core, which refuses it by name.
   const define = workflow ? defineWorkflow : defineStream;
-  return define({ factoryId: row.topology, persistent, syncDurability, channels });
+  return define({ factoryId: row.topology, persistent, syncDurability, sleepWhenIdle, channels });
 }
 
 /** The class a topology id declares — the cited twins by name, the rest by steps. */

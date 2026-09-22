@@ -240,6 +240,7 @@ export function toHostClassDecl(spec: ClassSpec): Record<string, unknown> {
   return compact({
     factory_id: spec.factoryId,
     persistent: spec.persistent,
+    sleep_when_idle: spec.sleepWhenIdle,
     sdk_lang: SDK_LANG_NODE,
     sdk_version: SDK_VERSION,
     change_format_id: FORMAT_ID_MSGPACK,

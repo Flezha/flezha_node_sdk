@@ -627,6 +627,22 @@ test('synchronous durability is the definition field, declared by a workflow, re
   assert.deepEqual(refusals, ['SyncDurabilityOnStream'], message);
 });
 
+test('sleeping is a class setting of both kinds, defaulting to persistence on a workflow only', () => {
+  const channels = (c) => c.input('in').into(echo('p'));
+  const sleeps = (spec) => toHostClassDecl(spec).sleep_when_idle;
+  assert.equal(sleeps(defineWorkflow({ factoryId: 'w', channels })), true);
+  assert.equal(sleeps(defineWorkflow({ factoryId: 'w', persistent: false, channels })), false);
+  assert.equal(sleeps(defineStream({ factoryId: 's', channels })), false);
+  assert.equal(sleeps(defineStream({ factoryId: 's', sleepWhenIdle: true, channels })), true);
+
+  for (const define of [defineStream, defineWorkflow]) {
+    const { message } = refusal(() =>
+      define({ factoryId: 'nap', persistent: false, sleepWhenIdle: true, channels }),
+    );
+    assert.ok(message.includes('SleepWithoutPersistence'), message);
+  }
+});
+
 test('a workflow setting on a stream is refused in either form, naming it', () => {
   const forms = {
     full: { channels: (c) => c.input('in').into(echo('p')) },

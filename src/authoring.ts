@@ -126,6 +126,7 @@ export interface ClassSpec {
   factoryId: string;
   kind: 'stream' | 'workflow';
   persistent: boolean;
+  sleepWhenIdle: boolean;
   effectivelyOnce: boolean;
   /** The author's explicit `checkpointAck()`; the core derives the granularity. */
   checkpointAck: boolean;
@@ -263,6 +264,7 @@ const WORKFLOW_SETTINGS = Object.keys({
  */
 const CLASS_SETTINGS = [
   'persistent',
+  'sleepWhenIdle',
   ...WORKFLOW_SETTINGS.filter((key) => key !== 'loopMode'),
   'syncDurability',
   'effectivelyOnce',
@@ -925,10 +927,12 @@ function classSpec(
 ): ClassSpec {
   const builder = new Builder(definition.factoryId);
   channelsOf(definition, kind)(builder);
+  const persistent = definition.persistent ?? true;
   return {
     factoryId: definition.factoryId,
     kind,
-    persistent: definition.persistent ?? true,
+    persistent,
+    sleepWhenIdle: definition.sleepWhenIdle ?? (kind === 'workflow' && persistent),
     effectivelyOnce: builder.effectivelyOnceFlag,
     checkpointAck: builder.checkpointAckFlag,
     checkpointEvery: builder.checkpointEveryValue,
