@@ -59,9 +59,10 @@ const insertSorted = (items, value) => {
  * gate BEFORE recording it. Carrying all four here is what lets every durable
  * tasklet in this module be one call.
  */
-const durableStep = (name, { change, emit, compensate, gate } = {}) =>
+const durableStep = (name, { change, emit, compensate, gate, dynamicCells } = {}) =>
   defineTasklet({
     name,
+    ...(dynamicCells ? { dynamicCells } : {}),
     initialState: () => ({ items: [] }),
     applyChange: (state, recorded) => insertSorted(state.items, recorded.insert),
     run: async (input, ctx) => {
@@ -183,6 +184,43 @@ export const sagaBlockWorkflow = defineWorkflow({
   factoryId: 'saga_block_workflow',
   channels: (c) => {
     c.input('in', { codec: 'text' }).into(SagaA).named('s1').into(SagaB).named('s2').into(SagaC);
+  },
+});
+
+// -- keyed_block_workflow / keyed_saga_workflow -----------------------------
+//
+// The entry's comma-separated key list is split into one value per key, and a
+// `keyBy` on that value mints one Cell per key of a durable compensable
+// tasklet that declares no keys; each Cell commits one idempotent change. The
+// third tasklet blocks until the release variable, or fails, so the keyed
+// stage is rolled back once per key.
+
+const KeySplit = statelessStep('key_split', (input, ctx) => {
+  for (const key of input.split(',')) ctx.emit(key);
+});
+const KeyedCommit = durableStep('keyed_commit', { compensate: () => {}, dynamicCells: {} });
+const KeyedFail = failingStep('keyed_fail');
+
+const keyedCommits = (c) =>
+  c
+    .input('in', { codec: 'text' })
+    .into(KeySplit)
+    .named('keys')
+    .keyBy((key) => key)
+    .into(KeyedCommit)
+    .named('committed');
+
+export const keyedBlockWorkflow = defineWorkflow({
+  factoryId: 'keyed_block_workflow',
+  channels: (c) => {
+    keyedCommits(c).into(BlockB);
+  },
+});
+
+export const keyedSagaWorkflow = defineWorkflow({
+  factoryId: 'keyed_saga_workflow',
+  channels: (c) => {
+    keyedCommits(c).into(KeyedFail);
   },
 });
 
