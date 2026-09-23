@@ -262,7 +262,6 @@ export function toHostClassDecl(spec: ClassSpec): Record<string, unknown> {
           loop_mode: spec.workflow.loopMode,
           rollback_mode: spec.workflow.rollbackMode,
           max_duration_ms: spec.workflow.maxDurationMs,
-          wake_after_ms: spec.workflow.wakeAfterMs,
         })
       : undefined,
   });

@@ -215,6 +215,7 @@ async function invoke(
     state: registered.stateOf(node, activation.cellKey),
     token: activation.token,
     bridge: deps.bridge,
+    compensating: activation.kind === 'compensate_run',
   });
   try {
     await invocation.run({ tasklet: node.name }, () => body(ctx));

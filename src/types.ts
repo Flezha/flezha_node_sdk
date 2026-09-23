@@ -375,7 +375,6 @@ export interface WorkflowDefinition extends OperativeDefinition {
   loopMode?: LoopMode;
   rollbackMode?: RollbackMode;
   maxDurationMs?: number;
-  wakeAfterMs?: number;
   /** Synchronous remote durability. */
   syncDurability?: boolean;
 }

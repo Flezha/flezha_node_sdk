@@ -118,7 +118,6 @@ export interface WorkflowSpec {
   loopMode: LoopMode;
   rollbackMode: RollbackMode;
   maxDurationMs?: number;
-  wakeAfterMs?: number;
 }
 
 /** Everything the graph knows about one declared class. */
@@ -251,7 +250,6 @@ const WORKFLOW_SETTINGS = Object.keys({
   loopMode: true,
   rollbackMode: true,
   maxDurationMs: true,
-  wakeAfterMs: true,
 } satisfies Record<
   Exclude<keyof WorkflowDefinition, keyof OperativeDefinition | 'syncDurability'>,
   true
@@ -275,6 +273,29 @@ const CLASS_SETTINGS = [
   'beyondWindowPolicy',
   'compactAfterBytes',
 ] satisfies readonly (keyof WorkflowDefinition | keyof ChannelBuilder)[];
+
+/**
+ * Every field either form reads, or refuses under a reason of its own. The
+ * operative's own are keyed by the type, so a field the definition gains is
+ * listed here or does not compile; anything else, a retired setting among
+ * them, is refused by name.
+ */
+const DEFINITION_FIELDS = new Set<string>([
+  ...Object.keys({
+    factoryId: true,
+    persistent: true,
+    sleepWhenIdle: true,
+    channels: true,
+    syncDurability: true,
+  } satisfies Record<keyof OperativeDefinition | 'syncDurability', true>),
+  ...WORKFLOW_SETTINGS,
+  ...CLASS_SETTINGS,
+  ...SHORT_FORM_KEYS,
+  ...TASKLET_FIELDS,
+  'run',
+  'kind',
+  'name',
+]);
 
 /** The keys among `keys` a definition writes, quoted as a refusal names them, or `''`. */
 function written(definition: object, keys: readonly string[]): string {
@@ -320,6 +341,15 @@ function channelsOf(
       null,
       `declares ${foreign}, which only a workflow carries; a stream has no loop, rollback or ` +
         'lifecycle setting, so the operative is declared with `defineWorkflow` or without it',
+    );
+  }
+  const unknownKeys = Object.keys(definition).filter((key) => !DEFINITION_FIELDS.has(key));
+  if (unknownKeys.length > 0) {
+    throw new DeclarationError(
+      definition.factoryId,
+      null,
+      `declares unknown \`${unknownKeys.join('`, `')}\`; an operative definition carries no such ` +
+        'field',
     );
   }
   const { channels } = definition;
@@ -901,7 +931,6 @@ export function defineWorkflow(definition: EitherForm<WorkflowDefinition>): Clas
     loopMode: definition.loopMode ?? 'once',
     rollbackMode: definition.rollbackMode ?? 'all_or_nothing',
     maxDurationMs: definition.maxDurationMs,
-    wakeAfterMs: definition.wakeAfterMs,
   };
   for (const [field, modes] of Object.entries(WORKFLOW_MODES)) {
     const value = workflow[field as keyof typeof WORKFLOW_MODES];

@@ -682,23 +682,24 @@ test("an edge payload is the encoder's own bytes, with nothing layered on top", 
   assert.deepEqual(outputs[1].payload, encodeValue(10));
 });
 
-test('every timer call inside a workflow tasklet fails naming TimersUnavailable', async () => {
+test('every timer call inside a workflow tasklet reaches the item effect as a timer op', async () => {
   const calls = {
-    timerAfter: (ctx) => ctx.timerAfter(1_000),
-    timerAtEventTime: (ctx) => ctx.timerAtEventTime(5_000n),
-    cancelTimer: (ctx) => ctx.cancelTimer('processing_time', 2_000n),
+    timerAfter: [(ctx) => ctx.timerAfter(1_000), 'processing_time', 2_000n, true],
+    timerAtEventTime: [(ctx) => ctx.timerAtEventTime(5_000n), 'event_time', 5_000n, true],
+    cancelTimer: [
+      (ctx) => ctx.cancelTimer('processing_time', 2_000n),
+      'processing_time',
+      2_000n,
+      false,
+    ],
   };
-  for (const [call, arm] of Object.entries(calls)) {
-    let refused;
+  for (const [call, [arm, kind, scheduledAt, register]] of Object.entries(calls)) {
     const Arms = defineTasklet({
       name: 'arms',
       run: (_, ctx) => {
-        try {
-          arm(ctx);
-        } catch (error) {
-          refused = error;
-        }
+        arm(ctx);
       },
+      onTimer: () => {},
     });
     const spec = defineWorkflow({
       factoryId: `wf_timer_${call}`,
@@ -708,9 +709,26 @@ test('every timer call inside a workflow tasklet fails naming TimersUnavailable'
       activationFor(spec.factoryId)({ items: [inputItem(1)] }),
       depsFor(spec),
     );
-    assert.match(String(refused?.message), new RegExp(`^TimersUnavailable: arms: ${call}`));
-    assert.deepEqual(effects[0].timers, [], `${call} recorded a timer op before refusing`);
+    assert.deepEqual(effects[0].timers, [{ kind, scheduledAt, register }], call);
   }
+});
+
+test('a timer call inside a compensate hook fails naming TimersUnavailable', async () => {
+  const Undo = defineTasklet({
+    name: 'undo',
+    run: () => {},
+    compensate: (_outputs, ctx) => ctx.timerAfter(1_000),
+  });
+  const spec = defineWorkflow({
+    factoryId: 'wf_timer_compensate',
+    channels: (c) => c.input('in').into(Undo),
+  });
+  const result = await answer(
+    activationFor(spec.factoryId)({ kind: 'compensate_run', outputs: [] }),
+    depsFor(spec),
+  );
+  assert.equal(result.outcome, 'failed');
+  assert.match(result.error, /TimersUnavailable: undo: timerAfter inside compensate/);
 });
 
 test('the same graph on a stream class releases one output per consumer', async () => {

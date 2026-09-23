@@ -95,7 +95,6 @@ function fullyDeclaredWorkflow() {
     loopMode: 'per_input',
     rollbackMode: 'keep_progress',
     maxDurationMs: 120_000,
-    wakeAfterMs: 30_000,
     syncDurability: true,
     channels: (c) => c.input('in').into(defineTasklet({ name: 'step', run: () => {} })),
   });

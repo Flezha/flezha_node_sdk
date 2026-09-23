@@ -28,6 +28,10 @@ const RELEASE_ENV = 'FLEZHA_WORKFLOW_E2E_RELEASE';
 const blockUntilReleased = () =>
   process.env[RELEASE_ENV] ? Promise.resolve() : new Promise(() => {});
 
+/** Park at `point` when this runner was booted to hold there, until the release. */
+const holdAt = (point) =>
+  process.env.FLEZHA_WORKFLOW_E2E_HOLD === point ? blockUntilReleased() : Promise.resolve();
+
 /** Read at handler time: each scenario arms it on the runner it launches. */
 const armed = (name) => process.env[name] !== undefined;
 
@@ -411,20 +415,79 @@ export const retryWorkflow = defineWorkflow({
   },
 });
 
-// -- workflow_timer_refused -------------------------------------------------
+// -- timer_loop_workflow ----------------------------------------------------
 //
-// A workflow tasklet registering a processing-time timer. A workflow's stage
-// commit carries no timer, so the context refuses the call naming
-// `TimersUnavailable`: the tasklet fails and the instance ends in error.
+// `in -> tick -> relay -> out`, a per-input loop whose `tick` arms a
+// processing-time timer of the delay `after:<ms>` names and emits `armed:<at>`;
+// its firing emits `fired:<at>` and opens a pass of its own. `slow:<ms>` holds
+// `tick` that long, for a firing due mid-pass (workflow.rs). On a runner booted
+// with `FLEZHA_WORKFLOW_E2E_HOLD` the firing parks at the gate: `timer` inside
+// `on_timer`, before `tick` commits; `relay` in `relay`, after.
 
-const TimerInWorkflow = statelessStep('workflow_timer_refused', (_input, ctx) => {
-  ctx.timerAfter(60_000);
+const millisAfter = (input, prefix) => Number.parseInt(input.slice(prefix.length), 10) || 0;
+
+const TimerTick = defineTasklet({
+  name: 'tick',
+  initialState: () => ({ items: [] }),
+  applyChange: (state, recorded) => insertSorted(state.items, recorded.insert),
+  run: async (input, ctx) => {
+    if (input.startsWith('after:')) {
+      const at = ctx.timerAfter(millisAfter(input, 'after:'));
+      ctx.change({ insert: `armed:${at}` });
+      ctx.emit(`armed:${at}`);
+      return;
+    }
+    if (input.startsWith('slow:')) {
+      await new Promise((resolve) => setTimeout(resolve, millisAfter(input, 'slow:')));
+    }
+    ctx.emit(input);
+  },
+  onTimer: async (timer, ctx) => {
+    await holdAt('timer');
+    ctx.emit(`fired:${timer.scheduledAt}`);
+  },
 });
 
-export const workflowTimerRefused = defineWorkflow({
-  factoryId: 'workflow_timer_refused',
+const TimerRelay = statelessStep('relay', async (input, ctx) => {
+  if (input.startsWith('fired:')) await holdAt('relay');
+  ctx.emit(`relay:${input}`);
+});
+
+export const timerLoopWorkflow = defineWorkflow({
+  factoryId: 'timer_loop_workflow',
+  loopMode: 'per_input',
+  maxDurationMs: 600_000,
   channels: (c) => {
-    c.input('input', { codec: 'text' }).into(TimerInWorkflow);
+    c.input('in', { codec: 'text' }).into(TimerTick).named('ticked').into(TimerRelay).sink('out');
+  },
+});
+
+// -- event_timer_workflow ---------------------------------------------------
+//
+// An entry-fed tasklet whose clock is the message's leading event time; each
+// message arms an event-time timer 100 later and emits `seen:<t>`, and the
+// firing emits `fired:<at>` (workflow.rs).
+
+const EventTick = defineTasklet({
+  name: 'event_tick',
+  clock: 'event_time',
+  eventTime: (input) => Number(String(input).split(':')[0]) || 0,
+  initialState: () => ({ items: [] }),
+  applyChange: (state, recorded) => insertSorted(state.items, recorded.insert),
+  run: (_input, ctx) => {
+    const at = ctx.timerAtEventTime(ctx.now() + 100n);
+    ctx.change({ insert: `armed:${at}` });
+    ctx.emit(`seen:${ctx.now()}`);
+  },
+  onTimer: (timer, ctx) => ctx.emit(`fired:${timer.scheduledAt}`),
+});
+
+export const eventTimerWorkflow = defineWorkflow({
+  factoryId: 'event_timer_workflow',
+  loopMode: 'per_input',
+  maxDurationMs: 600_000,
+  channels: (c) => {
+    c.input('in', { codec: 'text' }).into(EventTick).sink('out');
   },
 });
 
@@ -667,8 +730,9 @@ export const benchChainOptout4 = benchChain('bench_chain_optout_4', 4, false);
 //
 // The long-lived loop the `turns` scenario drives (workflow_loop.rs:359): the
 // chat loop's shape with a BOUNDED per-turn state, so a million-turn soak
-// snapshots the same few bytes at every iteration, and a wake deadline for the
-// timer-wake measurements.
+// snapshots the same few bytes at every iteration. With
+// `FLEZHA_BENCH_WAKE_AFTER_MS` set each turn arms a timer that far out, whose
+// firing sends the bench's wake marker, `wake:<fired_at>`, for the timer-wake measurements.
 
 const WAKE_AFTER_ENV = 'FLEZHA_BENCH_WAKE_AFTER_MS';
 
@@ -681,8 +745,11 @@ const BenchTurn = defineTasklet({
   },
   run: (input, ctx) => {
     ctx.change({ turn: input });
+    const after = Number.parseInt(process.env[WAKE_AFTER_ENV] ?? '', 10);
+    if (after >= 0) ctx.timerAfter(after);
     ctx.emit(input);
   },
+  onTimer: (timer, ctx) => ctx.emit(`wake:${timer.scheduledAt}`),
 });
 
 export const benchLoopWorkflow = defineWorkflow({
@@ -690,7 +757,6 @@ export const benchLoopWorkflow = defineWorkflow({
   loopMode: 'per_input',
   // A day, not the chat loop's ten minutes: a soak outlives 600 s.
   maxDurationMs: 24 * 3_600_000,
-  wakeAfterMs: Number.parseInt(process.env[WAKE_AFTER_ENV] ?? '', 10) || undefined,
   channels: (c) => {
     c.input('in', { codec: 'text' }).into(BenchTurn).named('mid').into(ChatReply).sink('out');
   },

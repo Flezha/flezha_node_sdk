@@ -652,7 +652,6 @@ test('a workflow setting on a stream is refused in either form, naming it', () =
     ['loopMode', 'per_input'],
     ['rollbackMode', 'keep_progress'],
     ['maxDurationMs', 60_000],
-    ['wakeAfterMs', 1_000],
   ]) {
     for (const [form, body] of Object.entries(forms)) {
       assert.throws(
@@ -665,6 +664,20 @@ test('a workflow setting on a stream is refused in either form, naming it', () =
         `${field} on a ${form}-form stream`,
       );
     }
+  }
+});
+
+test('the retired wake field is refused in either form, naming it', () => {
+  const forms = {
+    full: { channels: (c) => c.input('in').into(echo('p')) },
+    short: { sink: 'out', run: (input) => input },
+  };
+  for (const [form, body] of Object.entries(forms)) {
+    const { factoryId, message } = refusal(() =>
+      defineWorkflow({ factoryId: 'w', wakeAfterMs: 5_000, ...body }),
+    );
+    assert.equal(factoryId, 'w', form);
+    assert.ok(message.includes('unknown `wakeAfterMs`'), message);
   }
 });
 
