@@ -12,6 +12,8 @@
 
 import { defineStream, defineTasklet, defineWorkflow } from '@flezha/sdk';
 
+import { prefix } from './fixture_support.mjs';
+
 // -- the release gate -------------------------------------------------------
 
 const RELEASE_ENV = 'FLEZHA_WORKFLOW_E2E_RELEASE';
@@ -595,6 +597,35 @@ export const statelessLoopWorkflow = defineWorkflow({
   ...loopKnobs,
   channels: (c) => {
     c.input('in', { codec: 'text' }).into(ChatReply).sink('out');
+  },
+});
+
+// keyed_loop_workflow is a durable per-input loop keyed on its entry edge by
+// the text before the first `:`, so one Cell counts one symbol's messages and
+// emits `<symbol>:<count>`: the shape a partition group of workflow members
+// takes.
+const KeyedLoopCount = defineTasklet({
+  name: 'keyed_loop_count',
+  dynamicCells: {},
+  initialState: () => ({ value: 0 }),
+  applyChange: (state, change) => {
+    state.value += change.delta;
+  },
+  run: (input, ctx) => {
+    const symbol = prefix(input);
+    ctx.change({ delta: 1 });
+    ctx.emit(`${symbol}:${ctx.state.value}`);
+  },
+});
+
+export const keyedLoopWorkflow = defineWorkflow({
+  factoryId: 'keyed_loop_workflow',
+  ...loopKnobs,
+  channels: (c) => {
+    c.input('trades', { codec: 'text' })
+      .keyBy(prefix)
+      .into(KeyedLoopCount)
+      .sink('keyed_loop_workflow_out');
   },
 });
 

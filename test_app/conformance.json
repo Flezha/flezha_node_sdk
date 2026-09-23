@@ -87,6 +87,7 @@
       "undo_outbox_workflow",
       "chat_loop_workflow",
       "stateless_loop_workflow",
+      "keyed_loop_workflow",
       "chat_rewind_workflow",
       "reply_block_loop_workflow",
       "retry_workflow",
@@ -101,7 +102,7 @@
       "bench_chain_optout_4",
       "bench_loop_workflow"
     ],
-    "partitioned": ["partition_relay", "dynamic_cell"],
+    "partitioned": ["partition_relay", "dynamic_cell", "keyed_loop_workflow"],
     "dynamic_cell": ["dynamic_cell"],
     "pool_wedge": ["wedge_probe"],
     "schema_evolution": ["schema_evolution_v1", "schema_evolution_v2"]
