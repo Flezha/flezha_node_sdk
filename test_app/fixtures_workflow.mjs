@@ -232,17 +232,21 @@ export const keyedSagaWorkflow = defineWorkflow({
 
 // -- outbox_block_workflow --------------------------------------------------
 //
-// The transactional outbox. Task A commits durable state AND emits
-// plugin-bound output on a hybrid channel — STAGED, so it reaches the sink
-// only after the controller has journaled and fsynced A's committed entry with
-// the output inside it and flushed the outbox. Task B blocks, so a SIGKILL
-// lands with A committed and flushed and B unfinished.
+// A workflow output's identity. Task A commits durable state AND emits once,
+// keyed `k` with one metadata pair, on a keyed hybrid channel; the output rides
+// A's Cell record and reaches the sink once A's stage commits. Task B blocks,
+// so a SIGKILL lands with A committed and B unfinished.
+
+const OutboxA = durableStep('commit_a', {
+  emit: (input, ctx) => ctx.emit(input, { key: 'k', metadata: { trace: 't1' } }),
+});
 
 export const outboxBlockWorkflow = defineWorkflow({
   factoryId: 'outbox_block_workflow',
   channels: (c) => {
     c.input('in', { codec: 'text' })
-      .into(CommitA)
+      .into(OutboxA)
+      .keyed()
       .sink('mid', (value) => Buffer.from(`a-out:${value}`, 'utf8'))
       .into(BlockB);
   },
@@ -250,13 +254,12 @@ export const outboxBlockWorkflow = defineWorkflow({
 
 // -- undo_outbox_workflow ---------------------------------------------------
 //
-// The compensation half of the transactional outbox. Task UA commits, emits
-// its forward output on a hybrid plugin channel, and compensates by EMITTING
-// an undo record — plugin-bound, so it is staged and rides a compensated
-// journal entry rather than the wire. Task C fails immediately, so the chain
-// always rolls back; the hook BLOCKS, so on the first runner the undo is
-// emitted-but-never-journaled when the SIGKILL lands, proving staged undo
-// output cannot leak. The respawn re-runs the outstanding hook, whose done
+// A compensation's undo output. Task UA commits, emits its forward output on a
+// hybrid plugin channel, and compensates by EMITTING an undo record, which
+// rides UA's Cell's own record and is released once the `compensated` entry
+// naming it is durable. Task C fails immediately, so the chain always rolls
+// back; the hook BLOCKS, so on the first runner the SIGKILL lands before the
+// undo was written. The respawn re-runs the outstanding hook, whose done
 // marker never landed, and the undo is delivered exactly once.
 
 const UndoOutboxA = durableStep('undo_outbox_a', {
@@ -275,6 +278,28 @@ export const undoOutboxWorkflow = defineWorkflow({
       .into(UndoOutboxA)
       .sink('mid', (value) => Buffer.from(`out:${value}`, 'utf8'))
       .into(UndoC);
+  },
+});
+
+// -- failed_stage_workflow --------------------------------------------------
+//
+// A failed stage delivers nothing. The entry's two values reach one
+// `failed_stage` Cell in order: the first emits on a plugin channel, so the
+// Cell's record carries an output; the second fails, so the stage never
+// commits and no marker ever names that record.
+
+const FailedStage = statelessStep('failed_stage', (input, ctx) => {
+  if (input === 'b') throw new Error('failed_stage fails on b');
+  ctx.emit(input);
+});
+
+export const failedStageWorkflow = defineWorkflow({
+  factoryId: 'failed_stage_workflow',
+  channels: (c) => {
+    c.input('in', { codec: 'text' })
+      .into(KeySplit)
+      .into(FailedStage)
+      .sink('mid', (value) => Buffer.from(`lost:${value}`, 'utf8'));
   },
 });
 

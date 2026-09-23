@@ -9,7 +9,7 @@
  */
 
 import { encodeValue, plainPayload } from './codec.js';
-import { applyTransforms, isStructuredWorkflow } from './authoring.js';
+import { applyTransforms, isStructuredWorkflow, recordsEffects } from './authoring.js';
 import type { ChannelSpec, ClassSpec, ConsumerEdge, TaskNode } from './authoring.js';
 import type {
   Native,
@@ -318,17 +318,18 @@ export class Invocation implements Ctx<unknown, unknown, unknown> {
 
   /**
    * Output identity for one plugin frame, appended after the user's metadata.
-   * Written only off the tier: under it the controller derives the identity
-   * from the durable effect record, and a second answer here would contradict
-   * it. The ordinal advances on every plugin output, stamped or not, so hosts
-   * of one topology agree on the sequence.
+   * Written only when the class records no effects: under the tier, and for a
+   * durable workflow, the controller derives the identity from the durable
+   * effect record, and a second answer here would contradict it. The ordinal
+   * advances on every plugin output, stamped or not, so hosts of one topology
+   * agree on the sequence.
    */
   private stampIdentity(
     metadata: NativeMeta[],
     channel: ChannelSpec,
     key: string | undefined,
   ): void {
-    if (channel.keyed && !this.input.spec.effectivelyOnce) {
+    if (channel.keyed && !recordsEffects(this.input.spec)) {
       const cell = `${this.input.operative}/${this.input.node.name}/${this.input.cellKey ?? ''}`;
       metadata.push(
         { key: 'flz.cell', value: cell },

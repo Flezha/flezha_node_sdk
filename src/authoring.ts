@@ -1031,3 +1031,12 @@ export function applyTransforms(
 export function isStructuredWorkflow(spec: ClassSpec): boolean {
   return spec.kind === 'workflow';
 }
+
+/**
+ * Whether each invocation's output rides one effect record the controller
+ * stamps at flush: under the effectively-once tier, and for a durable
+ * workflow, whose stage commit names the record.
+ */
+export function recordsEffects(spec: ClassSpec): boolean {
+  return spec.effectivelyOnce || (spec.kind === 'workflow' && spec.persistent);
+}
