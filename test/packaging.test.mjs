@@ -30,14 +30,14 @@ import { NATIVE_PLATFORMS, SDK_PACKAGE_NAME, platformPackageName } from '../dist
 
 const here = dirname(fileURLToPath(import.meta.url));
 const sdkRoot = resolve(here, '..');
-// The workflow that builds this package's per-platform addons. It lives in
+// The bounded operator that builds this package's per-platform addons. It lives in
 // whichever repository's CI builds them: at the package root once this package
 // has one of its own, and at the enclosing tree's root while it sits inside the
 // core's. Found rather than counted, so the same test serves both layouts.
-const WORKFLOW = '.github/workflows/node-sdk.yml';
-const workflowPath = (() => {
+const BOUNDED = '.github/workflows/node-sdk.yml';
+const boundedPath = (() => {
   for (let at = sdkRoot; ; at = dirname(at)) {
-    if (existsSync(resolve(at, WORKFLOW))) return resolve(at, WORKFLOW);
+    if (existsSync(resolve(at, BOUNDED))) return resolve(at, BOUNDED);
     if (dirname(at) === at) return null;
   }
 })();
@@ -137,12 +137,12 @@ test('the build produces a package for every platform the SDK declares', () => {
 });
 
 test('every declared platform package has a build arm that produces it', () => {
-  // The workflow's matrix is the build. A platform declared here with no arm
+  // The bounded operator's matrix is the build. A platform declared here with no arm
   // there is an optional dependency the release cannot publish, which npm then
   // skips in silence at install time.
-  assert.ok(workflowPath, `no ${WORKFLOW} above ${sdkRoot}; the build matrix is what this checks`);
-  const workflow = readFileSync(workflowPath, 'utf8');
-  const arms = [...workflow.matchAll(/^\s+package:\s*(\S+)$/gm)].map((match) => match[1]);
+  assert.ok(boundedPath, `no ${BOUNDED} above ${sdkRoot}; the build matrix is what this checks`);
+  const bounded = readFileSync(boundedPath, 'utf8');
+  const arms = [...bounded.matchAll(/^\s+package:\s*(\S+)$/gm)].map((match) => match[1]);
   assert.deepEqual(
     arms.sort(),
     NATIVE_PLATFORMS.map((platform) => platform.suffix).sort(),
@@ -150,7 +150,7 @@ test('every declared platform package has a build arm that produces it', () => {
   );
   for (const platform of NATIVE_PLATFORMS) {
     assert.ok(
-      workflow.includes(`target: ${platform.target}`),
+      bounded.includes(`target: ${platform.target}`),
       `no build arm targets ${platform.target}, which ${platform.suffix} is built from`,
     );
   }

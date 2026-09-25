@@ -2,9 +2,9 @@ import { createRunner } from '@flezha/sdk';
 
 /**
  * Starts a runner: a process that connects to the controller and serves your
- * operatives.
+ * operators.
  *
- * An operative is registered by module specifier rather than as an imported
+ * An operator is registered by module specifier rather than as an imported
  * value, because every dispatch loop imports the module itself. That is what
  * lets `.workers(n)` move dispatch onto worker threads without a rewrite.
  * Registering therefore imports, which is asynchronous, so each one is its own
@@ -13,22 +13,22 @@ import { createRunner } from '@flezha/sdk';
 const namespace = process.argv[2] ?? 'default';
 
 const runner = createRunner(namespace);
-await runner.registerFactory('./echo_operative.mjs');
+await runner.registerFactory('./echo_operator.mjs');
 
 // Resolves once the runner is connected and serving. The process then keeps
 // running until a SIGTERM, or until standard input closes.
 await runner.run();
 
-// Everything `flz operative` and `flz plugin` do is also a method here.
+// Everything `flz operator` and `flz plugin` do is also a method here.
 // Uncomment to drive this namespace from the application instead of from a
 // terminal:
 //
 // const admin = runner.admin();
-// await admin.startOperative('echo', { id: 'my_echo' });
+// await admin.startOperator('echo', { id: 'my_echo' });
 // await admin.enablePlugin('writer', {
 //   id: 'writer',
-//   provider: 'operative_file_sink',
-//   operative_id: 'my_echo',
+//   provider: 'operator_file_sink',
+//   operator_id: 'my_echo',
 //   opts: { path: 'echo-out.txt' },
 //   hooks: [['on_output', {}]],
 // });

@@ -72,8 +72,8 @@ export function specsFrom(specifier: string, module: unknown): ClassSpec[] {
   }
   if (specs.length === 0) {
     throw new Error(
-      `handler module \`${specifier}\` exports no operative; export the value ` +
-        '`defineStream(...)` or `defineWorkflow(...)` returned',
+      `handler module \`${specifier}\` exports no operator; export the value ` +
+        '`defineUnbounded(...)` or `defineBounded(...)` returned',
     );
   }
   return specs;
@@ -105,11 +105,11 @@ export class Runner {
   constructor(readonly namespace: string) {}
 
   /**
-   * Register a module's operatives, of either kind — the kind is read from what
+   * Register a module's operators, of either kind — the kind is read from what
    * each export declares, never named by the call.
    *
    * Awaited, because registering imports a module. Before `run()` the import
-   * happens here, so a module that fails to load or exports no operative
+   * happens here, so a module that fails to load or exports no operator
    * rejects at the line that registers it rather than inside `run()`; after
    * `run()` it also declares every export against the running core and every
    * worker.
@@ -179,10 +179,10 @@ export class Runner {
 
   /**
    * Administer this namespace from ordinary application code: start, stop and
-   * feed operatives, enable and disable plugins, read what is running.
+   * feed operators, enable and disable plugins, read what is running.
    *
    * The controller judges every call as the identity this connection proved,
-   * so no credential is held here and nothing expires. An operator grants a
+   * so no credential is held here and nothing expires. A user grants a
    * namespace's applications the authority once, with
    * `flz role bind runner@<namespace> app <namespace>`; until then every call
    * is refused.
@@ -266,7 +266,7 @@ export class Runner {
   }
 
   /**
-   * Shutdown is observed three ways, because the harness, an operator and the
+   * Shutdown is observed three ways, because the harness, a user and the
    * controller each have their own: end of file on standard input, a signal,
    * and the core's own stop.
    *

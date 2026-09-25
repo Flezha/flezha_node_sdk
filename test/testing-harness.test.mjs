@@ -199,9 +199,9 @@ test('a spawn answers a handle already resolved to a new instance', async () => 
   const Spawner = defineTasklet({
     name: 'spawner',
     run: async (input, ctx) => [
-      ctx.spawnWorkflow('worker', input).tryResult(),
-      ctx.spawnWorkflow('worker', input).tryResult(),
-      await ctx.spawnWorkflow('worker', input, { id: 'w1' }).wait(),
+      ctx.spawnBounded('worker', input).tryResult(),
+      ctx.spawnBounded('worker', input).tryResult(),
+      await ctx.spawnBounded('worker', input, { id: 'w1' }).wait(),
     ],
   });
   const { emits } = await TaskletTestHarness.of(Spawner).input('p');

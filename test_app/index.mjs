@@ -20,7 +20,7 @@ import { consoleLogger, createRunner } from '@flezha/sdk';
 const here = dirname(fileURLToPath(import.meta.url));
 const namespace = process.argv[2] || 'default';
 const fixtures = resolve(here, 'fixtures.mjs');
-const workflows = resolve(here, 'fixtures_workflow.mjs');
+const bounded = resolve(here, 'fixtures_bounded.mjs');
 const conformance = resolve(here, 'conformance.mjs');
 const workers = Number(process.env.FLEZHA_NODE_WORKERS ?? 0) || 0;
 const reportAt = process.env.FLEZHA_CONFORMANCE_REPORT;
@@ -54,7 +54,7 @@ if (refusalFixture) {
   await runner.registerFactory(conformance);
 } else {
   await runner.registerFactory(fixtures);
-  await runner.registerFactory(workflows);
+  await runner.registerFactory(bounded);
 }
 
 try {

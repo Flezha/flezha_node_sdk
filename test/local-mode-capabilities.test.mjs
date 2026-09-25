@@ -4,21 +4,21 @@
 // what passes there cannot be two different graphs.
 //
 // The other ten capabilities in the vocabulary are the controller's:
-// persistence, effectively-once, correction, partitioning, workflows,
+// persistence, effectively-once, correction, partitioning, bounded operators,
 // liveness, restarts. Local mode refuses them by name rather than
 // approximating them, and `sdk-local-mode` says a sixth needs its own
 // proposal.
 //
 // What each test can assert is what a run with no controller can see. A
 // durable write reaches a null sink, a parked payload has nowhere to park, and
-// a partition member's key range arrives with `AddOperative`, so the
+// a partition member's key range arrives with `AddOperator`, so the
 // assertions here are the output side of each capability, which is the half
 // the language layer produces.
 
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { LocalOperative } from '../dist/esm/index.js';
+import { LocalOperator } from '../dist/esm/index.js';
 
 import { manifest, testAppModule } from './test-app.mjs';
 
@@ -28,9 +28,9 @@ const declared = manifest().fixtures;
 const utf8 = (bytes) => Buffer.from(bytes).toString('utf8');
 
 /** Run one class over `inputs` on `channel`, and return what `sink` released. */
-async function release(operative, channel, sink, inputs, budgetMs = 20_000) {
+async function release(operator, channel, sink, inputs, budgetMs = 20_000) {
   const released = [];
-  const run = LocalOperative.start(operative);
+  const run = LocalOperator.start(operator);
   try {
     run.onSink(sink, (output) => released.push(output));
     for (const input of inputs) await run.feed(channel, input);
@@ -68,7 +68,7 @@ test('shorthand: a short form is built and run with no controller', async () => 
 test('keyed_channels: a keyed sink stamps the key the class resolved', async () => {
   // `partition_relay` is the manifest's only keyed-channel class. Partitioning
   // itself is the controller's (a member's key-group range arrives with
-  // `AddOperative`), so what is asserted here is the half the language layer
+  // `AddOperator`), so what is asserted here is the half the language layer
   // owns: the key it resolves and the stamps it puts on the released value.
   declares('keyed_channels', 'partition_relay');
 
@@ -171,7 +171,7 @@ test('a controller capability is refused by name, not approximated', async () =>
   // from, so a local run says so instead of running the graph.
   const { tierStore } = await testAppModule('fixtures_state.mjs');
   await assert.rejects(
-    async () => LocalOperative.start(tierStore),
+    async () => LocalOperator.start(tierStore),
     (error) => {
       assert.match(error.message, /effectively_once/);
       assert.match(error.message, /requires a controller/);

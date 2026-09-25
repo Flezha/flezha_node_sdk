@@ -9,7 +9,7 @@
  * a rejected promise and an encoding failure all reach the same guard.
  */
 
-import { applyTransforms, isStructuredWorkflow } from './authoring.js';
+import { applyTransforms, isStructuredBounded } from './authoring.js';
 import type { ChannelSpec, ClassSpec, ConsumerEdge, TaskNode } from './authoring.js';
 import { decodeValue, encodeValue, fromStateJson, toStateJson } from './codec.js';
 import { Invocation, type SpawnBridge } from './ctx.js';
@@ -87,7 +87,7 @@ function failed(token: bigint, message: string, nonRetryable = false): NativeAct
 /**
  * What a failure says on the wire. `name: message`, in family with what the
  * other SDKs send — this string is stored in a dead-letter entry and read by
- * an operator, and a multi-line stack there is noise the retry ladder
+ * a user, and a multi-line stack there is noise the retry ladder
  * multiplies. The stack is logged host-side instead, where it is a diagnostic
  * rather than a record.
  */
@@ -207,7 +207,7 @@ async function invoke(
     spec: registered.spec,
     node,
     outgoing: registered.outgoing[node.index] as ChannelSpec[],
-    operative: activation.operative,
+    operator: activation.operator,
     cellKey: activation.cellKey,
     changeSeq: activation.changeSeq,
     now: at.now,
@@ -261,14 +261,14 @@ async function runWork(
           // This node's own edge off the channel: a transform chain declared
           // before one `into` belongs to that consumer and to no other. It is
           // evaluated here only for a payload that reached us untransformed —
-          // an entry payload, whose producer is the wire, or a workflow
-          // stage's released value. A stream producer evaluated it as its
+          // an entry payload, whose producer is the wire, or a bounded operator
+          // stage's released value. An unbounded producer evaluated it as its
           // activation completed, and evaluating it again would compose the
           // chain with itself.
           const untransformed =
             channel === undefined ||
             channel.kind === 'entry' ||
-            isStructuredWorkflow(registered.spec);
+            isStructuredBounded(registered.spec);
           const edge = untransformed
             ? channel?.consumers.find((each) => each.tasklet === node.index)
             : undefined;

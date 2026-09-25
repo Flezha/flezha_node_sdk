@@ -2,7 +2,7 @@
 // shares, and the counter and resume twins — the same partition as
 // test/apps/python_runner/fixtures_state.py and the reference's state.rs.
 
-import { decodeValue, defineStream, defineTasklet } from '@flezha/sdk';
+import { decodeValue, defineUnbounded, defineTasklet } from '@flezha/sdk';
 
 import { prefix } from './fixture_support.mjs';
 
@@ -60,7 +60,7 @@ const BenchCheckpoint = keyedUpsertTasklet('bench_checkpoint_tasklet', upsert);
 // The same keyed upsert under both durability postures, so the round-trip
 // bench can isolate the cost of per-Cell persistence.
 const keyedUpsert = (factoryId, options = {}) =>
-  defineStream({
+  defineUnbounded({
     factoryId,
     ...options,
     channels: (c) => {
@@ -79,10 +79,10 @@ export const benchKeyed = keyedUpsert('bench_keyed');
 
 // The effectively-once reference: a keyed upsert under the tier. A 300 ms
 // backoff base keeps the min-watermark freeze observable in the DLQ e2e.
-// Declared DropNothing: a durable-input-log operative that shed at its mailbox
+// Declared DropNothing: a durable-input-log operator that shed at its mailbox
 // would hold the min-watermark on the shed offset forever while the log behind
 // it kept growing.
-export const tierStore = defineStream({
+export const tierStore = defineUnbounded({
   factoryId: 'tier_store',
   channels: (c) => {
     c.effectivelyOnce();
@@ -95,7 +95,7 @@ export const tierStore = defineStream({
   },
 });
 
-export const checkpointStore = defineStream({
+export const checkpointStore = defineUnbounded({
   factoryId: 'checkpoint_store',
   channels: (c) => {
     c.effectivelyOnce().checkpointAck();
@@ -108,7 +108,7 @@ export const checkpointStore = defineStream({
 // `checkpointEvery` is deliberately absent so the test drives the close itself
 // — with `commit:` for the batch case, and with the delay alone for the
 // quiet-Cell case.
-export const checkpointBatchedStore = defineStream({
+export const checkpointBatchedStore = defineUnbounded({
   factoryId: 'checkpoint_batched_store',
   channels: (c) => {
     c.effectivelyOnce().checkpointAck().outputsAtCheckpoint(1_500);
@@ -123,7 +123,7 @@ const envInt = (key, fallback) => Number(process.env[key]) || fallback;
 // Cell. `FLEZHA_BENCH_CHECKPOINT_OUTPUTS=at_checkpoint` (with
 // `FLEZHA_BENCH_CHECKPOINT_DELAY_MS`) additionally holds the interval's outputs
 // until it closes.
-export const benchCheckpoint = defineStream({
+export const benchCheckpoint = defineUnbounded({
   factoryId: 'bench_checkpoint',
   channels: (c) => {
     c.effectivelyOnce().checkpointEvery(envInt('FLEZHA_BENCH_CHECKPOINT_EVERY', 500));
@@ -153,7 +153,7 @@ const StoreInput = defineTasklet({
   },
 });
 
-export const storeInput = defineStream({
+export const storeInput = defineUnbounded({
   factoryId: 'store_input',
   channels: (c) => {
     c.input('input', { codec: 'text' }).into(StoreInput).sink('sink');
@@ -178,7 +178,7 @@ const Counter = defineTasklet({
   },
 });
 
-export const statefulCounter = defineStream({
+export const statefulCounter = defineUnbounded({
   factoryId: 'stateful_counter',
   channels: (c) => {
     c.input('input', { codec: 'text' }).into(CounterEntry).named('ticks').into(Counter);
@@ -187,7 +187,7 @@ export const statefulCounter = defineStream({
 
 // The same topology with per-Cell persistence off, under the reference's
 // node names: the toggle is a class property, not a different computation.
-export const persistenceOffCounter = defineStream({
+export const persistenceOffCounter = defineUnbounded({
   factoryId: 'persistence_off_counter',
   persistent: false,
   channels: (c) => {
@@ -200,7 +200,7 @@ export const persistenceOffCounter = defineStream({
 
 // -- sleeping_counter -------------------------------------------------------
 //
-// A stream that sleeps when idle: `key:delta` inputs fold into one running
+// An unbounded operator that sleeps when idle: `key:delta` inputs fold into one running
 // total per key, and every input emits `key=total` on the `totals` sink. The
 // sleep e2e reads the total after a wake to prove the Cell came back with the
 // state it slept with.
@@ -218,7 +218,7 @@ const SleepingCounter = defineTasklet({
   },
 });
 
-export const sleepingCounter = defineStream({
+export const sleepingCounter = defineUnbounded({
   factoryId: 'sleeping_counter',
   sleepWhenIdle: true,
   channels: (c) => {
@@ -252,7 +252,7 @@ const Tick = defineTasklet({
   },
 });
 
-export const coalescingCounter = defineStream({
+export const coalescingCounter = defineUnbounded({
   factoryId: 'coalescing_counter',
   channels: (c) => {
     c.input('input', { codec: 'text' }).into(TickEntry).named('ticks').into(Tick);
@@ -277,7 +277,7 @@ const ResumeProbe = defineTasklet({
   },
 });
 
-export const resumeProbe = defineStream({
+export const resumeProbe = defineUnbounded({
   factoryId: 'resume_probe',
   channels: (c) => {
     c.input('input', { codec: 'text' }).into(ResumeProbe).sink('total');
@@ -287,7 +287,7 @@ export const resumeProbe = defineStream({
 // -- schema_evolution_v1 / schema_evolution_v2 ------------------------------
 //
 // The same class either side of a deploy that edits its own state type. Both
-// halves declare the SAME tasklet name, so an operative started under v1 and
+// halves declare the SAME tasklet name, so an operator started under v1 and
 // restarted under v2 restores from the very WAL v1 wrote — which is what a
 // deploy does, with the two binaries collapsed into one fixture file.
 //
@@ -337,7 +337,7 @@ const EvolvingCartV2 = defineTasklet({
 });
 
 const evolvingCart = (factoryId, tasklet) =>
-  defineStream({
+  defineUnbounded({
     factoryId,
     channels: (c) => {
       c.input('input', { codec: 'text' }).into(tasklet).sink('total');

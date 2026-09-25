@@ -9,8 +9,8 @@ Three files, one for each part the guides describe:
 | File | Part | What it does |
 |---|---|---|
 | `echo_tasklet.mjs` | the tasklet | the processing stage: prefixes each message |
-| `echo_operative.mjs` | the operative | the graph: `in` feeds the tasklet, output lands on `out` |
-| `runner.mjs` | the runner | this process: offers the operative and waits |
+| `echo_operator.mjs` | the operator | the graph: `in` feeds the tasklet, output lands on `out` |
+| `runner.mjs` | the runner | this process: offers the operator and waits |
 
 ## Run it
 
@@ -26,8 +26,8 @@ node runner.mjs
 Then, from another terminal:
 
 ```sh
-flz operative start echo --id my_echo
-flz operative send my_echo --text 'hello world' --await 2000
+flz operator start echo --id my_echo
+flz operator send my_echo --text 'hello world' --await 2000
 ```
 
 ```
@@ -39,8 +39,8 @@ It keeps running until a SIGTERM, Ctrl-C, or its standard input closing, so do
 not start it with standard input closed. The namespace is the first argument
 and defaults to `default`: `node runner.mjs my_app`.
 
-Start it from this folder. The runner names its operative by module specifier,
-`./echo_operative.mjs`, and that resolves against the working directory.
+Start it from this folder. The runner names its operator by module specifier,
+`./echo_operator.mjs`, and that resolves against the working directory.
 
 ## Building from a checkout
 

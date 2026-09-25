@@ -1,6 +1,6 @@
-// The builders the dispatch-shaped suites share: what one operative's dispatch
+// The builders the dispatch-shaped suites share: what one operator's dispatch
 // depends on, and the activation the core hands out.
-import { defineStream, defineTasklet, validate } from '../dist/esm/index.js';
+import { defineUnbounded, defineTasklet, validate } from '../dist/esm/index.js';
 import { Registry, answer } from '../dist/esm/dispatch.js';
 
 /**
@@ -52,7 +52,7 @@ export function spawnBridge(
  * token 7 with `bridge` for its spawns; answers that input's effect.
  */
 export async function handleOnce(bridge, body, item = {}) {
-  const spec = defineStream({
+  const spec = defineUnbounded({
     factoryId: 'once',
     channels: (c) =>
       c
@@ -70,7 +70,7 @@ export const activationFor =
   (factory) =>
   (overrides = {}) => ({
     token: 1n,
-    operative: 'op-1',
+    operator: 'op-1',
     tasklet: 0,
     cellKey: 'k',
     changeSeq: 0n,

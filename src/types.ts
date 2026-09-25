@@ -94,24 +94,24 @@ export interface Ctx<TOut = never, TState = void, TChange = never> {
   checkpoint(): void;
 
   /**
-   * End the workflow instance this tasklet runs in, with `result` as the
+   * End the bounded instance this tasklet runs in, with `result` as the
    * result its completion reports, encoded as a sink naming no codec encodes a
    * value: bytes as they are, a string as UTF-8 and anything else as JSON;
    * `undefined` or `null` carries no result. The rest of the iteration still
    * runs and commits; once that commit is durable the instance ends instead of
-   * waiting for its next input. In a `once` workflow it sets the result the pass ends
+   * waiting for its next input. In a `once` bounded operator it sets the result the pass ends
    * with. A second call in one item replaces the first; calls from several
    * cells in one iteration end the instance once, with the result of the
    * tasklet latest in the chain and, within it, the cell whose key sorts
    * last.
    *
-   * A stream never completes: a stream tasklet calling this fails its input,
-   * without a retry, with an error beginning `CompleteOutsideWorkflow`.
+   * An unbounded operator never completes: an unbounded tasklet calling this fails its input,
+   * without a retry, with an error beginning `CompleteOutsideBounded`.
    */
   complete(result?: unknown): void;
 
   /**
-   * Ask the controller for a workflow instance of `factoryId` with `payload` as
+   * Ask the controller for a bounded instance of `factoryId` with `payload` as
    * its first input, or as one more input of the running instance an `id` names
    * under `ifRunning: 'deliver'`. Returns the handle at once: a failure comes out
    * of its reads, never out of this call. `ifRunning` without an `id` throws a
@@ -130,7 +130,7 @@ export interface Ctx<TOut = never, TState = void, TChange = never> {
    * string as UTF-8, anything else as JSON, which a `text` or `json` entry
    * reads.
    */
-  spawnWorkflow(factoryId: string, payload: unknown, options?: SpawnOptions): SpawnHandle;
+  spawnBounded(factoryId: string, payload: unknown, options?: SpawnOptions): SpawnHandle;
 }
 
 /** Static cell mode: a fixed key set, plus the fan-out an input belongs to. */
@@ -146,7 +146,7 @@ export interface DynamicCells {
 }
 
 export interface TaskletDefinition<TIn, TOut, TState, TChange> {
-  /** The tasklet's node identity within its operative. */
+  /** The tasklet's node identity within its operator. */
   name: string;
 
   /** Fixed key set. Dynamic keying is declared on the wiring with `keyBy`. */
@@ -327,7 +327,7 @@ export interface ChannelBuilder {
     traffic: Stream<T>,
     key: (value: T) => string,
   ): Stream<RoutedDocument<D>>;
-  /** `routeLatest` under a node name of its own, for a second router in one operative. */
+  /** `routeLatest` under a node name of its own, for a second router in one operator. */
   routeLatestNamed<D, T>(
     documents: Stream<D>,
     traffic: Stream<T>,
@@ -336,25 +336,25 @@ export interface ChannelBuilder {
   ): Stream<RoutedDocument<D>>;
 }
 
-export interface OperativeDefinition {
+export interface OperatorDefinition {
   factoryId: string;
   /** Whether change bytes are flushed to the per-cell WAL. Default true. */
   persistent?: boolean;
   /**
    * Whether an idle instance is written out and dropped from memory until its
-   * next input. Default `persistent` for a workflow, false for a stream.
+   * next input. Default `persistent` for a bounded operator, false for an unbounded operator.
    */
   sleepWhenIdle?: boolean;
   channels: (builder: ChannelBuilder) => void;
 }
 
 /**
- * The §5 short form, taken by `defineStream` and `defineWorkflow`: one
+ * The §5 short form, taken by `defineUnbounded` and `defineBounded`: one
  * tasklet's fields and its `run` body in place of a `channels` body. It
  * generates an entry channel into a tasklet named `factoryId`, and that
  * tasklet's output into the `sink` plugin channel when one is written. Every
- * class-level setting stays at its default, but a workflow's `loopMode`, which
- * `defineWorkflow` also takes here; any other class-level setting is the full
+ * class-level setting stays at its default, but a bounded operator's `loopMode`, which
+ * `defineBounded` also takes here; any other class-level setting is the full
  * form.
  */
 export interface ShortFormDefinition<TIn, TOut, TState, TChange> extends Omit<
@@ -370,8 +370,8 @@ export interface ShortFormDefinition<TIn, TOut, TState, TChange> extends Omit<
   codec?: ChannelCodec;
 }
 
-/** The definition `defineStream` takes, and a workflow's own options. */
-export interface WorkflowDefinition extends OperativeDefinition {
+/** The definition `defineUnbounded` takes, and a bounded operator's own options. */
+export interface BoundedDefinition extends OperatorDefinition {
   loopMode?: LoopMode;
   rollbackMode?: RollbackMode;
   maxDurationMs?: number;
@@ -405,8 +405,8 @@ export class SpawnAlreadyRunningError extends SpawnError {}
 /** No connected runner on any controller node registers the factory. */
 export class SpawnFactoryUnknownError extends SpawnError {}
 
-/** The factory is registered as a stream, and a spawn starts only a workflow. */
-export class SpawnFactoryNotWorkflowError extends SpawnError {}
+/** The factory is registered as an unbounded operator, and a spawn starts only a bounded operator. */
+export class SpawnFactoryNotBoundedError extends SpawnError {}
 
 /** The controller refused the spawn: authorization, quota, shutdown or a failed start. */
 export class SpawnRefusedError extends SpawnError {}

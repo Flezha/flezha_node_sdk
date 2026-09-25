@@ -8,7 +8,7 @@
 
 import { BroadcastChannel } from 'node:worker_threads';
 
-import { defineStream, defineTasklet, defineWorkflow } from '@flezha/sdk';
+import { defineUnbounded, defineTasklet, defineBounded } from '@flezha/sdk';
 
 import { prefix } from './fixture_support.mjs';
 
@@ -22,7 +22,7 @@ const DoNothing = defineTasklet({
   run: (input) => input,
 });
 
-export const doNothing = defineStream({
+export const doNothing = defineUnbounded({
   factoryId: 'do_nothing',
   channels: (c) => {
     c.input('input', { codec: 'text' }).into(DoNothing).sink('echo');
@@ -32,7 +32,7 @@ export const doNothing = defineStream({
 // Echo with a declared DropNothing on its entry mailbox. `do_nothing` is the
 // merge-blocking bench factory and must not change; this keeps the round-trip
 // bench's back-pressure posture independent of it.
-export const benchEcho = defineStream({
+export const benchEcho = defineUnbounded({
   factoryId: 'bench_echo',
   channels: (c) => {
     c.input('input', { codec: 'text' }).onFull('drop_nothing').into(DoNothing).sink('echo');
@@ -49,14 +49,14 @@ const CompareFilter = defineTasklet({
   run: (input, ctx) => (ctx.state.comparable === input ? input : undefined),
 });
 
-export const compareFilter = defineStream({
+export const compareFilter = defineUnbounded({
   factoryId: 'compare_filter',
   channels: (c) => {
     c.input('input', { codec: 'text' }).into(CompareFilter).sink('sink');
   },
 });
 
-// -- static_cell / sugar_static_cell / mixed_operative ------------------
+// -- static_cell / sugar_static_cell / mixed_operator ------------------
 
 const STATIC_KEYS = ['a', 'b', 'c', 'd'];
 const staticCellsFor = (input) => {
@@ -84,7 +84,7 @@ const passThrough = (name, options = {}) =>
 const StaticEntry = staticEntry('static_entry_tasklet');
 const StaticDownstream = passThrough('static_downstream_tasklet');
 
-export const staticCell = defineStream({
+export const staticCell = defineUnbounded({
   factoryId: 'static_cell',
   channels: (c) => {
     c.input('input', { codec: 'text' })
@@ -100,7 +100,7 @@ const MacroStaticDownstream = passThrough('macro_static_downstream_tasklet');
 
 // The reference pipeline sugar leaves the hop unnamed and lets the sink name
 // the producing channel.
-export const sugarStaticCell = defineStream({
+export const sugarStaticCell = defineUnbounded({
   factoryId: 'sugar_static_cell',
   channels: (c) => {
     c.input('input', { codec: 'text' })
@@ -113,8 +113,8 @@ export const sugarStaticCell = defineStream({
 const MixedMacroEntry = passThrough('mixed_macro_entry_tasklet');
 const MixedHandDownstream = passThrough('mixed_hand_downstream');
 
-export const mixedOperative = defineStream({
-  factoryId: 'mixed_operative',
+export const mixedOperator = defineUnbounded({
+  factoryId: 'mixed_operator',
   channels: (c) => {
     c.input('input', { codec: 'text' })
       .into(MixedMacroEntry)
@@ -126,18 +126,18 @@ export const mixedOperative = defineStream({
 
 // -- the §5 short forms -----------------------------------------------------
 //
-// One operative declaration each, carrying its tasklet's `run` body in place
+// One operator declaration each, carrying its tasklet's `run` body in place
 // of a `channels` body; the function's name is its kind. No tasklet is
 // declared beside them.
 
-export const sugarDoNothing = defineStream({
+export const sugarDoNothing = defineUnbounded({
   factoryId: 'sugar_do_nothing',
   sink: 'sugar_do_nothing_echo',
   codec: 'text',
   run: (input) => input,
 });
 
-export const sugarStoreInput = defineStream({
+export const sugarStoreInput = defineUnbounded({
   factoryId: 'sugar_store_input',
   sink: 'sugar_store_sink',
   codec: 'text',
@@ -151,7 +151,7 @@ export const sugarStoreInput = defineStream({
   },
 });
 
-export const sugarNamedInput = defineStream({
+export const sugarNamedInput = defineUnbounded({
   factoryId: 'sugar_named_input',
   sink: 'sugar_named_input_sink',
   input: 'prices',
@@ -159,9 +159,9 @@ export const sugarNamedInput = defineStream({
   run: (input) => input,
 });
 
-export const sugarWorkflow = defineWorkflow({
-  factoryId: 'sugar_workflow',
-  sink: 'sugar_workflow_placed',
+export const sugarBounded = defineBounded({
+  factoryId: 'sugar_bounded',
+  sink: 'sugar_bounded_placed',
   input: 'order',
   codec: 'text',
   run: (input) => input,
@@ -169,16 +169,16 @@ export const sugarWorkflow = defineWorkflow({
 
 // The one class-level setting a short form writes: one pass per message, so
 // the instance runs on after the first.
-export const sugarWorkflowPerInput = defineWorkflow({
-  factoryId: 'sugar_workflow_per_input',
-  sink: 'sugar_workflow_per_input_out',
+export const sugarBoundedPerInput = defineBounded({
+  factoryId: 'sugar_bounded_per_input',
+  sink: 'sugar_bounded_per_input_out',
   codec: 'text',
   loopMode: 'per_input',
   run: (input) => input,
 });
 
 // No sink: the entry feeds a tasklet that only keeps state.
-export const sugarStateOnly = defineStream({
+export const sugarStateOnly = defineUnbounded({
   factoryId: 'sugar_state_only',
   input: 'ticks',
   codec: 'text',
@@ -195,7 +195,7 @@ export const sugarStateOnly = defineStream({
 //
 // One emit reaching two destinations: an inter-tasklet consumer and a plugin
 // wire with its own serializer. The serializer refuses a sentinel value, so an
-// operator can observe end to end that a refusal is isolated to the emit rather
+// user can observe end to end that a refusal is isolated to the emit rather
 // than failing the item.
 
 const HYBRID_SENTINEL = 0xdeadbeef;
@@ -220,7 +220,7 @@ const HybridConsumer = defineTasklet({
   },
 });
 
-export const hybridChannel = defineStream({
+export const hybridChannel = defineUnbounded({
   factoryId: 'hybrid_channel',
   channels: (c) => {
     c.input('input', { codec: 'text' })
@@ -256,7 +256,7 @@ const MergeLabel = defineTasklet({
   run: (input) => `${input.source}:${input.payload}`,
 });
 
-export const mergedInput = defineStream({
+export const mergedInput = defineUnbounded({
   factoryId: 'merged_input',
   channels: (c) => {
     c.merge()
@@ -276,7 +276,7 @@ export const mergedInput = defineStream({
 
 const TransformLabel = passThrough('transform_label_tasklet', { dynamicCells: {} });
 
-export const transformChain = defineStream({
+export const transformChain = defineUnbounded({
   factoryId: 'transform_chain',
   channels: (c) => {
     c.input('trades', { codec: 'text' })
@@ -306,7 +306,7 @@ const StressB = stress('stress_b', () => ['p0']);
 const StressC = stress('stress_c', () => ['p0']);
 const StressD = stress('stress_d', () => ['p0']);
 
-export const cellStress = defineStream({
+export const cellStress = defineUnbounded({
   factoryId: 'cell_stress',
   channels: (c) => {
     c.input('input', { codec: 'text' })
@@ -334,7 +334,7 @@ const PoisonProbe = defineTasklet({
   },
 });
 
-export const poisonProbe = defineStream({
+export const poisonProbe = defineUnbounded({
   factoryId: 'poison_probe',
   channels: (c) => {
     c.input('input', { codec: 'text' }).retryBackoffMs(25).into(PoisonProbe).sink('out');
@@ -363,7 +363,7 @@ const WedgeProbe = defineTasklet({
   },
 });
 
-export const wedgeProbe = defineStream({
+export const wedgeProbe = defineUnbounded({
   factoryId: 'wedge_probe',
   channels: (c) => {
     c.input('input', { codec: 'text' }).into(WedgeProbe).sink('out');
@@ -398,7 +398,7 @@ const Candle = defineTasklet({
   },
 });
 
-export const candle = defineStream({
+export const candle = defineUnbounded({
   factoryId: 'candle',
   channels: (c) => {
     c.effectivelyOnce().correctionWindow(600_000);
@@ -433,7 +433,7 @@ const SessionTimeout = defineTasklet({
   },
 });
 
-export const sessionTimeout = defineStream({
+export const sessionTimeout = defineUnbounded({
   factoryId: 'session_timeout',
   channels: (c) => {
     c.input('input', { codec: 'text' }).into(SessionTimeout).sink('kafka');
@@ -457,7 +457,7 @@ const boundedMailboxTasklet = (name) =>
   });
 
 const boundedMailbox = (policy) =>
-  defineStream({
+  defineUnbounded({
     factoryId: `bounded_mailbox_${policy}`,
     channels: (c) => {
       c.input(`${policy}_input`, { codec: 'text' })
@@ -473,11 +473,11 @@ export const boundedMailboxDropOldest = boundedMailbox('drop_oldest');
 
 // -- partition_relay --------------------------------------------------------
 //
-// The partitioned-operatives upstream: keyed on the wiring so it can be
+// The partitioned-operators upstream: keyed on the wiring so it can be
 // partitioned at all, and emitting keyed so a partitioned forward target can
 // resolve the owning member. The plugin channel is named `input` because a
 // forwarded frame keeps its producing channel's name, and that is what selects
-// the receiving operative's entry channel — so the entry here is `in`.
+// the receiving operator's entry channel — so the entry here is `in`.
 
 const PartitionRelay = defineTasklet({
   name: 'partition_relay_tasklet',
@@ -492,7 +492,7 @@ const PartitionRelay = defineTasklet({
   },
 });
 
-export const partitionRelay = defineStream({
+export const partitionRelay = defineUnbounded({
   factoryId: 'partition_relay',
   channels: (c) => {
     c.input('in', { codec: 'text' }).keyBy(prefix).into(PartitionRelay).keyed().sink('input');
@@ -516,7 +516,7 @@ const DynamicCell = defineTasklet({
   },
 });
 
-export const dynamicCell = defineStream({
+export const dynamicCell = defineUnbounded({
   factoryId: 'dynamic_cell',
   channels: (c) => {
     c.input('input', { codec: 'text' })

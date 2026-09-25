@@ -2,14 +2,14 @@
  * The invocation context: every deterministic effect a handler is allowed.
  *
  * The context accumulates one item's effects — recorded changes, outputs,
- * timer operations, the checkpoint flag, a request to end the workflow — and
+ * timer operations, the checkpoint flag, a request to end the bounded operator — and
  * the dispatcher turns them into the `ItemEffect` the core folds. Nothing here
  * reaches the wire on its own; an emit is a value in a list until the
  * completion carries it.
  */
 
 import { encodeValue, plainPayload } from './codec.js';
-import { applyTransforms, isStructuredWorkflow, recordsEffects } from './authoring.js';
+import { applyTransforms, isStructuredBounded, recordsEffects } from './authoring.js';
 import type { ChannelSpec, ClassSpec, ConsumerEdge, TaskNode } from './authoring.js';
 import type {
   Native,
@@ -23,7 +23,7 @@ import { readOnlyState } from './state.js';
 import {
   EmitError,
   SpawnAlreadyRunningError,
-  SpawnFactoryNotWorkflowError,
+  SpawnFactoryNotBoundedError,
   SpawnFactoryUnknownError,
   SpawnRefusedError,
   SpawnTimeoutError,
@@ -48,7 +48,7 @@ const WAIT_MS = 0xffff_ffff;
 const FAILURES = {
   already_running: SpawnAlreadyRunningError,
   factory_unknown: SpawnFactoryUnknownError,
-  factory_not_workflow: SpawnFactoryNotWorkflowError,
+  factory_not_bounded: SpawnFactoryNotBoundedError,
   refused: SpawnRefusedError,
   timeout: SpawnTimeoutError,
   unavailable: SpawnUnavailableError,
@@ -102,7 +102,7 @@ export interface InvocationInput {
   node: TaskNode;
   /** Channels this tasklet produces on, in declaration order. */
   outgoing: ChannelSpec[];
-  operative: string;
+  operator: string;
   cellKey: string | undefined;
   changeSeq: bigint;
   now: bigint;
@@ -175,7 +175,7 @@ export class Invocation implements Ctx<unknown, unknown, unknown> {
       // Lazily, because most invocations never ask and the identity is the
       // one part of the derivation that costs an allocation.
       this.identityBytes = cellIdentity(
-        this.input.operative,
+        this.input.operator,
         this.input.node.name,
         this.input.cellKey ?? '',
       );
@@ -228,11 +228,11 @@ export class Invocation implements Ctx<unknown, unknown, unknown> {
     }
     for (const channel of targets) {
       // A channel with no consumer releases nothing on the edge path: on a
-      // workflow that is the plugin-bound terminal, and seeding the next stage
+      // bounded operator that is the plugin-bound terminal, and seeding the next stage
       // from it would hand the driver a terminal output.
-      if (isStructuredWorkflow(this.input.spec)) {
+      if (isStructuredBounded(this.input.spec)) {
         const edge = channel.consumers[0];
-        if (edge) this.outputs.push(this.workflowOutput(channel, edge, value));
+        if (edge) this.outputs.push(this.boundedOutput(channel, edge, value));
       } else {
         for (const edge of channel.consumers) {
           this.outputs.push(...this.edgeOutputs(channel, edge, value, options));
@@ -242,7 +242,7 @@ export class Invocation implements Ctx<unknown, unknown, unknown> {
     }
   }
 
-  private workflowOutput(channel: ChannelSpec, edge: ConsumerEdge, value: unknown): NativeOutput {
+  private boundedOutput(channel: ChannelSpec, edge: ConsumerEdge, value: unknown): NativeOutput {
     return {
       target: 'edge',
       channel: channel.index,
@@ -319,7 +319,7 @@ export class Invocation implements Ctx<unknown, unknown, unknown> {
   /**
    * Output identity for one plugin frame, appended after the user's metadata.
    * Written only when the class records no effects: under the tier, and for a
-   * durable workflow, the controller derives the identity from the durable
+   * durable bounded operator, the controller derives the identity from the durable
    * effect record, and a second answer here would contradict it. The ordinal
    * advances on every plugin output, stamped or not, so hosts of one topology
    * agree on the sequence.
@@ -330,7 +330,7 @@ export class Invocation implements Ctx<unknown, unknown, unknown> {
     key: string | undefined,
   ): void {
     if (channel.keyed && !recordsEffects(this.input.spec)) {
-      const cell = `${this.input.operative}/${this.input.node.name}/${this.input.cellKey ?? ''}`;
+      const cell = `${this.input.operator}/${this.input.node.name}/${this.input.cellKey ?? ''}`;
       metadata.push(
         { key: 'flz.cell', value: cell },
         { key: 'flz.seq', value: `${this.input.changeSeq}.${this.emitOrdinal}` },
@@ -382,11 +382,11 @@ export class Invocation implements Ctx<unknown, unknown, unknown> {
         : plainPayload(result, this.input.node.name);
   }
 
-  spawnWorkflow(factoryId: string, payload: unknown, options: SpawnOptions = {}): SpawnHandle {
+  spawnBounded(factoryId: string, payload: unknown, options: SpawnOptions = {}): SpawnHandle {
     const { id, ifRunning } = options;
     if (ifRunning !== undefined && !id) {
       throw new TypeError(
-        `${this.input.node.name}: spawnWorkflow was given ifRunning without an id; a spawn ` +
+        `${this.input.node.name}: spawnBounded was given ifRunning without an id; a spawn ` +
           'without an id always starts a new instance, so pass an id or leave ifRunning out',
       );
     }

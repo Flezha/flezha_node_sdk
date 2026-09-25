@@ -5,7 +5,7 @@
  * No tasklet has to be running and the application holds no credential of
  * its own: the controller judges every call as the identity the connection
  * already established, so nothing an unattended process holds expires. An
- * operator grants a namespace's applications the authority once and revokes it
+ * user grants a namespace's applications the authority once and revokes it
  * the same way, and a revocation takes effect on the next call:
  *
  * ```sh
@@ -17,24 +17,24 @@
  */
 import type { Native } from './native.js';
 
-/** What an operative start takes beside its factory, which is what `flz operative start` takes. */
+/** What an operator start takes beside its factory, which is what `flz operator start` takes. */
 export interface StartOptions {
   /**
-   * The operative's own id. Without one, every start runs a new operative
+   * The operator's own id. Without one, every start runs a new operator
    * under a generated id, so a start retried after a lost answer starts a
-   * second one; with one, a second start leaves the running operative untouched.
+   * second one; with one, a second start leaves the running operator untouched.
    */
   id?: string;
   /** The values the factory is seeded with, keyed by tasklet. */
   init_values?: unknown;
-  /** The start options, as `flz operative start` takes them. */
+  /** The start options, as `flz operator start` takes them. */
   opts?: unknown;
 }
 
 /** What a start did: `already_running` only for an id given while it runs. */
 export type StartOutcome = 'started' | 'already_running';
 
-/** A start's answer: the id the operative runs under, given or generated. */
+/** A start's answer: the id the operator runs under, given or generated. */
 export interface StartResult {
   id: string;
   outcome: StartOutcome;
@@ -43,26 +43,26 @@ export interface StartResult {
 export class Admin {
   constructor(private readonly native: Native) {}
 
-  /** Start an operative of `factoryId`. */
-  async startOperative(factoryId: string, options: StartOptions = {}): Promise<StartResult> {
-    const { id, outcome } = (await this.call('Operative.start', {
+  /** Start an operator of `factoryId`. */
+  async startOperator(factoryId: string, options: StartOptions = {}): Promise<StartResult> {
+    const { id, outcome } = (await this.call('Operator.start', {
       ...options,
       factory_id: factoryId,
     })) as StartResult;
     return { id, outcome };
   }
 
-  /** Stop an operative, or the whole partition group it names. */
-  async stopOperative(operativeId: string): Promise<unknown> {
-    return this.call('Operative.stop', operativeId);
+  /** Stop an operator, or the whole partition group it names. */
+  async stopOperator(operatorId: string): Promise<unknown> {
+    return this.call('Operator.stop', operatorId);
   }
 
   /**
-   * Inject a message into an operative's input stream and block for the
+   * Inject a message into an operator's input stream and block for the
    * delivery verdict. `channel` may be empty for none.
    */
-  async send(operativeId: string, message: string, channel = ''): Promise<unknown> {
-    return this.call('Operative.send', operativeId, message, channel);
+  async send(operatorId: string, message: string, channel = ''): Promise<unknown> {
+    return this.call('Operator.send', operatorId, message, channel);
   }
 
   /** Enable a plugin, built from the fields `flz plugin enable` takes. */
@@ -75,9 +75,9 @@ export class Admin {
     return this.call('PluginManager.disable', pluginId);
   }
 
-  /** The operative ids running in this namespace. */
-  async listOperatives(): Promise<unknown> {
-    return this.call('Operative.list_operatives');
+  /** The operator ids running in this namespace. */
+  async listOperators(): Promise<unknown> {
+    return this.call('Operator.list_operators');
   }
 
   /** The plugins enabled on the controller node answering this call. */
@@ -86,8 +86,8 @@ export class Admin {
   }
 
   /** One cell's live state, and the change sequence it was read at. */
-  async cellState(operativeId: string, cellKey: string): Promise<unknown> {
-    return this.call('Operative.cell_state', operativeId, cellKey);
+  async cellState(operatorId: string, cellKey: string): Promise<unknown> {
+    return this.call('Operator.cell_state', operatorId, cellKey);
   }
 
   /**

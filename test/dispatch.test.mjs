@@ -10,9 +10,9 @@ import {
   ACTIVATION_SCHEMA_VERSION,
   DeclarationError,
   decodeValue,
-  defineStream,
+  defineUnbounded,
   defineTasklet,
-  defineWorkflow,
+  defineBounded,
   encodeValue,
   loadNative,
 } from '../dist/esm/index.js';
@@ -64,7 +64,7 @@ const Counter = defineTasklet({
   },
 });
 
-const Spec = defineStream({
+const Spec = defineUnbounded({
   factoryId: 'counters',
   channels: (c) => {
     c.input('in')
@@ -108,7 +108,7 @@ test('a throwing handler is a retryable verdict and stops the batch', async () =
       return input;
     },
   });
-  const spec = defineStream({
+  const spec = defineUnbounded({
     factoryId: 'throwing_op',
     channels: (c) => c.input('in').into(Throwing).sink(),
   });
@@ -132,7 +132,7 @@ test('a rejected promise is answered the same way a throw is', async () => {
       throw Object.assign(new Error('gave up'), { nonRetryable: true });
     },
   });
-  const spec = defineStream({
+  const spec = defineUnbounded({
     factoryId: 'rejecting_op',
     channels: (c) => c.input('in').into(Rejecting).sink(),
   });
@@ -197,7 +197,7 @@ test('the JSON handover carries a bigint and a byte array without narrowing', as
     },
     run: () => undefined,
   });
-  const spec = defineStream({
+  const spec = defineUnbounded({
     factoryId: 'wide_op',
     channels: (c) => c.input('in').into(Wide).sink(),
   });
@@ -270,7 +270,7 @@ test('one payload failing its prepare does not fail the others', async () => {
     },
     run: (input) => input,
   });
-  const spec = defineStream({
+  const spec = defineUnbounded({
     factoryId: 'windowed_op',
     channels: (c) =>
       c
@@ -339,17 +339,17 @@ test('an activation for an unknown factory is answered, not dropped', async () =
   assert.match(reported, /unknown activation token 13/);
 });
 
-test('a module specifier is imported and its operatives registered', async () => {
+test('a module specifier is imported and its operators registered', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'flezha-specifier-'));
   const module = join(dir, 'handlers.mjs');
   writeFileSync(
     module,
-    `import { defineStream, defineTasklet } from '${new URL('../dist/esm/index.js', import.meta.url).pathname}';\n` +
+    `import { defineUnbounded, defineTasklet } from '${new URL('../dist/esm/index.js', import.meta.url).pathname}';\n` +
       `const Echo = defineTasklet({ name: 'echo', run: (i) => i });\n` +
-      `export default defineStream({ factoryId: 'from_specifier', channels: (c) => c.input('in').into(Echo).sink() });\n`,
+      `export default defineUnbounded({ factoryId: 'from_specifier', channels: (c) => c.input('in').into(Echo).sink() });\n`,
   );
   const registry = await loadRegistry([module]);
-  assert.ok(registry.get('from_specifier'), "the module's operative was registered");
+  assert.ok(registry.get('from_specifier'), "the module's operator was registered");
   assert.deepEqual(
     specsFrom(module, await importModule(module)).map((s) => s.factoryId),
     ['from_specifier'],
@@ -363,14 +363,14 @@ for (const [build, load, file, bind, exporting] of [
     'esm',
     loadRegistry,
     'handlers.mjs',
-    (sdk) => `import { defineStream, defineTasklet } from '${sdk}';`,
+    (sdk) => `import { defineUnbounded, defineTasklet } from '${sdk}';`,
     'export default',
   ],
   [
     'cjs',
     createRequire(import.meta.url)('../dist/cjs/runner.js').loadRegistry,
     'handlers.cjs',
-    (sdk) => `const { defineStream, defineTasklet } = require('${sdk}');`,
+    (sdk) => `const { defineUnbounded, defineTasklet } = require('${sdk}');`,
     'module.exports =',
   ],
 ]) {
@@ -380,10 +380,10 @@ for (const [build, load, file, bind, exporting] of [
       module,
       `${bind(new URL(`../dist/${build}/index.js`, import.meta.url).pathname)}\n` +
         `const Echo = defineTasklet({ name: 'echo', run: (i) => i });\n` +
-        `${exporting} defineStream({ factoryId: 'by_relative_path', channels: (c) => c.input('in').into(Echo).sink() });\n`,
+        `${exporting} defineUnbounded({ factoryId: 'by_relative_path', channels: (c) => c.input('in').into(Echo).sink() });\n`,
     );
     const registry = await load([`./${relative(process.cwd(), module)}`]);
-    assert.ok(registry.get('by_relative_path'), "the module's operative was registered");
+    assert.ok(registry.get('by_relative_path'), "the module's operator was registered");
   });
 }
 
@@ -404,10 +404,10 @@ test('a refusal raised while a handler module is imported keeps its own name', a
   const module = join(dir, 'handlers.mjs');
   writeFileSync(
     module,
-    `import { defineStream, defineTasklet } from '${new URL('../dist/esm/index.js', import.meta.url).pathname}';\n` +
+    `import { defineUnbounded, defineTasklet } from '${new URL('../dist/esm/index.js', import.meta.url).pathname}';\n` +
       `const A = defineTasklet({ name: 'twin', run: (i) => i });\n` +
       `const B = defineTasklet({ name: 'twin', run: (i) => i });\n` +
-      `export default defineStream({ factoryId: 'module_scope', channels: (c) => {\n` +
+      `export default defineUnbounded({ factoryId: 'module_scope', channels: (c) => {\n` +
       `  const s = c.input('in'); s.into(A); s.into(B);\n` +
       `} });\n`,
   );
@@ -431,13 +431,13 @@ test('a module that throws anything but a refusal is named, with the original er
   );
 });
 
-test('a module exporting no operative is refused naming the specifier', async () => {
+test('a module exporting no operator is refused naming the specifier', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'flezha-empty-'));
   const module = join(dir, 'empty.mjs');
   writeFileSync(module, 'export const nothing = 1;\n');
   await assert.rejects(
     () => loadRegistry([module]),
-    (error) => error.message.includes(module) && error.message.includes('exports no operative'),
+    (error) => error.message.includes(module) && error.message.includes('exports no operator'),
   );
 });
 
@@ -470,7 +470,7 @@ const StampEmitter = defineTasklet({
 
 // One keyed plugin channel: the topology every SDK can express, and where the
 // per-emit ordinal has to be right.
-const StampSpec = defineStream({
+const StampSpec = defineUnbounded({
   factoryId: 'stamps',
   channels: (c) => {
     c.input('in')
@@ -490,7 +490,7 @@ const PlainEmitter = defineTasklet({
   },
 });
 
-const MixedSpec = defineStream({
+const MixedSpec = defineUnbounded({
   factoryId: 'stamps_mixed',
   channels: (c) => {
     c.input('in')
@@ -565,7 +565,7 @@ test('user metadata survives beside the stamps and cannot spoof one', async () =
       ctx.emit('v', { metadata: { user: 'meta' } });
     },
   });
-  const spec = defineStream({
+  const spec = defineUnbounded({
     factoryId: 'stamps_user',
     channels: (c) => {
       c.input('in')
@@ -595,16 +595,16 @@ test('user metadata survives beside the stamps and cannot spoof one', async () =
   assert.equal(spoofed.effects[0].verdict, 'retryable');
 });
 
-// --- the structured-workflow emit arm ---------------------------------------
+// --- the structured-bounded emit arm ---------------------------------------
 //
-// One released value is ONE edge output on a workflow class, untransformed and
+// One released value is ONE edge output on a bounded class, untransformed and
 // unkeyed, naming the producing channel and its first consumer: the driver
-// fans it out from the journaled handoff. On a stream class the same topology
+// fans it out from the journaled handoff. On an unbounded class the same topology
 // releases one output per consumer, transformed and keyed. The plugin output
 // rides alongside either way.
 
-const WorkflowProducer = defineTasklet({
-  name: 'wf_producer',
+const BoundedProducer = defineTasklet({
+  name: 'bounded_producer',
   run: (input, ctx) => {
     ctx.emit(input);
   },
@@ -630,10 +630,10 @@ async function ran(spec, overrides) {
   return { effects, handed: [...DELIVERED] };
 }
 
-const workflowGraph = (c) => {
-  const edge = c.input('in').into(WorkflowProducer).named('handoff');
-  edge.map((value) => value + 1).into(record('wf_b'));
-  edge.into(record('wf_c'));
+const boundedGraph = (c) => {
+  const edge = c.input('in').into(BoundedProducer).named('handoff');
+  edge.map((value) => value + 1).into(record('bounded_b'));
+  edge.into(record('bounded_c'));
   edge.sink();
 };
 
@@ -644,13 +644,13 @@ const workflowGraph = (c) => {
 const payloadOf = (output) =>
   output.target === 'plugin' ? jsonOf(output.payload) : decodeValue(output.payload);
 
-const WorkflowSpec = defineWorkflow({ factoryId: 'wf_emit', channels: workflowGraph });
-const StreamTwinSpec = defineStream({ factoryId: 'wf_emit_stream', channels: workflowGraph });
+const BoundedSpec = defineBounded({ factoryId: 'bounded_emit', channels: boundedGraph });
+const UnboundedTwinSpec = defineUnbounded({ factoryId: 'bounded_emit_stream', channels: boundedGraph });
 
-test('a structured workflow releases one untransformed edge output per emit', async () => {
+test('a structured bounded releases one untransformed edge output per emit', async () => {
   const result = await answer(
-    activationFor('wf_emit')({ items: [inputItem(10)] }),
-    depsFor(WorkflowSpec),
+    activationFor('bounded_emit')({ items: [inputItem(10)] }),
+    depsFor(BoundedSpec),
   );
   assert.equal(result.outcome, 'work');
   const outputs = result.effects[0].outputs;
@@ -667,8 +667,8 @@ test('a structured workflow releases one untransformed edge output per emit', as
 
 test("an edge payload is the encoder's own bytes, with nothing layered on top", async () => {
   const result = await answer(
-    activationFor('wf_emit_stream')({ items: [inputItem(10)] }),
-    depsFor(StreamTwinSpec),
+    activationFor('bounded_emit_stream')({ items: [inputItem(10)] }),
+    depsFor(UnboundedTwinSpec),
   );
   const outputs = result.effects[0].outputs;
   for (const output of outputs.filter((o) => o.target === 'edge')) {
@@ -682,7 +682,7 @@ test("an edge payload is the encoder's own bytes, with nothing layered on top", 
   assert.deepEqual(outputs[1].payload, encodeValue(10));
 });
 
-test('every timer call inside a workflow tasklet reaches the item effect as a timer op', async () => {
+test('every timer call inside a bounded tasklet reaches the item effect as a timer op', async () => {
   const calls = {
     timerAfter: [(ctx) => ctx.timerAfter(1_000), 'processing_time', 2_000n, true],
     timerAtEventTime: [(ctx) => ctx.timerAtEventTime(5_000n), 'event_time', 5_000n, true],
@@ -701,8 +701,8 @@ test('every timer call inside a workflow tasklet reaches the item effect as a ti
       },
       onTimer: () => {},
     });
-    const spec = defineWorkflow({
-      factoryId: `wf_timer_${call}`,
+    const spec = defineBounded({
+      factoryId: `bounded_timer_${call}`,
       channels: (c) => c.input('in').into(Arms),
     });
     const { effects } = await answer(
@@ -719,8 +719,8 @@ test('a timer call inside a compensate hook fails naming TimersUnavailable', asy
     run: () => {},
     compensate: (_outputs, ctx) => ctx.timerAfter(1_000),
   });
-  const spec = defineWorkflow({
-    factoryId: 'wf_timer_compensate',
+  const spec = defineBounded({
+    factoryId: 'bounded_timer_compensate',
     channels: (c) => c.input('in').into(Undo),
   });
   const result = await answer(
@@ -731,10 +731,10 @@ test('a timer call inside a compensate hook fails naming TimersUnavailable', asy
   assert.match(result.error, /TimersUnavailable: undo: timerAfter inside compensate/);
 });
 
-test('the same graph on a stream class releases one output per consumer', async () => {
+test('the same graph on an unbounded class releases one output per consumer', async () => {
   const result = await answer(
-    activationFor('wf_emit_stream')({ items: [inputItem(10)] }),
-    depsFor(StreamTwinSpec),
+    activationFor('bounded_emit_stream')({ items: [inputItem(10)] }),
+    depsFor(UnboundedTwinSpec),
   );
   const outputs = result.effects[0].outputs;
   assert.deepEqual(
@@ -748,7 +748,7 @@ test('the same graph on a stream class releases one output per consumer', async 
 });
 
 // The other end of the same two arms: what the CONSUMER is handed. A stream
-// producer already applied the edge, so delivery applies nothing; a workflow
+// producer already applied the edge, so delivery applies nothing; a bounded operator
 // stage released the value raw, so delivery is the one application.
 
 /** Hand `payload` to `tasklet` on the `handoff` channel and answer what it saw. */
@@ -761,25 +761,25 @@ async function delivered(spec, tasklet, payload) {
   return handed;
 }
 
-test('a stream inter-task edge applies its map exactly once', async () => {
+test('an unbounded inter-task edge applies its map exactly once', async () => {
   const produced = await answer(
-    activationFor('wf_emit_stream')({ items: [inputItem(10)] }),
-    depsFor(StreamTwinSpec),
+    activationFor('bounded_emit_stream')({ items: [inputItem(10)] }),
+    depsFor(UnboundedTwinSpec),
   );
   const mapped = produced.effects[0].outputs[0];
-  assert.deepEqual(await delivered(StreamTwinSpec, 1, mapped.payload), [11]);
+  assert.deepEqual(await delivered(UnboundedTwinSpec, 1, mapped.payload), [11]);
 });
 
-test('a workflow consumer applies its own edge exactly once, at delivery', async () => {
+test('a bounded consumer applies its own edge exactly once, at delivery', async () => {
   const stage = await answer(
-    activationFor('wf_emit')({ items: [inputItem(10)] }),
-    depsFor(WorkflowSpec),
+    activationFor('bounded_emit')({ items: [inputItem(10)] }),
+    depsFor(BoundedSpec),
   );
   const released = stage.effects[0].outputs[0].payload;
   // One released value reaches BOTH children — the driver's fan-out — and each
   // evaluates its own edge here.
-  assert.deepEqual(await delivered(WorkflowSpec, 1, released), [11]);
-  assert.deepEqual(await delivered(WorkflowSpec, 2, released), [10]);
+  assert.deepEqual(await delivered(BoundedSpec, 1, released), [11]);
+  assert.deepEqual(await delivered(BoundedSpec, 2, released), [10]);
 });
 
 // `ctx.complete` rides the item's effect on either kind: which kind runs the
@@ -799,8 +799,8 @@ const Completing = defineTasklet({
 const completingGraph = (c) => c.input('in').into(Completing).sink('out');
 
 for (const [kind, define] of [
-  ['workflow', defineWorkflow],
-  ['stream', defineStream],
+  ['bounded', defineBounded],
+  ['unbounded', defineUnbounded],
 ]) {
   test(`a ${kind} tasklet's complete rides its effect, the last call winning`, async () => {
     const spec = define({ factoryId: `complete_${kind}`, channels: completingGraph });
@@ -821,7 +821,7 @@ for (const [kind, define] of [
 // item is reported unreadable (the entrance's failure, not the handler's), so
 // the core parks it under the entry channel, and the handler is never handed it.
 test('plain text into an entry naming no codec is unreadable and never reaches the handler', async () => {
-  const spec = defineStream({
+  const spec = defineUnbounded({
     factoryId: 'json_entry',
     channels: (c) => {
       c.input('in').into(record('json_entry_tasklet'));
@@ -840,7 +840,7 @@ test('plain text into an entry naming no codec is unreadable and never reaches t
 });
 
 test('bytes that are not UTF-8 into a text entry are unreadable', async () => {
-  const spec = defineStream({
+  const spec = defineUnbounded({
     factoryId: 'text_entry',
     channels: (c) => {
       c.input('in', { codec: 'text' }).into(record('text_entry_tasklet'));
@@ -859,7 +859,7 @@ test('bytes that are not UTF-8 into a text entry are unreadable', async () => {
 // entrance's; a handler throwing on a value that did decode stays a handler
 // failure, which is what the retry ladder is for.
 test('an entry edge transform that throws is unreadable, a handler that throws is not', async () => {
-  const spec = defineStream({
+  const spec = defineUnbounded({
     factoryId: 'entry_edge',
     channels: (c) => {
       c.input('in', { codec: 'text' })
@@ -925,10 +925,10 @@ test('every merged source is keyed on its mapped value at the crossing', async (
 });
 
 test('a tasklet merged with an entry releases its mapped value to the merged node', async () => {
-  const spec = defineStream({
+  const spec = defineUnbounded({
     factoryId: 'merged_hop',
     channels: (c) => {
-      const produced = c.input('raw').into(WorkflowProducer);
+      const produced = c.input('raw').into(BoundedProducer);
       c.merge()
         .from(produced, (value) => ({ produced: value }))
         .from(c.input('direct'), (value) => ({ direct: value }))
@@ -948,7 +948,7 @@ test('a tasklet merged with an entry releases its mapped value to the merged nod
 // input, the crossing answers every value's key, and a producer releases one
 // frame per value.
 
-const FanSpec = defineStream({
+const FanSpec = defineUnbounded({
   factoryId: 'fan',
   channels: (c) => {
     c.input('lines', { codec: 'text' })
@@ -988,7 +988,7 @@ test('a cell handed a fanned payload runs only the values keyed to it', async ()
 test('a fan into a static consumer runs each value on the cells it names, and [] on none', async () => {
   const keys = ['a', 'b'];
   const cellsFor = (trade) => keys.filter((key) => trade.startsWith(`${key}:`));
-  const spec = defineStream({
+  const spec = defineUnbounded({
     factoryId: 'static_fan',
     channels: (c) => {
       c.input('trades', { codec: 'text' })
@@ -1004,10 +1004,10 @@ test('a fan into a static consumer runs each value on the cells it names, and []
 
 test('a producer releases one frame per fanned value, and an array from map is one value', async () => {
   const released = async (factoryId, reshape) => {
-    const spec = defineStream({
+    const spec = defineUnbounded({
       factoryId,
       channels: (c) =>
-        reshape(c.input('in').into(WorkflowProducer)).into(record(`${factoryId}_record`)),
+        reshape(c.input('in').into(BoundedProducer)).into(record(`${factoryId}_record`)),
     });
     const { effects } = await ran(spec, { cellKey: undefined, items: [inputItem(10)] });
     return effects[0].outputs.map((output) => decodeValue(output.payload));
@@ -1028,13 +1028,13 @@ test('a module exporting short forms registers each, of the kind its function na
   const module = join(dir, 'short.mjs');
   writeFileSync(
     module,
-    `import { defineStream, defineWorkflow } from '${new URL('../dist/esm/index.js', import.meta.url).pathname}';\n` +
-      `export const upcase = defineStream({ factoryId: 'short_form', sink: 'out', run: (i) => i });\n` +
-      `export const place = defineWorkflow({ factoryId: 'short_workflow', sink: 'placed', input: 'order', run: (i) => i });\n`,
+    `import { defineUnbounded, defineBounded } from '${new URL('../dist/esm/index.js', import.meta.url).pathname}';\n` +
+      `export const upcase = defineUnbounded({ factoryId: 'short_form', sink: 'out', run: (i) => i });\n` +
+      `export const place = defineBounded({ factoryId: 'short_bounded', sink: 'placed', input: 'order', run: (i) => i });\n`,
   );
   const registry = await loadRegistry([module]);
-  assert.equal(registry.get('short_form')?.spec.kind, 'stream');
-  assert.equal(registry.get('short_workflow')?.spec.kind, 'workflow');
+  assert.equal(registry.get('short_form')?.spec.kind, 'unbounded');
+  assert.equal(registry.get('short_bounded')?.spec.kind, 'bounded');
 });
 
 test('registerFactory rejects at the line that names a module which cannot load', async () => {
@@ -1045,14 +1045,14 @@ test('registerFactory rejects at the line that names a module which cannot load'
   );
 });
 
-test('registerFactory rejects a module exporting no operative, before run()', async () => {
+test('registerFactory rejects a module exporting no operator, before run()', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'flezha-empty-register-'));
   const module = join(dir, 'empty.mjs');
   writeFileSync(module, 'export const nothing = 1;\n');
   const runner = createRunner('register_factory_empty_ns');
   await assert.rejects(
     () => runner.registerFactory(module),
-    (error) => error.message.includes(module) && error.message.includes('exports no operative'),
+    (error) => error.message.includes(module) && error.message.includes('exports no operator'),
   );
 });
 
@@ -1061,8 +1061,8 @@ test('unregisterFactory undoes a pre-run registration and names an unknown one',
   const module = join(dir, 'one.mjs');
   writeFileSync(
     module,
-    `import { defineStream } from '${new URL('../dist/esm/index.js', import.meta.url).pathname}';\n` +
-      `export const one = defineStream({ factoryId: 'unregister_me', sink: 'out', run: (i) => i });\n`,
+    `import { defineUnbounded } from '${new URL('../dist/esm/index.js', import.meta.url).pathname}';\n` +
+      `export const one = defineUnbounded({ factoryId: 'unregister_me', sink: 'out', run: (i) => i });\n`,
   );
   const runner = createRunner('unregister_ns');
   await runner.registerFactory(module);
@@ -1078,8 +1078,8 @@ test('a post-start registerFactory declares against the core and the workers', a
   const module = join(dir, 'late.mjs');
   writeFileSync(
     module,
-    `import { defineStream } from '${new URL('../dist/esm/index.js', import.meta.url).pathname}';\n` +
-      `export const late = defineStream({ factoryId: 'late_form', sink: 'out', run: (i) => i });\n`,
+    `import { defineUnbounded } from '${new URL('../dist/esm/index.js', import.meta.url).pathname}';\n` +
+      `export const late = defineUnbounded({ factoryId: 'late_form', sink: 'out', run: (i) => i });\n`,
   );
 
   // A started runner is one that holds a core and a registry. Standing those in

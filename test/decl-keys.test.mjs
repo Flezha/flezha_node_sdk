@@ -8,9 +8,9 @@ import test from 'node:test';
 
 import {
   ACTIVATION_SCHEMA_VERSION,
-  defineStream,
+  defineUnbounded,
   defineTasklet,
-  defineWorkflow,
+  defineBounded,
   loadNative,
   toHostClassDecl,
   validate,
@@ -33,7 +33,7 @@ function pinned(section) {
 }
 
 /** Every stream-side option the Node surface has a spelling for, on a class `define` declares. */
-function fullyDeclaredStream(define = defineStream) {
+function fullyDeclaredUnbounded(define = defineUnbounded) {
   const dynamic = defineTasklet({
     name: 'full_dynamic',
     dynamicCells: { idleTtlMs: 30_000, maxCells: 64 },
@@ -83,15 +83,15 @@ function fullyDeclaredStatic() {
     cells: { keys: ['a', 'b'], cellsFor: () => ['a'] },
     run: (input) => input,
   });
-  return defineStream({
+  return defineUnbounded({
     factoryId: 'node_decl_static',
     channels: (c) => c.input('in').into(statik).sink(),
   });
 }
 
-function fullyDeclaredWorkflow() {
-  return defineWorkflow({
-    factoryId: 'node_decl_workflow',
+function fullyDeclaredBounded() {
+  return defineBounded({
+    factoryId: 'node_decl_bounded',
     loopMode: 'per_input',
     rollbackMode: 'keep_progress',
     maxDurationMs: 120_000,
@@ -102,9 +102,9 @@ function fullyDeclaredWorkflow() {
 
 test('every class key the fixture pins has a Node spelling', () => {
   // The kind splits the class keys the way cell mode splits the tasklet
-  // ones: only a workflow class carries `workflow`.
+  // ones: only a bounded class carries `bounded`.
   const emitted = new Set(
-    [fullyDeclaredStream(), fullyDeclaredWorkflow()]
+    [fullyDeclaredUnbounded(), fullyDeclaredBounded()]
       .map(toHostClassDecl)
       .flatMap((decl) => Object.keys(decl)),
   );
@@ -117,7 +117,7 @@ test('every class key the fixture pins has a Node spelling', () => {
 });
 
 test('every channel key the fixture pins has a Node spelling', () => {
-  const decl = toHostClassDecl(fullyDeclaredStream());
+  const decl = toHostClassDecl(fullyDeclaredUnbounded());
   const emitted = new Set(decl.channels.flatMap((channel) => Object.keys(channel)));
   const missing = pinned('channel').filter((key) => !emitted.has(key));
   assert.deepEqual(missing, [], `channel keys with no Node spelling: ${missing.join(', ')}`);
@@ -128,7 +128,7 @@ test('every tasklet key the fixture pins has a Node spelling', () => {
   // `idle_ttl_ms` and `max_cells`, a static one `cell_keys`, and neither
   // carries the other's.
   const emitted = new Set(
-    [fullyDeclaredStream(), fullyDeclaredStatic()]
+    [fullyDeclaredUnbounded(), fullyDeclaredStatic()]
       .map(toHostClassDecl)
       .flatMap((decl) => decl.tasklets)
       .flatMap((tasklet) => Object.keys(tasklet)),
@@ -137,23 +137,23 @@ test('every tasklet key the fixture pins has a Node spelling', () => {
   assert.deepEqual(missing, [], `tasklet keys with no Node spelling: ${missing.join(', ')}`);
 });
 
-test('every workflow key the fixture pins has a Node spelling', () => {
-  const decl = toHostClassDecl(fullyDeclaredWorkflow());
-  const missing = pinned('workflow').filter((key) => !(key in decl.workflow));
-  assert.deepEqual(missing, [], `workflow keys with no Node spelling: ${missing.join(', ')}`);
+test('every bounded key the fixture pins has a Node spelling', () => {
+  const decl = toHostClassDecl(fullyDeclaredBounded());
+  const missing = pinned('bounded').filter((key) => !(key in decl.bounded));
+  assert.deepEqual(missing, [], `bounded keys with no Node spelling: ${missing.join(', ')}`);
 });
 
 test('the builder invents no key the core never learned', () => {
   // `deny_unknown_fields` on the core's side makes an invented key a parse
   // error naming it; catching it here names it at the source instead.
-  const stream = toHostClassDecl(fullyDeclaredStream());
-  const workflow = toHostClassDecl(fullyDeclaredWorkflow());
+  const stream = toHostClassDecl(fullyDeclaredUnbounded());
+  const bounded = toHostClassDecl(fullyDeclaredBounded());
   const check = (section, keys) => {
     const allowed = new Set(pinned(section));
     const extra = [...keys].filter((key) => !allowed.has(key));
     assert.deepEqual(extra, [], `${section} keys the core never learned: ${extra.join(', ')}`);
   };
-  check('class', new Set([...Object.keys(stream), ...Object.keys(workflow)]));
+  check('class', new Set([...Object.keys(stream), ...Object.keys(bounded)]));
   check('channel', new Set(stream.channels.flatMap((c) => Object.keys(c))));
   check(
     'tasklet',
@@ -163,19 +163,19 @@ test('the builder invents no key the core never learned', () => {
         .flatMap((p) => Object.keys(p)),
     ),
   );
-  check('workflow', new Set(Object.keys(workflow.workflow)));
+  check('bounded', new Set(Object.keys(bounded.bounded)));
 });
 
-// --- the stream-only keys on a workflow class -------------------------------
+// --- the unbounded-only keys on a bounded class -------------------------------
 //
 // One builder serves both kinds and neither drops what it recorded:
-// `flz_core::host::register::refuse_workflow_facts` is what refuses a tier,
-// checkpoint or correction key on a workflow class, by name.
+// `flz_core::host::register::refuse_bounded_facts` is what refuses a tier,
+// checkpoint or correction key on a bounded class, by name.
 
-test('a workflow class declares every key its builder recorded, as a stream does', () => {
-  const { workflow, ...declared } = toHostClassDecl(fullyDeclaredStream(defineWorkflow));
-  assert.ok(workflow, 'a workflow class carries its workflow section');
-  assert.deepEqual(declared, toHostClassDecl(fullyDeclaredStream()));
+test('a bounded class declares every key its builder recorded, as an unbounded one does', () => {
+  const { bounded, ...declared } = toHostClassDecl(fullyDeclaredUnbounded(defineBounded));
+  assert.ok(bounded, 'a bounded class carries its bounded section');
+  assert.deepEqual(declared, toHostClassDecl(fullyDeclaredUnbounded()));
 });
 
 // --- the cross-language topology golden ------------------------------------
@@ -223,7 +223,7 @@ function hybridChannel() {
     run: (input, ctx) => ctx.emit(input),
   });
   const consumer = defineTasklet({ name: 'hybrid_consumer_tasklet', run: () => {} });
-  return defineStream({
+  return defineUnbounded({
     factoryId: 'hybrid_channel',
     channels: (c) => {
       c.input('input').into(producer).sink('hybrid_indicator', bytes).into(consumer);
@@ -237,7 +237,7 @@ function commitBlockChain() {
     run: (input, ctx) => ctx.emit(input, { key: 'job' }),
   });
   const blockB = defineTasklet({ name: 'block_b', run: () => {} });
-  return defineWorkflow({
+  return defineBounded({
     factoryId: 'commit_block_chain',
     channels: (c) => {
       c.input('in').into(commitA).keyed().sink('mid', bytes).into(blockB);
@@ -245,11 +245,11 @@ function commitBlockChain() {
   });
 }
 
-test('the hybrid stream topology is the reference, channel for channel', () => {
+test('the hybrid unbounded topology is the reference, channel for channel', () => {
   assert.deepEqual(topologyLines('hybrid_channel', hybridChannel()), goldenLines('hybrid_channel'));
 });
 
-test('the structured workflow topology is the reference, channel for channel', () => {
+test('the structured bounded topology is the reference, channel for channel', () => {
   assert.deepEqual(
     topologyLines('commit_block_chain', commitBlockChain()),
     goldenLines('commit_block_chain'),
@@ -261,7 +261,7 @@ test('the structured workflow topology is the reference, channel for channel', (
 test('a merge source serialises as the core’s merge link, keyed after its mapping', () => {
   const merged = (name) => defineTasklet({ name, dynamicCells: {}, run: (i) => i });
   const decl = toHostClassDecl(
-    defineStream({
+    defineUnbounded({
       factoryId: 'node_decl_merge',
       channels: (c) => {
         for (const [first, second, into] of [

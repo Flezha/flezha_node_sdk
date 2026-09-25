@@ -30,7 +30,7 @@ export function cellIdentity(instanceId: string, taskletName: string, cellKey: s
   const tasklet = Buffer.from(taskletName, 'utf8');
   const key = Buffer.from(cellKey, 'utf8');
   if (instance.length > 255 || tasklet.length > 255) {
-    throw new Error('operative class / tasklet id must be at most 255 bytes');
+    throw new Error('operator class / tasklet id must be at most 255 bytes');
   }
   if (key.length > 0xffff) {
     throw new Error('cell key must be at most 65535 bytes');

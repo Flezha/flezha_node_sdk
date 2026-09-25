@@ -2,7 +2,7 @@
 
 A poll host over `flz_core`, the runner kernel the Rust and Java SDKs also
 drive. The kernel owns transport, ordering, per-cell exclusivity, durability,
-retries, timers, credit, routing and workflow runs. This package supplies
+retries, timers, credit, routing and bounded runs. This package supplies
 threads and user code, and nothing else.
 
 ```bash
@@ -51,10 +51,10 @@ One caution about installs: npm treats an optional dependency it cannot resolve
 as a non-event, so an install that fetched no binary succeeds and prints
 nothing. That is why the refusal at load is explicit about what is missing.
 
-## Writing an operative
+## Writing an operator
 
 ```ts
-import { createRunner, defineStream, defineTasklet } from '@flezha/sdk';
+import { createRunner, defineUnbounded, defineTasklet } from '@flezha/sdk';
 
 interface Trade {
   symbol: string;
@@ -78,7 +78,7 @@ const Ohlc = defineTasklet({
   },
 });
 
-export default defineStream({
+export default defineUnbounded({
   factoryId: 'candles',
   channels: (c) => {
     c.input<Trade>('trades')

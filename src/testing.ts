@@ -13,7 +13,7 @@
 
 import { isDeepStrictEqual } from 'node:util';
 
-import { defineStream, type ChannelSpec, type ClassSpec, type TaskNode } from './authoring.js';
+import { defineUnbounded, type ChannelSpec, type ClassSpec, type TaskNode } from './authoring.js';
 import { decodeValue } from './codec.js';
 import { Invocation, type SpawnBridge } from './ctx.js';
 import { invocation } from './determinism.js';
@@ -72,7 +72,7 @@ export interface HarnessOptions<TState> {
   state?: TState;
   /** The value `ctx.now()` serves until an input or an advance moves it. */
   now?: bigint;
-  operative?: string;
+  operator?: string;
 }
 
 /** A restore payload, as the core would hand one across. */
@@ -113,7 +113,7 @@ export class TaskletTestHarness<TIn, TOut, TState, TChange> {
     // declaration gains later reaches the harness for free. The sink names the
     // MessagePack codec, so the emits the harness reads back are each value
     // exactly as the handler emitted it.
-    this.spec = defineStream({
+    this.spec = defineUnbounded({
       factoryId: `harness_${tasklet.name}`,
       channels: (c) =>
         c
@@ -167,7 +167,7 @@ export class TaskletTestHarness<TIn, TOut, TState, TChange> {
       spec: this.spec,
       node: this.node,
       outgoing: this.outgoing,
-      operative: this.options.operative ?? `harness_${this.tasklet.name}`,
+      operator: this.options.operator ?? `harness_${this.tasklet.name}`,
       cellKey: this.options.cellKey,
       changeSeq: BigInt(this.log.length),
       now,

@@ -12,7 +12,7 @@
  * at registration and covered by `test/authoring.test.mjs`.
  */
 
-import { defineStream, defineTasklet, defineWorkflow } from '../src/index.js';
+import { defineUnbounded, defineTasklet, defineBounded } from '../src/index.js';
 
 interface Trade {
   symbol: string;
@@ -47,14 +47,14 @@ const Count = defineTasklet({
 
 // The topology this is all about: it compiles, and every refusal below is a
 // deviation from it.
-export const wellTyped = defineStream({
+export const wellTyped = defineUnbounded({
   factoryId: 'well_typed',
   channels: (c) => {
     c.input<Trade>('trades').into(Ohlc).into(Publish).sink();
   },
 });
 
-export const refusals = defineStream({
+export const refusals = defineUnbounded({
   factoryId: 'refusals',
   channels: (c) => {
     // A producer wired to a consumer whose declared input it does not satisfy.
@@ -144,7 +144,7 @@ const BadEmit = defineTasklet<Trade, Candle>({
   },
 });
 
-export const moreRefusals = defineStream({
+export const moreRefusals = defineUnbounded({
   factoryId: 'more_refusals',
   channels: (c) => {
     c.input<Trade>('j').branch([(edge) => edge.into(BadChange), (edge) => edge.into(BadEmit)]);
@@ -153,14 +153,14 @@ export const moreRefusals = defineStream({
 
 // The §5 short form: one tasklet's fields and its `run` body in place of a
 // `channels` body, at the function whose name is its kind.
-export const shortForm = defineStream({
+export const shortForm = defineUnbounded({
   factoryId: 'short_form',
   sink: 'out',
   codec: 'text',
   run: (line: string) => line.toUpperCase(),
 });
 
-export const statefulShortForm = defineWorkflow({
+export const statefulShortForm = defineBounded({
   factoryId: 'stateful_short_form',
   initialState: () => ({ seen: [] as string[] }),
   applyChange: (state, change: string) => {
@@ -174,34 +174,34 @@ export const statefulShortForm = defineWorkflow({
 });
 
 // @ts-expect-error a short form carries its body in place of a topology body, never beside one
-defineStream({ factoryId: 'both', run: (line: string) => line, channels: () => {} });
+defineUnbounded({ factoryId: 'both', run: (line: string) => line, channels: () => {} });
 
 // @ts-expect-error the kind is the function's own name, never a field
-defineWorkflow({ factoryId: 'kinded', kind: 'workflow', run: (line: string) => line });
+defineBounded({ factoryId: 'kinded', kind: 'bounded', run: (line: string) => line });
 
 // @ts-expect-error a short form's tasklet is named after its `factoryId`
-defineStream({ factoryId: 'named', name: 'other', run: (line: string) => line });
+defineUnbounded({ factoryId: 'named', name: 'other', run: (line: string) => line });
 
-// A workflow short form writes its loop mode, the one class-level setting it carries.
-export const loopedShortForm = defineWorkflow({
+// A bounded short form writes its loop mode, the one class-level setting it carries.
+export const loopedShortForm = defineBounded({
   factoryId: 'looped',
   loopMode: 'per_input',
   run: (line: string) => line,
 });
 
 // @ts-expect-error any other class-level setting is the full form
-defineWorkflow({ factoryId: 'rolled', rollbackMode: 'keep_progress', run: (line: string) => line });
+defineBounded({ factoryId: 'rolled', rollbackMode: 'keep_progress', run: (line: string) => line });
 
 // @ts-expect-error `forever` is not a loop mode
-defineWorkflow({ factoryId: 'forever', loopMode: 'forever', run: (line: string) => line });
+defineBounded({ factoryId: 'forever', loopMode: 'forever', run: (line: string) => line });
 
 // @ts-expect-error a stream has no loop mode
-defineStream({ factoryId: 'streamed', loopMode: 'per_input', run: (line: string) => line });
+defineUnbounded({ factoryId: 'streamed', loopMode: 'per_input', run: (line: string) => line });
 
-// @ts-expect-error retry is the edge's `retryMax`, never a workflow setting
-defineWorkflow({ factoryId: 'retried', retryAttempts: 0, channels: () => {} });
+// @ts-expect-error retry is the edge's `retryMax`, never a bounded setting
+defineBounded({ factoryId: 'retried', retryAttempts: 0, channels: () => {} });
 
-export const syncDurable = defineWorkflow({
+export const syncDurable = defineBounded({
   factoryId: 'sync_durable',
   syncDurability: true,
   channels: (c) => {
@@ -210,7 +210,7 @@ export const syncDurable = defineWorkflow({
   },
 });
 
-// @ts-expect-error a tasklet carries no sink; the short form is an operative
+// @ts-expect-error a tasklet carries no sink; the short form is an operator
 defineTasklet({ name: 'sinking', sink: 'out', run: (line: string) => line });
 
 // @ts-expect-error a tasklet's body is `run`

@@ -3,13 +3,13 @@
  *
  * The runner kernel is `flz_core`, reached through its C ABI: it owns
  * transport, ordering, per-cell exclusivity, durability, retries, timers,
- * credit, routing and the workflow driver. This package supplies threads and
+ * credit, routing and the bounded driver. This package supplies threads and
  * user code, and nothing else.
  */
 
 export { Admin } from './admin.js';
 export type { StartOptions, StartOutcome, StartResult } from './admin.js';
-export { defineStream, defineTasklet, defineWorkflow } from './authoring.js';
+export { defineUnbounded, defineTasklet, defineBounded } from './authoring.js';
 export type { ChannelSpec, ClassSpec, Link, TaskNode } from './authoring.js';
 export type { SpawnHandle } from './ctx.js';
 export {
@@ -26,7 +26,7 @@ export type { Codec } from './codec.js';
 export { Registry } from './dispatch.js';
 export { FORMAT_ID_MSGPACK, SDK_LANG_NODE, toHostClassDecl, validate } from './graph.js';
 export type { DerivedChannel, DerivedDecl, DerivedEdge } from './graph.js';
-export { LocalOperative } from './local.js';
+export { LocalOperator } from './local.js';
 export type { SinkOutput } from './local.js';
 export { consoleLogger, setLogger } from './logger.js';
 export type { Logger, LogLevel } from './logger.js';
@@ -39,7 +39,7 @@ export {
   DeclarationError,
   SpawnAlreadyRunningError,
   SpawnError,
-  SpawnFactoryNotWorkflowError,
+  SpawnFactoryNotBoundedError,
   SpawnFactoryUnknownError,
   SpawnRefusedError,
   SpawnTimeoutError,
@@ -57,7 +57,7 @@ export type {
   IfRunning,
   LoopMode,
   Merge,
-  OperativeDefinition,
+  OperatorDefinition,
   OverflowPolicy,
   Tasklet,
   TaskletDefinition,
@@ -71,5 +71,5 @@ export type {
   Stream,
   TimerFiring,
   TimerKind,
-  WorkflowDefinition,
+  BoundedDefinition,
 } from './types.js';

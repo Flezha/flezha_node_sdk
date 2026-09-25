@@ -24,7 +24,7 @@ import {
   type CodecOptions,
   type LoopMode,
   type Merge,
-  type OperativeDefinition,
+  type OperatorDefinition,
   type OverflowPolicy,
   type RollbackMode,
   type Tasklet,
@@ -32,7 +32,7 @@ import {
   type RoutedDocument,
   type ShortFormDefinition,
   type Stream,
-  type WorkflowDefinition,
+  type BoundedDefinition,
 } from './types.js';
 
 /** A tasklet as the graph holds it, with its position in the declaration. */
@@ -114,7 +114,7 @@ export interface ChannelSpec {
   sinkEncode?: (value: unknown) => Uint8Array;
 }
 
-export interface WorkflowSpec {
+export interface BoundedSpec {
   loopMode: LoopMode;
   rollbackMode: RollbackMode;
   maxDurationMs?: number;
@@ -123,7 +123,7 @@ export interface WorkflowSpec {
 /** Everything the graph knows about one declared class. */
 export interface ClassSpec {
   factoryId: string;
-  kind: 'stream' | 'workflow';
+  kind: 'unbounded' | 'bounded';
   persistent: boolean;
   sleepWhenIdle: boolean;
   effectivelyOnce: boolean;
@@ -138,7 +138,7 @@ export interface ClassSpec {
   syncDurability: boolean;
   tasklets: TaskNode[];
   channels: ChannelSpec[];
-  workflow?: WorkflowSpec;
+  bounded?: BoundedSpec;
 }
 
 /**
@@ -152,13 +152,13 @@ export interface ClassSpec {
 export function defineTasklet<TIn, TOut = never, TState = void, TChange = never>(
   definition: TaskletDefinition<TIn, TOut, TState, TChange>,
 ): Tasklet<TIn, TOut, TState, TChange> {
-  const operativeFields = written(definition, ['kind', ...SHORT_FORM_KEYS]);
-  if (operativeFields) {
+  const operatorFields = written(definition, ['kind', ...SHORT_FORM_KEYS]);
+  if (operatorFields) {
     throw new DeclarationError(
       '<tasklet>',
       definition.name ?? null,
-      `declares ${operativeFields}, which a tasklet does not carry; the short form is declared ` +
-        'with `defineStream` or `defineWorkflow`, whose name is its kind',
+      `declares ${operatorFields}, which a tasklet does not carry; the short form is declared ` +
+        'with `defineUnbounded` or `defineBounded`, whose name is its kind',
     );
   }
   if (!definition.name || !definition.name.trim()) {
@@ -241,29 +241,29 @@ const TASKLET_FIELDS = Object.keys({
 >);
 
 /**
- * A workflow definition's own options, which a stream definition carries none
- * of in either form. Keyed by the type, so an option the workflow definition
+ * A bounded operator definition's own options, which an unbounded definition carries none
+ * of in either form. Keyed by the type, so an option the bounded operator definition
  * gains is listed here or does not compile. `syncDurability` is not among
- * them: the core refuses it on a stream by its own name.
+ * them: the core refuses it on an unbounded operator by its own name.
  */
-const WORKFLOW_SETTINGS = Object.keys({
+const BOUNDED_SETTINGS = Object.keys({
   loopMode: true,
   rollbackMode: true,
   maxDurationMs: true,
 } satisfies Record<
-  Exclude<keyof WorkflowDefinition, keyof OperativeDefinition | 'syncDurability'>,
+  Exclude<keyof BoundedDefinition, keyof OperatorDefinition | 'syncDurability'>,
   true
->) as (keyof WorkflowDefinition)[];
+>) as (keyof BoundedDefinition)[];
 
 /**
  * The full form's class-level settings: a definition's options and the builder
  * calls that set one on the class. The short form keeps each at its default;
- * a workflow's loop mode is the one setting it may write.
+ * a bounded operator's loop mode is the one setting it may write.
  */
 const CLASS_SETTINGS = [
   'persistent',
   'sleepWhenIdle',
-  ...WORKFLOW_SETTINGS.filter((key) => key !== 'loopMode'),
+  ...BOUNDED_SETTINGS.filter((key) => key !== 'loopMode'),
   'syncDurability',
   'effectivelyOnce',
   'checkpointAck',
@@ -272,11 +272,11 @@ const CLASS_SETTINGS = [
   'correctionWindow',
   'beyondWindowPolicy',
   'compactAfterBytes',
-] satisfies readonly (keyof WorkflowDefinition | keyof ChannelBuilder)[];
+] satisfies readonly (keyof BoundedDefinition | keyof ChannelBuilder)[];
 
 /**
  * Every field either form reads, or refuses under a reason of its own. The
- * operative's own are keyed by the type, so a field the definition gains is
+ * operator's own are keyed by the type, so a field the definition gains is
  * listed here or does not compile; anything else, a retired setting among
  * them, is refused by name.
  */
@@ -287,8 +287,8 @@ const DEFINITION_FIELDS = new Set<string>([
     sleepWhenIdle: true,
     channels: true,
     syncDurability: true,
-  } satisfies Record<keyof OperativeDefinition | 'syncDurability', true>),
-  ...WORKFLOW_SETTINGS,
+  } satisfies Record<keyof OperatorDefinition | 'syncDurability', true>),
+  ...BOUNDED_SETTINGS,
   ...CLASS_SETTINGS,
   ...SHORT_FORM_KEYS,
   ...TASKLET_FIELDS,
@@ -304,17 +304,17 @@ function written(definition: object, keys: readonly string[]): string {
 }
 
 /**
- * A definition as `defineStream` and `defineWorkflow` read it: the full
+ * A definition as `defineUnbounded` and `defineBounded` read it: the full
  * form's fields with `channels` optional, which a short form also is, since
  * it carries `run` in place of `channels` and writes no class-level setting
- * but a workflow's loop mode.
+ * but a bounded operator's loop mode.
  */
-type EitherForm<D extends OperativeDefinition> = Omit<D, 'channels'> & Partial<Pick<D, 'channels'>>;
+type EitherForm<D extends OperatorDefinition> = Omit<D, 'channels'> & Partial<Pick<D, 'channels'>>;
 
 /**
  * The channels body a definition wires: its own `channels`, or, for a §5 short
  * form carrying one tasklet's `run` body in their place, the body a
- * hand-written single-tasklet operative carries. `ShortFormWithTopology` is
+ * hand-written single-tasklet operator carries. `ShortFormWithTopology` is
  * the one contract refusal (`authoring_contract.md` §5.2) raised here, and it
  * carries its name in `refusals` and at the start of the message.
  *
@@ -324,23 +324,23 @@ type EitherForm<D extends OperativeDefinition> = Omit<D, 'channels'> & Partial<P
  * skips by name.
  */
 function channelsOf(
-  definition: EitherForm<OperativeDefinition>,
+  definition: EitherForm<OperatorDefinition>,
   kind: ClassSpec['kind'],
 ): (builder: Builder) => void {
   if (typeof definition.factoryId !== 'string' || !definition.factoryId.trim()) {
     throw new DeclarationError(
-      '<operative>',
+      '<operator>',
       null,
-      'an operative declares a non-empty `factoryId`',
+      'an operator declares a non-empty `factoryId`',
     );
   }
-  const foreign = kind === 'stream' ? written(definition, WORKFLOW_SETTINGS) : '';
+  const foreign = kind === 'unbounded' ? written(definition, BOUNDED_SETTINGS) : '';
   if (foreign) {
     throw new DeclarationError(
       definition.factoryId,
       null,
-      `declares ${foreign}, which only a workflow carries; a stream has no loop, rollback or ` +
-        'lifecycle setting, so the operative is declared with `defineWorkflow` or without it',
+      `declares ${foreign}, which only a bounded operator carries; an unbounded operator has no loop, rollback or ` +
+        'lifecycle setting, so the operator is declared with `defineBounded` or without it',
     );
   }
   const unknownKeys = Object.keys(definition).filter((key) => !DEFINITION_FIELDS.has(key));
@@ -348,7 +348,7 @@ function channelsOf(
     throw new DeclarationError(
       definition.factoryId,
       null,
-      `declares unknown \`${unknownKeys.join('`, `')}\`; an operative definition carries no such ` +
+      `declares unknown \`${unknownKeys.join('`, `')}\`; an operator definition carries no such ` +
         'field',
     );
   }
@@ -368,7 +368,7 @@ function channelsOf(
       throw new DeclarationError(
         definition.factoryId,
         null,
-        'declares no body; an operative wires its tasklets in `channels`, or carries one ' +
+        'declares no body; an operator wires its tasklets in `channels`, or carries one ' +
           "tasklet's `run` body as the short form",
       );
     }
@@ -389,7 +389,7 @@ function channelsOf(
       definition.factoryId,
       null,
       'declares `kind` on a short form; the kind is the name of the function that declares it ' +
-        '(`defineStream` or `defineWorkflow`), not a field',
+        '(`defineUnbounded` or `defineBounded`), not a field',
     );
   }
   if (written(definition, ['name'])) {
@@ -633,7 +633,7 @@ class Builder implements ChannelBuilder {
   }
 }
 
-/** Where a stream's values come from: an entry channel, or a tasklet. */
+/** Where an unbounded operator's values come from: an entry channel, or a tasklet. */
 type Source = { source: 'entry'; channel: ChannelSpec } | { source: 'tasklet'; node: TaskNode };
 
 class EdgeStream<T> implements Stream<T> {
@@ -894,46 +894,46 @@ function applyPending(channel: ChannelSpec, pending: PendingEdge): void {
 }
 
 /**
- * Define a stream operative from its channels graph, or, as the §5 short form,
+ * Define an unbounded operator from its channels graph, or, as the §5 short form,
  * from one tasklet's fields and `run` body.
  */
-export function defineStream(definition: OperativeDefinition): ClassSpec;
-export function defineStream<TIn, TOut = never, TState = void, TChange = never>(
+export function defineUnbounded(definition: OperatorDefinition): ClassSpec;
+export function defineUnbounded<TIn, TOut = never, TState = void, TChange = never>(
   definition: ShortFormDefinition<TIn, TOut, TState, TChange>,
 ): ClassSpec;
-export function defineStream(definition: EitherForm<OperativeDefinition>): ClassSpec {
-  return classSpec(definition, 'stream');
+export function defineUnbounded(definition: EitherForm<OperatorDefinition>): ClassSpec {
+  return classSpec(definition, 'unbounded');
 }
 
 /**
- * The values each workflow mode takes, keyed by its type so a value the type
+ * The values each bounded mode takes, keyed by its type so a value the type
  * gains is listed here or does not compile. A `.mjs` author has no type
  * checker, so a misspelt mode is refused where it is written.
  */
-const WORKFLOW_MODES: { [F in 'loopMode' | 'rollbackMode']: Record<WorkflowSpec[F], true> } = {
+const BOUNDED_MODES: { [F in 'loopMode' | 'rollbackMode']: Record<BoundedSpec[F], true> } = {
   loopMode: { once: true, per_input: true, chained: true },
   rollbackMode: { all_or_nothing: true, keep_progress: true },
 };
 
 /**
- * Define a workflow operative from the tasklets its channels graph wires,
- * or, as the §5 short form, a workflow of one tasklet's fields and `run`
+ * Define a bounded operator from the tasklets its channels graph wires,
+ * or, as the §5 short form, a bounded operator of one tasklet's fields and `run`
  * body, `once` unless it writes its `loopMode`.
  */
-export function defineWorkflow(definition: WorkflowDefinition): ClassSpec;
-export function defineWorkflow<TIn, TOut = never, TState = void, TChange = never>(
+export function defineBounded(definition: BoundedDefinition): ClassSpec;
+export function defineBounded<TIn, TOut = never, TState = void, TChange = never>(
   definition: ShortFormDefinition<TIn, TOut, TState, TChange> &
-    Pick<WorkflowDefinition, 'loopMode'>,
+    Pick<BoundedDefinition, 'loopMode'>,
 ): ClassSpec;
-export function defineWorkflow(definition: EitherForm<WorkflowDefinition>): ClassSpec {
-  const spec = classSpec(definition, 'workflow');
-  const workflow: WorkflowSpec = {
+export function defineBounded(definition: EitherForm<BoundedDefinition>): ClassSpec {
+  const spec = classSpec(definition, 'bounded');
+  const bounded: BoundedSpec = {
     loopMode: definition.loopMode ?? 'once',
     rollbackMode: definition.rollbackMode ?? 'all_or_nothing',
     maxDurationMs: definition.maxDurationMs,
   };
-  for (const [field, modes] of Object.entries(WORKFLOW_MODES)) {
-    const value = workflow[field as keyof typeof WORKFLOW_MODES];
+  for (const [field, modes] of Object.entries(BOUNDED_MODES)) {
+    const value = bounded[field as keyof typeof BOUNDED_MODES];
     if (!Object.hasOwn(modes, value)) {
       throw new DeclarationError(
         spec.factoryId,
@@ -942,7 +942,7 @@ export function defineWorkflow(definition: EitherForm<WorkflowDefinition>): Clas
       );
     }
   }
-  return { ...spec, workflow };
+  return { ...spec, bounded };
 }
 
 /**
@@ -951,7 +951,7 @@ export function defineWorkflow(definition: EitherForm<WorkflowDefinition>): Clas
  * carry reaches the core and is refused there by name, never dropped here.
  */
 function classSpec(
-  definition: EitherForm<OperativeDefinition> & Pick<WorkflowDefinition, 'syncDurability'>,
+  definition: EitherForm<OperatorDefinition> & Pick<BoundedDefinition, 'syncDurability'>,
   kind: ClassSpec['kind'],
 ): ClassSpec {
   const builder = new Builder(definition.factoryId);
@@ -961,7 +961,7 @@ function classSpec(
     factoryId: definition.factoryId,
     kind,
     persistent,
-    sleepWhenIdle: definition.sleepWhenIdle ?? (kind === 'workflow' && persistent),
+    sleepWhenIdle: definition.sleepWhenIdle ?? (kind === 'bounded' && persistent),
     effectivelyOnce: builder.effectivelyOnceFlag,
     checkpointAck: builder.checkpointAckFlag,
     checkpointEvery: builder.checkpointEveryValue,
@@ -1023,20 +1023,20 @@ export function applyTransforms(
 /**
  * Whether this class's producers release their values untransformed.
  *
- * A workflow's stage releases ONE value per emit and the driver fans it out to
+ * A bounded operator's stage releases ONE value per emit and the driver fans it out to
  * every consumer itself, so each consumer edge — its transforms and its key —
  * belongs to the consumer. The producer and the consumer read this one
  * predicate, so they cannot disagree about which side applies the edge.
  */
-export function isStructuredWorkflow(spec: ClassSpec): boolean {
-  return spec.kind === 'workflow';
+export function isStructuredBounded(spec: ClassSpec): boolean {
+  return spec.kind === 'bounded';
 }
 
 /**
  * Whether each invocation's output rides one effect record the controller
  * stamps at flush: under the effectively-once tier, and for a durable
- * workflow, whose stage commit names the record.
+ * bounded operator, whose stage commit names the record.
  */
 export function recordsEffects(spec: ClassSpec): boolean {
-  return spec.effectivelyOnce || (spec.kind === 'workflow' && spec.persistent);
+  return spec.effectivelyOnce || (spec.kind === 'bounded' && spec.persistent);
 }

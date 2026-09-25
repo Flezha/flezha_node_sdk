@@ -257,11 +257,11 @@ export function toHostClassDecl(spec: ClassSpec): Record<string, unknown> {
     sync_durability: spec.syncDurability,
     channels: spec.channels.map(channelJson),
     tasklets: spec.tasklets.map((node) => taskletJson(spec, node)),
-    workflow: spec.workflow
+    bounded: spec.bounded
       ? compact({
-          loop_mode: spec.workflow.loopMode,
-          rollback_mode: spec.workflow.rollbackMode,
-          max_duration_ms: spec.workflow.maxDurationMs,
+          loop_mode: spec.bounded.loopMode,
+          rollback_mode: spec.bounded.rollbackMode,
+          max_duration_ms: spec.bounded.maxDurationMs,
         })
       : undefined,
   });

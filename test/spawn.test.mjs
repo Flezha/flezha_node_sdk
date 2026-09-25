@@ -9,7 +9,7 @@ import {
   ACTIVATION_SCHEMA_VERSION,
   SpawnAlreadyRunningError,
   SpawnError,
-  SpawnFactoryNotWorkflowError,
+  SpawnFactoryNotBoundedError,
   SpawnFactoryUnknownError,
   SpawnRefusedError,
   SpawnTimeoutError,
@@ -41,7 +41,7 @@ test('a spawn returns its handle at once, under the activation it runs in', asyn
   const bridge = spawnBridge();
   let handle;
   await handled(bridge, (input, ctx) => {
-    handle = ctx.spawnWorkflow('worker', { order: input });
+    handle = ctx.spawnBounded('worker', { order: input });
   });
   assert.equal(typeof handle.then, 'undefined', 'the handle is not a promise');
   assert.deepEqual(bridge.reads, [], 'nothing was read that the tasklet did not ask for');
@@ -62,9 +62,9 @@ test('a spawn returns its handle at once, under the activation it runs in', asyn
 test('a spawn payload is what a text or json entry reads: UTF-8 for a string, JSON otherwise', async () => {
   const bridge = spawnBridge();
   await handled(bridge, (input, ctx) => {
-    ctx.spawnWorkflow('worker', `ticket-${input}`);
-    ctx.spawnWorkflow('worker', { symbol: 'AAPL', quantity: 10 });
-    ctx.spawnWorkflow('worker', Buffer.from([0xff, 0x00, 0x01]));
+    ctx.spawnBounded('worker', `ticket-${input}`);
+    ctx.spawnBounded('worker', { symbol: 'AAPL', quantity: 10 });
+    ctx.spawnBounded('worker', Buffer.from([0xff, 0x00, 0x01]));
   });
   const [text, json, bytes] = bridge.requests.map((request) => Buffer.from(request.payload));
   assert.equal(text.toString('utf8'), 'ticket-p', 'a string travels as its UTF-8 bytes');
@@ -79,8 +79,8 @@ test('a spawn resolves to the id it resolved to, generated or given', async () =
   }));
   const seen = [];
   await handled(bridge, async (input, ctx) => {
-    seen.push(await ctx.spawnWorkflow('worker', input).wait());
-    seen.push(ctx.spawnWorkflow('worker', input, { id: 'w1' }).tryResult());
+    seen.push(await ctx.spawnBounded('worker', input).wait());
+    seen.push(ctx.spawnBounded('worker', input, { id: 'w1' }).tryResult());
   });
   assert.deepEqual(seen, [
     { id: 'worker-k7m2qzxw4pd3fn2a', outcome: 'spawned' },
@@ -103,7 +103,7 @@ test('the error policy is sent, and a running id is thrown by both reads', async
   }));
   const failures = [];
   await handled(bridge, async (input, ctx) => {
-    const handle = ctx.spawnWorkflow('worker', input, { id: 'w1', ifRunning: 'error' });
+    const handle = ctx.spawnBounded('worker', input, { id: 'w1', ifRunning: 'error' });
     failures.push(
       await handle.wait().catch((error) => error),
       caught(() => handle.tryResult()),
@@ -122,7 +122,7 @@ test('ifRunning without an id throws a TypeError naming both, and sends nothing'
   const bridge = spawnBridge();
   let thrown;
   await handled(bridge, (input, ctx) => {
-    thrown = caught(() => ctx.spawnWorkflow('worker', input, { ifRunning: 'deliver' }));
+    thrown = caught(() => ctx.spawnBounded('worker', input, { ifRunning: 'deliver' }));
   });
   assert.ok(thrown instanceof TypeError, String(thrown));
   assert.match(thrown.message, /ifRunning without an id/);
@@ -133,7 +133,7 @@ test('each failure the core answers is thrown as its own class', async () => {
   const classes = {
     already_running: SpawnAlreadyRunningError,
     factory_unknown: SpawnFactoryUnknownError,
-    factory_not_workflow: SpawnFactoryNotWorkflowError,
+    factory_not_bounded: SpawnFactoryNotBoundedError,
     refused: SpawnRefusedError,
     timeout: SpawnTimeoutError,
     unavailable: SpawnUnavailableError,
@@ -144,7 +144,7 @@ test('each failure the core answers is thrown as its own class', async () => {
     let failure;
     await handled(bridge, async (input, ctx) => {
       failure = await ctx
-        .spawnWorkflow('worker', input)
+        .spawnBounded('worker', input)
         .wait()
         .catch((error) => error);
     });
@@ -160,7 +160,7 @@ test('a failure nobody reads faults nothing and leaves no promise to reject', as
   try {
     const bridge = spawnBridge(() => ({ id: '', error: 'refused', message: 'refused: quota' }));
     const effect = await handled(bridge, (input, ctx) => {
-      ctx.spawnWorkflow('worker', input);
+      ctx.spawnBounded('worker', input);
       ctx.emit(input);
     });
     assert.equal(effect.outputs.length, 1, 'the emit still ships');
@@ -179,8 +179,8 @@ test('a replayed spawn is skipped by the core, answering the id it gave or none'
     bridge,
     (input, ctx) => {
       seen.push(
-        ctx.spawnWorkflow('worker', input).tryResult(),
-        ctx.spawnWorkflow('worker', input, { id: 'w1' }).tryResult(),
+        ctx.spawnBounded('worker', input).tryResult(),
+        ctx.spawnBounded('worker', input, { id: 'w1' }).tryResult(),
       );
     },
     { replay: true },
@@ -200,7 +200,7 @@ test('the non-waiting read answers null until the answer arrives, and every read
   const bridge = spawnBridge(() => (arrived ? { id: 'w1', outcome: 'spawned' } : null));
   const seen = [];
   await handled(bridge, async (input, ctx) => {
-    const handle = ctx.spawnWorkflow('worker', input, { id: 'w1' });
+    const handle = ctx.spawnBounded('worker', input, { id: 'w1' });
     seen.push(handle.tryResult());
     arrived = true;
     seen.push(handle.tryResult(), await handle.wait());

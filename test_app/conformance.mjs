@@ -21,9 +21,9 @@ import { fileURLToPath } from 'node:url';
 import {
   ACTIVATION_SCHEMA_VERSION,
   DeclarationError,
-  defineStream,
+  defineUnbounded,
   defineTasklet,
-  defineWorkflow,
+  defineBounded,
   loadNative,
   Registry,
   validate,
@@ -32,7 +32,7 @@ import {
 import { ascendTo } from '../test/contract.mjs';
 import { manifest } from '../test/test-app.mjs';
 import { hybridChannel } from './fixtures.mjs';
-import { tierCommitBlockWorkflow } from './fixtures_workflow.mjs';
+import { tierCommitBlockBounded } from './fixtures_bounded.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 // Walked up to rather than counted: this module runs from its real path, and
@@ -45,12 +45,12 @@ const SURFACES = manifest().topology_surfaces;
 
 /**
  * The two rows the fixture cites rather than re-spells. They are this app's own
- * reference twins: `commit_block_chain` is `tier_commit_block_workflow`'s
+ * reference twins: `commit_block_chain` is `tier_commit_block_bounded`'s
  * topology, which is why the fixture names no steps for either.
  */
 const CITED = {
   hybrid_channel: hybridChannel,
-  commit_block_chain: tierCommitBlockWorkflow,
+  commit_block_chain: tierCommitBlockBounded,
 };
 
 /** The four-column refusal table, as data. */
@@ -121,7 +121,7 @@ function palette(role, mailbox) {
  */
 function preScan(steps) {
   const mailbox = new Map();
-  let workflow = false;
+  let bounded = false;
   let persistent = false;
   let syncDurability = false;
   let sleepWhenIdle;
@@ -130,7 +130,7 @@ function preScan(steps) {
     if (rest === undefined) continue;
     const [verb, arg] = call(rest);
     if (head === 'class') {
-      if (verb === 'workflow') workflow = true;
+      if (verb === 'bounded') bounded = true;
       if (verb === 'persistent') persistent = true;
       if (verb === 'sync_durability') syncDurability = true;
       if (verb === 'sleep_when_idle') sleepWhenIdle = true;
@@ -138,7 +138,7 @@ function preScan(steps) {
       mailbox.set(head, Number(arg));
     }
   }
-  return { mailbox, workflow, persistent, syncDurability, sleepWhenIdle };
+  return { mailbox, bounded, persistent, syncDurability, sleepWhenIdle };
 }
 
 /** `class.<flag>[(value)]` on the builder the declaration receives. */
@@ -147,7 +147,7 @@ function classFlag(builder, rest) {
   switch (flag) {
     // Declaration options, read by `preScan`.
     case 'persistent':
-    case 'workflow':
+    case 'bounded':
     case 'sync_durability':
     case 'sleep_when_idle':
       return;
@@ -177,7 +177,7 @@ function specOf(row) {
     .split(';')
     .map((step) => step.trim())
     .filter(Boolean);
-  const { mailbox, workflow, persistent, syncDurability, sleepWhenIdle } = preScan(steps);
+  const { mailbox, bounded, persistent, syncDurability, sleepWhenIdle } = preScan(steps);
   const tasklets = new Map();
   const taskletFor = (role) => {
     if (!tasklets.has(role)) tasklets.set(role, palette(role, mailbox.get(role)));
@@ -275,7 +275,7 @@ function specOf(row) {
 
   // Either kind is declared with what the row wrote, so a setting the kind
   // does not carry reaches the core, which refuses it by name.
-  const define = workflow ? defineWorkflow : defineStream;
+  const define = bounded ? defineBounded : defineUnbounded;
   return define({ factoryId: row.topology, persistent, syncDurability, sleepWhenIdle, channels });
 }
 
@@ -312,8 +312,8 @@ function derivedOf(declaration) {
 }
 
 // ---------------------------------------------------------------------------
-// The §5 short form. Node refuses a malformed declaration where `defineStream`
-// or `defineWorkflow` runs and a duplicate factory id where the registry takes
+// The §5 short form. Node refuses a malformed declaration where `defineUnbounded`
+// or `defineBounded` runs and a duplicate factory id where the registry takes
 // the second spec, so every row this SDK can write boots for real.
 
 /** The `shorthand(<id>|-, <sink>|-, <input>|-)[.noout|.topology]` steps of a row. */
@@ -344,10 +344,10 @@ function shorthandSteps(row) {
 
 /**
  * Declare one short form exactly as an author writes it: the row's first as a
- * stream, any later one as a workflow, so a collision crosses kinds.
+ * stream, any later one as a bounded operator, so a collision crosses kinds.
  */
 function declareShorthand(declaration, index) {
-  const define = index === 0 ? defineStream : defineWorkflow;
+  const define = index === 0 ? defineUnbounded : defineBounded;
   return define({
     factoryId: declaration.factoryId,
     sink: declaration.sink,

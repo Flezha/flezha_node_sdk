@@ -4,7 +4,7 @@
  * The addon is `flz_core_ffi` built with its `napi` feature — the same binary
  * the Java SDK loads under its `jni` feature, with a second veneer over the
  * same C entry points. Nothing here re-expresses dispatch, ordering, overflow,
- * the retry ladder, durability or the workflow driver; every function below is
+ * the retry ladder, durability or the bounded driver; every function below is
  * one call into the core.
  */
 
@@ -60,7 +60,7 @@ export type NativeActivationKind =
 
 export interface NativeActivation {
   token: bigint;
-  operative: string;
+  operator: string;
   tasklet: number;
   cellKey?: string;
   changeSeq: bigint;
@@ -194,7 +194,7 @@ export interface Native {
   checkClass(json: Buffer): Buffer;
   start(namespace: string): Promise<void>;
   /** The alternative to `start`: the declared graph runs here, no controller. */
-  localStart(factoryId: string, operativeId: string): void;
+  localStart(factoryId: string, operatorId: string): void;
   localOnSink(channel: string): void;
   localFeed(channel: string, payload: Uint8Array): Promise<void>;
   /** The core built this one, so its payload is a `Buffer` and says so. */

@@ -1,7 +1,7 @@
 /**
- * Running a declared operative graph in this process, with no controller.
+ * Running a declared operator graph in this process, with no controller.
  *
- * `LocalOperative.start` takes the class spec you deploy and runs the
+ * `LocalOperator.start` takes the class spec you deploy and runs the
  * `channels` graph it already declares — no local-mode member on the
  * definition, no second declaration. What runs is the deployed machinery:
  * entry decode, edge transforms and keying, one Cell per resolved key with
@@ -30,8 +30,8 @@ export interface SinkOutput {
 /** Bounded so a stopped run's drain leaves promptly. */
 const OUTPUT_POLL_MS = 50;
 
-/** One operative graph running in this process. */
-export class LocalOperative {
+/** One operator graph running in this process. */
+export class LocalOperator {
   readonly #native: Native;
   readonly #sinks = new Map<string, (output: SinkOutput) => void>();
   #dispatchId: number | null = null;
@@ -46,10 +46,10 @@ export class LocalOperative {
    * Register `spec`'s declared graph and start it locally. Refuses a
    * declaration that needs a controller, naming the capability.
    */
-  static start(spec: ClassSpec): LocalOperative {
+  static start(spec: ClassSpec): LocalOperator {
     const native = loadNative();
     native.contextNew(ACTIVATION_SCHEMA_VERSION);
-    const run = new LocalOperative(native);
+    const run = new LocalOperator(native);
     try {
       // `validate` is what writes the derived channel names and consumer
       // edges back into the spec, so it runs before anything is declared.

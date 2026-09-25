@@ -10,7 +10,7 @@ import { fileURLToPath } from 'node:url';
 
 import {
   ACTIVATION_SCHEMA_VERSION,
-  defineStream,
+  defineUnbounded,
   defineTasklet,
   loadNative,
   toHostClassDecl,
@@ -126,7 +126,7 @@ test('a core refusal carries the engine detail', () => {
 // implies: the builder writes each raw flag, and the acknowledgement
 // granularity a declaration registers under is derived from any of them.
 const checkpointClass = (factoryId, declare) =>
-  defineStream({
+  defineUnbounded({
     factoryId,
     channels: (c) => {
       c.effectivelyOnce();

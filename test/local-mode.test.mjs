@@ -1,4 +1,4 @@
-// The Node SDK's local mode: a user's own operative definition, its declared
+// The Node SDK's local mode: a user's own operator definition, its declared
 // two-tasklet graph, and no controller anywhere.
 //
 // The graph and its expected sink output are read from
@@ -10,7 +10,7 @@ import assert from 'node:assert/strict';
 import { dirname } from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
-import { LocalOperative, defineStream, defineTasklet } from '../dist/esm/index.js';
+import { LocalOperator, defineUnbounded, defineTasklet } from '../dist/esm/index.js';
 
 import { read } from './contract.mjs';
 
@@ -43,7 +43,7 @@ const Tally = defineTasklet({
   },
 });
 
-const WordCount = defineStream({
+const WordCount = defineUnbounded({
   factoryId: 'local_word_count_node',
   channels: (c) => {
     c.input('lines', { codec: 'text' })
@@ -74,7 +74,7 @@ function scenario() {
 test('a declared graph runs locally and releases the recorded output', async () => {
   const { lines, expected } = scenario();
   const released = [];
-  const run = LocalOperative.start(WordCount);
+  const run = LocalOperator.start(WordCount);
   try {
     run.onSink('totals', (output) => released.push(output));
     for (const line of lines) {
@@ -117,7 +117,7 @@ test('the core reads a payload view, at its own offset, exactly as it reads a Bu
 
   for (const payload of [view, bytes(line), line]) {
     const released = [];
-    const run = LocalOperative.start(WordCount);
+    const run = LocalOperator.start(WordCount);
     try {
       run.onSink('totals', (output) => released.push(utf8(output.payload)));
       await run.feed('lines', payload);
@@ -130,7 +130,7 @@ test('the core reads a payload view, at its own offset, exactly as it reads a Bu
 });
 
 test('a channel the class does not declare is refused by name', async () => {
-  const run = LocalOperative.start(WordCount);
+  const run = LocalOperator.start(WordCount);
   try {
     await assert.rejects(
       () => run.feed('nope', '1'),
@@ -151,7 +151,7 @@ const Defaults = defineTasklet({
   },
 });
 
-const DefaultCodecs = defineStream({
+const DefaultCodecs = defineUnbounded({
   factoryId: 'local_default_codecs_node',
   channels: (c) => {
     c.input('in').into(Defaults).sink('out');
@@ -160,7 +160,7 @@ const DefaultCodecs = defineStream({
 
 test('an undeclared entry reads JSON and an undeclared sink follows the value', async () => {
   const released = [];
-  const run = LocalOperative.start(DefaultCodecs);
+  const run = LocalOperator.start(DefaultCodecs);
   try {
     run.onSink('out', (output) => released.push(utf8(output.payload)));
     await run.feed('in', '{"a":1}');
@@ -177,20 +177,20 @@ test('a spawn with no controller anywhere is unavailable, from either read', asy
     run: async (input, ctx) => {
       let tried;
       try {
-        ctx.spawnWorkflow('worker', input).tryResult();
+        ctx.spawnBounded('worker', input).tryResult();
       } catch (error) {
         tried = error;
       }
       const waited = await ctx
-        .spawnWorkflow('worker', input, { id: 'w1' })
+        .spawnBounded('worker', input, { id: 'w1' })
         .wait()
         .catch((error) => error);
       ctx.emit(`${tried?.name} ${waited.name} ${waited.id}: ${waited.message}`);
     },
   });
   const released = [];
-  const run = LocalOperative.start(
-    defineStream({
+  const run = LocalOperator.start(
+    defineUnbounded({
       factoryId: 'local_spawner_node',
       channels: (c) => c.input('in', { codec: 'text' }).into(Spawner).sink('out'),
     }),
