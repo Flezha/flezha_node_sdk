@@ -660,7 +660,7 @@ test('a bounded setting on an unbounded operator is refused in either form, nami
           error instanceof DeclarationError &&
           error.factoryId === 'streamed' &&
           error.message.includes(`\`${field}\``) &&
-          error.message.includes('only a bounded carries'),
+          error.message.includes('only a bounded operator carries'),
         `${field} on a ${form}-form stream`,
       );
     }
