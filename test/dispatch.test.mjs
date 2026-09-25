@@ -645,7 +645,10 @@ const payloadOf = (output) =>
   output.target === 'plugin' ? jsonOf(output.payload) : decodeValue(output.payload);
 
 const BoundedSpec = defineBounded({ factoryId: 'bounded_emit', channels: boundedGraph });
-const UnboundedTwinSpec = defineUnbounded({ factoryId: 'bounded_emit_stream', channels: boundedGraph });
+const UnboundedTwinSpec = defineUnbounded({
+  factoryId: 'bounded_emit_stream',
+  channels: boundedGraph,
+});
 
 test('a structured bounded releases one untransformed edge output per emit', async () => {
   const result = await answer(

@@ -328,11 +328,7 @@ function channelsOf(
   kind: ClassSpec['kind'],
 ): (builder: Builder) => void {
   if (typeof definition.factoryId !== 'string' || !definition.factoryId.trim()) {
-    throw new DeclarationError(
-      '<operator>',
-      null,
-      'an operator declares a non-empty `factoryId`',
-    );
+    throw new DeclarationError('<operator>', null, 'an operator declares a non-empty `factoryId`');
   }
   const foreign = kind === 'unbounded' ? written(definition, BOUNDED_SETTINGS) : '';
   if (foreign) {
@@ -922,8 +918,7 @@ const BOUNDED_MODES: { [F in 'loopMode' | 'rollbackMode']: Record<BoundedSpec[F]
  */
 export function defineBounded(definition: BoundedDefinition): ClassSpec;
 export function defineBounded<TIn, TOut = never, TState = void, TChange = never>(
-  definition: ShortFormDefinition<TIn, TOut, TState, TChange> &
-    Pick<BoundedDefinition, 'loopMode'>,
+  definition: ShortFormDefinition<TIn, TOut, TState, TChange> & Pick<BoundedDefinition, 'loopMode'>,
 ): ClassSpec;
 export function defineBounded(definition: EitherForm<BoundedDefinition>): ClassSpec {
   const spec = classSpec(definition, 'bounded');
