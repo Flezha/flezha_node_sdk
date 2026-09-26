@@ -10,7 +10,7 @@ Three files, one for each part the guides describe:
 |---|---|---|
 | `echo_tasklet.mjs` | the tasklet | the processing stage: prefixes each message |
 | `echo_operator.mjs` | the operator | the graph: `in` feeds the tasklet, output lands on `out` |
-| `runner.mjs` | the runner | this process: offers the operator and waits |
+| `runner.mjs` | the runner | this process: registers the echo factory and waits |
 
 ## Run it
 
