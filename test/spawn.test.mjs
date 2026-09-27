@@ -37,12 +37,16 @@ async function handled(bridge, body, item) {
   return effect;
 }
 
-test('a spawn returns its handle at once, under the activation it runs in', async () => {
+test('a spawn returns its handle at once, under the activation and input offset it runs in', async () => {
   const bridge = spawnBridge();
   let handle;
-  await handled(bridge, (input, ctx) => {
-    handle = ctx.spawnBounded('worker', { order: input });
-  });
+  await handled(
+    bridge,
+    (input, ctx) => {
+      handle = ctx.spawnBounded('worker', { order: input });
+    },
+    { consumedOffset: 4n },
+  );
   assert.equal(typeof handle.then, 'undefined', 'the handle is not a promise');
   assert.deepEqual(bridge.reads, [], 'nothing was read that the tasklet did not ask for');
   const [{ payload, ...request }] = bridge.requests;
@@ -52,6 +56,7 @@ test('a spawn returns its handle at once, under the activation it runs in', asyn
     id: '',
     ifRunning: '',
     replay: false,
+    offset: 4n,
   });
   assert.deepEqual(JSON.parse(Buffer.from(payload).toString('utf8')), { order: 'p' });
 });

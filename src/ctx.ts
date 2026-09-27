@@ -110,6 +110,11 @@ export interface InvocationInput {
   state: unknown;
   /** The activation this invocation runs under, which a spawn it makes belongs to. */
   token: bigint;
+  /**
+   * The input-log offset of the item this invocation runs, which a spawn it makes carries so a
+   * crash re-run of the same input resolves to the worker the first run spawned.
+   */
+  offset?: bigint;
   bridge: SpawnBridge;
   /** Set for a `compensate` hook, which registers no timer. */
   compensating?: boolean;
@@ -403,6 +408,7 @@ export class Invocation implements Ctx<unknown, unknown, unknown> {
       plainPayload(payload, this.input.node.name),
       ifRunning ?? '',
       this.input.replay,
+      this.input.offset,
     );
     return new SpawnHandle(this.input.bridge, handle);
   }

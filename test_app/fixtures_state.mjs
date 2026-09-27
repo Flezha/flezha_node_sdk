@@ -95,6 +95,53 @@ export const tierStore = defineUnbounded({
   },
 });
 
+// -- tier_chain -------------------------------------------------------------
+//
+// An effectively-once stream of two tasklets. `tier_relay` counts what it
+// relays and passes each `key:value` on; `tier_tally` counts each key's inputs
+// and emits `key=count`. Until the release env is set the tally fails the
+// value `hold` and keeps retrying it, so a runner killed there has made the
+// relay's record durable and not the tally's.
+
+const counting = (name, run) =>
+  defineTasklet({
+    name,
+    initialState: () => ({ value: 0 }),
+    applyChange: (state, change) => {
+      state.value += change.delta;
+    },
+    run,
+  });
+
+const TierRelay = counting('tier_relay', (input, ctx) => {
+  ctx.change({ delta: 1 });
+  ctx.emit(input);
+});
+
+const TierTally = counting('tier_tally', (input, ctx) => {
+  const [key, value] = splitKeyed(input);
+  if (value === 'hold' && process.env.FLEZHA_BOUNDED_E2E_RELEASE === undefined) {
+    throw new Error('held until released');
+  }
+  ctx.change({ delta: 1 });
+  ctx.emit(`${key}=${ctx.state.value}`, { key });
+});
+
+export const tierChain = defineUnbounded({
+  factoryId: 'tier_chain',
+  channels: (c) => {
+    c.effectivelyOnce();
+    c.input('input', { codec: 'text' })
+      .onFull('drop_nothing')
+      .into(TierRelay)
+      .keyBy(prefix)
+      .retryMax(1_000)
+      .into(TierTally)
+      .keyed()
+      .sink('sink');
+  },
+});
+
 export const checkpointStore = defineUnbounded({
   factoryId: 'checkpoint_store',
   channels: (c) => {

@@ -708,6 +708,33 @@ export const spawnRequester = defineUnbounded({
   },
 });
 
+// -- spawn_hold_requester ---------------------------------------------------
+//
+// An effectively-once stream whose tasklet spawns `stateless_loop_bounded`
+// with no id, prints the answer as `spawn_result hold <id> <outcome>`, then
+// blocks until the release env is set, so a runner killed there dies with the
+// spawn answered and its input not durably consumed (bounded_loop.rs).
+
+const SpawnHoldRequester = defineTasklet({
+  name: 'spawn_hold_requester',
+  run: async (input, ctx) => {
+    await reportSpawn('hold', ctx.spawnBounded(statelessLoopBounded.factoryId, input));
+    await blockUntilReleased();
+  },
+});
+
+export const spawnHoldRequester = defineUnbounded({
+  factoryId: 'spawn_hold_requester',
+  channels: (c) => {
+    c.effectivelyOnce();
+    c.input('in', { codec: 'text' })
+      .onFull('drop_nothing')
+      .into(SpawnHoldRequester)
+      .keyed()
+      .sink('out');
+  },
+});
+
 // -- spawn_once_requester / typed_once_bounded -------------------------------
 //
 // The KB-381 shape: an unbounded tasklet spawns a `once` bounded operator whose entry

@@ -204,7 +204,10 @@ export interface Native {
   complete(result: NativeActivationResult): Promise<void>;
   abandon(token: bigint): void;
   shutdown(): void;
-  /** Request a spawn from the live activation `token`; answers its handle. Never waits. */
+  /**
+   * Request a spawn from the live activation `token`; answers its handle. Never waits.
+   * `offset` is the input-log offset of the item the request runs under, if it has one.
+   */
   spawnRequest(
     token: bigint,
     factoryId: string,
@@ -212,6 +215,7 @@ export interface Native {
     payload: Uint8Array,
     ifRunning: string,
     replay: boolean,
+    offset: bigint | undefined,
   ): bigint;
   /** The handle's answer as JSON once it has arrived, `null` before. Never waits. */
   spawnTryResult(handle: bigint): string | null;

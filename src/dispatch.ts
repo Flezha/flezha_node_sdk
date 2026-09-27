@@ -200,7 +200,7 @@ async function invoke(
   registered: RegisteredClass,
   node: TaskNode,
   deps: DispatchDeps,
-  at: { now: bigint; replay: boolean },
+  at: { now: bigint; replay: boolean; offset?: bigint },
   body: (ctx: Invocation) => Promise<unknown>,
 ): Promise<Invocation> {
   const ctx = new Invocation({
@@ -214,6 +214,7 @@ async function invoke(
     replay: at.replay,
     state: registered.stateOf(node, activation.cellKey),
     token: activation.token,
+    offset: at.offset,
     bridge: deps.bridge,
     compensating: activation.kind === 'compensate_run',
   });
@@ -242,7 +243,7 @@ async function runWork(
         registered,
         node,
         deps,
-        { now, replay: item.replay ?? false },
+        { now, replay: item.replay ?? false, offset: item.consumedOffset },
         async (ctx) => {
           if (item.kind === 'timer') {
             if (!definition.onTimer) {

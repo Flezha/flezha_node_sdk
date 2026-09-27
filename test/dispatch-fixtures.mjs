@@ -33,8 +33,8 @@ export function spawnBridge(
   const bridge = {
     requests: [],
     reads: [],
-    spawnRequest: (token, factoryId, id, payload, ifRunning, replay) =>
-      BigInt(bridge.requests.push({ token, factoryId, id, payload, ifRunning, replay })),
+    spawnRequest: (token, factoryId, id, payload, ifRunning, replay, offset) =>
+      BigInt(bridge.requests.push({ token, factoryId, id, payload, ifRunning, replay, offset })),
     spawnTryResult: (handle) => read('try', handle),
     spawnWait: async (handle) => read('wait', handle),
   };
