@@ -171,6 +171,27 @@ test('an undeclared entry reads JSON and an undeclared sink follows the value', 
   assert.deepEqual(released, ['a is 1', '{"a":1}']);
 });
 
+test('a sinkless short form whose run returns a value runs it once', async () => {
+  let calls = 0;
+  const Echoless = defineUnbounded({
+    factoryId: 'local_echoless_node',
+    input: 'ticks',
+    codec: 'text',
+    run: (tick) => {
+      calls += 1;
+      return `got ${tick}`;
+    },
+  });
+  const run = LocalOperator.start(Echoless);
+  try {
+    await run.feed('ticks', 'a');
+    await run.runUntilIdle(5_000);
+  } finally {
+    await run.close();
+  }
+  assert.equal(calls, 1, 'a value with nowhere to go is left alone, never retried');
+});
+
 test('a spawn with no controller anywhere is unavailable, from either read', async () => {
   const Spawner = defineTasklet({
     name: 'spawner',

@@ -205,12 +205,13 @@ export class Invocation implements Ctx<unknown, unknown, unknown> {
    * Hand one input to the tasklet's `run` body. A returned value is emitted;
    * `undefined` emits nothing, which is the warmup gate. A body that emits
    * through the context returns nothing, so the two spellings compose rather
-   * than conflict.
+   * than conflict. A value returned by a tasklet with no outgoing channel is
+   * left alone, as the reference leaves an unconsumed output.
    */
   async handle(value: unknown): Promise<void> {
     const definition = this.input.node.tasklet.definition;
     const returned = await definition.run(value as never, this as never);
-    if (returned !== undefined) this.emit(returned);
+    if (returned !== undefined && this.input.outgoing.length > 0) this.emit(returned);
   }
 
   emit(value: unknown, options?: EmitOptions): void {
