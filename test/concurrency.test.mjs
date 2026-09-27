@@ -6,7 +6,7 @@
 // (`bounded_mailbox_drop_nothing`, `wedge_probe`) against a real one. What is
 // provable here is proved here.
 import assert from 'node:assert/strict';
-import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
@@ -102,11 +102,12 @@ test('the dispatch path is one function, shared by both configurations', async (
   }
 });
 
-test('module-scope state is instantiated once per dispatch loop', async () => {
+test('module-scope state is instantiated once per dispatch loop', async (t) => {
   // Usually benign — a connection pool, a cache. Occasionally wrong — an
   // in-memory counter, a run-once flag. Either way it is a semantic the SDK
   // states rather than one an author discovers.
   const dir = mkdtempSync(join(tmpdir(), 'flezha-isolation-'));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
   const handler = join(dir, 'handler.mjs');
   writeFileSync(
     handler,

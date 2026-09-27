@@ -1,6 +1,6 @@
 // One activation, one answer — and the guard that makes it exactly one.
 import assert from 'node:assert/strict';
-import { mkdtempSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import { join, relative } from 'node:path';
@@ -28,6 +28,14 @@ import { testAppModule } from './test-app.mjs';
 const native = loadNative();
 native.contextNew(ACTIVATION_SCHEMA_VERSION);
 after(() => native.contextFree());
+
+const tempDirs = [];
+function tempDir(prefix) {
+  const dir = mkdtempSync(join(tmpdir(), prefix));
+  tempDirs.push(dir);
+  return dir;
+}
+after(() => tempDirs.forEach((dir) => rmSync(dir, { recursive: true, force: true })));
 
 const fixtures = await testAppModule('fixtures.mjs');
 
@@ -340,7 +348,7 @@ test('an activation for an unknown factory is answered, not dropped', async () =
 });
 
 test('a module specifier is imported and its operators registered', async () => {
-  const dir = mkdtempSync(join(tmpdir(), 'flezha-specifier-'));
+  const dir = tempDir('flezha-specifier-');
   const module = join(dir, 'handlers.mjs');
   writeFileSync(
     module,
@@ -375,7 +383,7 @@ for (const [build, load, file, bind, exporting] of [
   ],
 ]) {
   test(`the ${build} build imports a handler module by relative path`, async () => {
-    const module = join(mkdtempSync(join(tmpdir(), 'flezha-specifier-')), file);
+    const module = join(tempDir('flezha-specifier-'), file);
     writeFileSync(
       module,
       `${bind(new URL(`../dist/${build}/index.js`, import.meta.url).pathname)}\n` +
@@ -400,7 +408,7 @@ test('an unimportable specifier is named, with the original error chained', asyn
 // A graph is built at module scope, so a builder refusal is thrown while the
 // module is imported, and it reaches the author as itself.
 test('a refusal raised while a handler module is imported keeps its own name', async () => {
-  const dir = mkdtempSync(join(tmpdir(), 'flezha-module-scope-'));
+  const dir = tempDir('flezha-module-scope-');
   const module = join(dir, 'handlers.mjs');
   writeFileSync(
     module,
@@ -419,7 +427,7 @@ test('a refusal raised while a handler module is imported keeps its own name', a
 });
 
 test('a module that throws anything but a refusal is named, with the original error chained', async () => {
-  const dir = mkdtempSync(join(tmpdir(), 'flezha-broken-'));
+  const dir = tempDir('flezha-broken-');
   const module = join(dir, 'broken.mjs');
   writeFileSync(module, 'export default { x: , };\n');
   await assert.rejects(
@@ -432,7 +440,7 @@ test('a module that throws anything but a refusal is named, with the original er
 });
 
 test('a module exporting no operator is refused naming the specifier', async () => {
-  const dir = mkdtempSync(join(tmpdir(), 'flezha-empty-'));
+  const dir = tempDir('flezha-empty-');
   const module = join(dir, 'empty.mjs');
   writeFileSync(module, 'export const nothing = 1;\n');
   await assert.rejects(
@@ -1027,7 +1035,7 @@ test('a producer releases one frame per fanned value, and an array from map is o
 // --- registering a factory --------------------------------------------------
 
 test('a module exporting short forms registers each, of the kind its function names', async () => {
-  const dir = mkdtempSync(join(tmpdir(), 'flezha-short-'));
+  const dir = tempDir('flezha-short-');
   const module = join(dir, 'short.mjs');
   writeFileSync(
     module,
@@ -1049,7 +1057,7 @@ test('registerFactory rejects at the line that names a module which cannot load'
 });
 
 test('registerFactory rejects a module exporting no operator, before run()', async () => {
-  const dir = mkdtempSync(join(tmpdir(), 'flezha-empty-register-'));
+  const dir = tempDir('flezha-empty-register-');
   const module = join(dir, 'empty.mjs');
   writeFileSync(module, 'export const nothing = 1;\n');
   const runner = createRunner('register_factory_empty_ns');
@@ -1060,7 +1068,7 @@ test('registerFactory rejects a module exporting no operator, before run()', asy
 });
 
 test('unregisterFactory undoes a pre-run registration and names an unknown one', async () => {
-  const dir = mkdtempSync(join(tmpdir(), 'flezha-unregister-'));
+  const dir = tempDir('flezha-unregister-');
   const module = join(dir, 'one.mjs');
   writeFileSync(
     module,
@@ -1077,7 +1085,7 @@ test('unregisterFactory undoes a pre-run registration and names an unknown one',
 });
 
 test('a post-start registerFactory declares against the core and the workers', async () => {
-  const dir = mkdtempSync(join(tmpdir(), 'flezha-late-'));
+  const dir = tempDir('flezha-late-');
   const module = join(dir, 'late.mjs');
   writeFileSync(
     module,
