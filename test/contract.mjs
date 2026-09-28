@@ -7,8 +7,10 @@
 // of walking to a tree it has not got.
 //
 // This resolves the directory those repository-relative paths hang off, once,
-// in the order every SDK uses: `$FLEZHA_CONTRACT_DIR`, else `contract/` at the
-// package root, else the nearest enclosing tree that carries the manifest.
+// in the order every SDK uses: `$FLEZHA_CONTRACT_DIR`, else the nearest
+// enclosing tree that carries the manifest, else `contract/` at the package
+// root. The enclosing tree comes first so a stale copy fetched into a package
+// inside the core's checkout never shadows the live files.
 // Walking up rather than counting `..` segments is what lets the same
 // resolution work at both layouts this package lives in: under `sdk/node` here
 // and at the root of its own repository.
@@ -40,33 +42,37 @@ export function ascendTo(from, marker) {
   }
 }
 
-function candidates() {
+function candidates(root, configured) {
   return [
-    process.env.FLEZHA_CONTRACT_DIR || null,
-    resolve(packageRoot, 'contract'),
-    ascendTo(packageRoot, MANIFEST),
+    configured || null,
+    ascendTo(root, MANIFEST),
+    resolve(root, 'contract'),
   ];
+}
+
+/** Where the contract set is for a package at `root`, given `$FLEZHA_CONTRACT_DIR`. */
+export function locateContract(root, configured) {
+  const tried = candidates(root, configured);
+  const found = tried.find((at) => at && existsSync(resolve(at, MANIFEST)));
+  if (found) return found;
+  const unresolved = [
+    '$FLEZHA_CONTRACT_DIR (unset)',
+    `no directory above ${root} carries ${MANIFEST}`,
+    '',
+  ];
+  throw new Error(
+    'the contract set is nowhere this suite looked:\n  ' +
+      tried.map((at, i) => at ?? unresolved[i]).join('\n  ') +
+      `\nUnpack flezha-fixtures-<version>.tar.gz at ${root}/contract, ` +
+      'or set FLEZHA_CONTRACT_DIR.',
+  );
 }
 
 let cached = null;
 
 /** The directory the contract set's repository-relative paths hang off. */
 export function contractRoot() {
-  if (cached) return cached;
-  const tried = candidates();
-  const found = tried.find((at) => at && existsSync(resolve(at, MANIFEST)));
-  if (found) return (cached = found);
-  const unresolved = [
-    '$FLEZHA_CONTRACT_DIR (unset)',
-    '',
-    `no directory above ${packageRoot} carries ${MANIFEST}`,
-  ];
-  throw new Error(
-    'the contract set is nowhere this suite looked:\n  ' +
-      tried.map((at, i) => at ?? unresolved[i]).join('\n  ') +
-      `\nUnpack flezha-fixtures-<version>.tar.gz at ${packageRoot}/contract, ` +
-      'or set FLEZHA_CONTRACT_DIR.',
-  );
+  return (cached ??= locateContract(packageRoot, process.env.FLEZHA_CONTRACT_DIR));
 }
 
 /** One member of the set, as an absolute path. */
