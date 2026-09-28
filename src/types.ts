@@ -257,16 +257,7 @@ export interface Stream<T> {
   sink(encode: (value: T) => Uint8Array): Stream<T>;
   sink(options: CodecOptions): Stream<T>;
   sink(): Stream<T>;
-  /**
-   * State that the chain ends here. Purely type-level: the declared topology
-   * is the same without it, but a later `into`, transform or sink on it does
-   * not compile.
-   */
-  sealed(): Sealed;
 }
-
-/** A chain nothing follows. It has no builder methods. */
-export interface Sealed {}
 
 /**
  * Several streams feeding one tasklet, each lifted into its input `I` by a

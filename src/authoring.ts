@@ -24,7 +24,6 @@ import {
   type RollbackMode,
   type Tasklet,
   type RoutedDocument,
-  type Sealed,
   type ShortFormDefinition,
   type Stream,
   type BoundedDefinition,
@@ -557,14 +556,7 @@ class EdgeStream<T> implements Stream<T> {
     }
     return this;
   }
-
-  sealed(): Sealed {
-    return SEALED;
-  }
 }
-
-/** What every `sealed()` answers: it records nothing, so one value serves all. */
-const SEALED: Sealed = Object.freeze({});
 
 /**
  * A merge under construction. It records and never judges: each source is an

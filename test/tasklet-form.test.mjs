@@ -1,6 +1,6 @@
 // The one tasklet form: output only through the context, the tasklet's own
-// settings as fields of its definition, the cell mode read from the wiring, the
-// short form as a tasklet's fields, and a sealed chain.
+// settings as fields of its definition, the cell mode read from the wiring, and
+// the short form as a tasklet's fields.
 import assert from 'node:assert/strict';
 import test, { after } from 'node:test';
 
@@ -435,19 +435,6 @@ test("a tasklet's durable identity is its declared name", () => {
     ),
     ['track_prices'],
   );
-});
-
-test('a sealed chain declares what the chain without it declares, and takes no wiring', () => {
-  const Echo = defineTasklet({ name: 'echo', ...emitting });
-  const chain = (seal) =>
-    defineUnbounded({
-      factoryId: 'sealed',
-      channels: (c) => {
-        const out = c.input('in').into(Echo).sink('out');
-        if (seal) assert.equal(out.sealed().into, undefined);
-      },
-    });
-  assert.deepEqual(toHostClassDecl(chain(true)), toHostClassDecl(chain(false)));
 });
 
 // A short form's fields are read as a tasklet's are, along the prototype chain.

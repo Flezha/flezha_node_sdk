@@ -136,11 +136,6 @@ export const refusals = defineUnbounded({
     // @ts-expect-error `OhlcByContext` emits Candle, not the Trade `Ohlc` reads
     c.input<Trade>('z').into(OhlcByContext).into(Ohlc);
 
-    // A sealed chain ends where it says it does.
-    c.input<Trade>('sealed').into(Ohlc).into(Publish).sink('signals').sealed();
-    // @ts-expect-error a sealed chain takes no further wiring
-    c.input<Trade>('resealed').into(Ohlc).sink('candles').sealed().into(Publish);
-
     // A fan yields the element type, and the router hands on the document.
     c.input('v', { codec: 'text' })
       .flatMap((line) => line.split(','))

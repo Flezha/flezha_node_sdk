@@ -62,7 +62,6 @@ export type {
   TaskletDefinition,
   RollbackMode,
   RoutedDocument,
-  Sealed,
   ShortFormDefinition,
   SpawnOptions,
   SpawnOutcome,

@@ -30,10 +30,6 @@ import { TrackPrices } from './track_prices.mjs';
  * Only the first stage is keyed: a plain `into` leaves its consumer
  * single-cell, which is right for the second stage, since it keeps nothing per
  * symbol.
- *
- * `sealed()` states that the signals channel is where the desk's output ends.
- * It is purely type-level: the declared topology is the same without it, and
- * in TypeScript a later `into` on this chain does not compile.
  */
 export default defineUnbounded({
   factoryId: 'trade_watcher',
@@ -45,7 +41,6 @@ export default defineUnbounded({
       .keyBy((trade) => trade.symbol) // one cell per symbol
       .into(TrackPrices)
       .into(BuyAboveAverage)
-      .sink('signals')
-      .sealed();
+      .sink('signals');
   },
 });
