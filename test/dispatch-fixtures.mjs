@@ -1,6 +1,8 @@
 // The builders the dispatch-shaped suites share: what one operator's dispatch
-// depends on, and the activation the core hands out.
-import { defineUnbounded, defineTasklet, validate } from '../dist/esm/index.js';
+// depends on, the activation the core hands out, and a declaration's refusal.
+import assert from 'node:assert/strict';
+
+import { DeclarationError, defineUnbounded, defineTasklet, validate } from '../dist/esm/index.js';
 import { Registry, answer } from '../dist/esm/dispatch.js';
 
 /**
@@ -92,3 +94,14 @@ export const inputItem = (value, overrides = {}) => ({
 
 /** A plugin frame read back as the JSON a sink naming no codec sends. */
 export const jsonOf = (bytes) => JSON.parse(Buffer.from(bytes).toString('utf8'));
+
+/** The DeclarationError that building and submitting `build()` throws. */
+export function refusal(build) {
+  try {
+    validate(build());
+  } catch (error) {
+    assert.ok(error instanceof DeclarationError, `expected a DeclarationError, got ${error}`);
+    return error;
+  }
+  return assert.fail('expected a refusal');
+}

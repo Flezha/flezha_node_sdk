@@ -61,14 +61,13 @@ async function said(run) {
 
 const Counter = defineTasklet({
   name: 'counter',
-  dynamicCells: {},
-  initialState: () => ({ total: 0 }),
+  initState: () => ({ total: 0 }),
   applyChange: (state, change) => {
     state.total += change.by;
   },
   run: (input, ctx) => {
     ctx.change({ by: input });
-    return ctx.state.total;
+    ctx.emit(ctx.state.total);
   },
 });
 
@@ -111,9 +110,9 @@ test('a work batch answers one effect per item, in order', async () => {
 test('a throwing handler is a retryable verdict and stops the batch', async () => {
   const Throwing = defineTasklet({
     name: 'throwing',
-    run: (input) => {
+    run: (input, ctx) => {
       if (input === 'boom') throw new Error('handler exploded');
-      return input;
+      ctx.emit(input);
     },
   });
   const spec = defineUnbounded({
@@ -198,7 +197,7 @@ test('a migration handover round-trips through the JSON form', async () => {
 test('the JSON handover carries a bigint and a byte array without narrowing', async () => {
   const Wide = defineTasklet({
     name: 'wide',
-    initialState: () => ({ offset: 0n, blob: new Uint8Array() }),
+    initState: () => ({ offset: 0n, blob: new Uint8Array() }),
     applyChange: (state, change) => {
       state.offset = change.offset;
       state.blob = change.blob;
@@ -270,13 +269,11 @@ test('a prepare crossing answers one key per payload, in order', async () => {
 test('one payload failing its prepare does not fail the others', async () => {
   const Windowed = defineTasklet({
     name: 'windowed',
-    dynamicCells: {},
-    clock: 'event_time',
     eventTime: (input) => {
       if (input.at === undefined) throw new Error('no event time on this payload');
       return BigInt(input.at);
     },
-    run: (input) => input,
+    run: (input, ctx) => ctx.emit(input),
   });
   const spec = defineUnbounded({
     factoryId: 'windowed_op',
@@ -728,7 +725,9 @@ test('a timer call inside a compensate hook fails naming TimersUnavailable', asy
   const Undo = defineTasklet({
     name: 'undo',
     run: () => {},
-    compensate: (_outputs, ctx) => ctx.timerAfter(1_000),
+    compensate: (_outputs, ctx) => {
+      ctx.timerAfter(1_000);
+    },
   });
   const spec = defineBounded({
     factoryId: 'bounded_timer_compensate',
@@ -800,10 +799,10 @@ test('a bounded consumer applies its own edge exactly once, at delivery', async 
 const Completing = defineTasklet({
   name: 'completing',
   run: (input, ctx) => {
-    if (input === 'stay') return input;
+    ctx.emit(input);
+    if (input === 'stay') return;
     ctx.complete('first');
     ctx.complete(input);
-    return input;
   },
 });
 

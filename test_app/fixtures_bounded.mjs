@@ -65,11 +65,10 @@ const insertSorted = (items, value) => {
  * gate BEFORE recording it. Carrying all four here is what lets every durable
  * tasklet in this module be one call.
  */
-const durableStep = (name, { change, emit, compensate, gate, dynamicCells } = {}) =>
+const durableStep = (name, { change, emit, compensate, gate } = {}) =>
   defineTasklet({
     name,
-    ...(dynamicCells ? { dynamicCells } : {}),
-    initialState: () => ({ items: [] }),
+    initState: () => ({ items: [] }),
     applyChange: (state, recorded) => insertSorted(state.items, recorded.insert),
     run: async (input, ctx) => {
       // A gated step waits BEFORE its change and its emit, so the kill window
@@ -204,7 +203,7 @@ export const sagaBlockBounded = defineBounded({
 const KeySplit = statelessStep('key_split', (input, ctx) => {
   for (const key of input.split(',')) ctx.emit(key);
 });
-const KeyedCommit = durableStep('keyed_commit', { compensate: () => {}, dynamicCells: {} });
+const KeyedCommit = durableStep('keyed_commit', { compensate: () => {} });
 const KeyedFail = failingStep('keyed_fail');
 
 const keyedCommits = (c) =>
@@ -455,7 +454,7 @@ const millisAfter = (input, prefix) => Number.parseInt(input.slice(prefix.length
 
 const TimerTick = defineTasklet({
   name: 'tick',
-  initialState: () => ({ items: [] }),
+  initState: () => ({ items: [] }),
   applyChange: (state, recorded) => insertSorted(state.items, recorded.insert),
   run: async (input, ctx) => {
     if (input.startsWith('after:')) {
@@ -497,9 +496,8 @@ export const timerLoopBounded = defineBounded({
 
 const EventTick = defineTasklet({
   name: 'event_tick',
-  clock: 'event_time',
   eventTime: (input) => Number(String(input).split(':')[0]) || 0,
-  initialState: () => ({ items: [] }),
+  initState: () => ({ items: [] }),
   applyChange: (state, recorded) => insertSorted(state.items, recorded.insert),
   run: (_input, ctx) => {
     const at = ctx.timerAtEventTime(ctx.now() + 100n);
@@ -588,7 +586,7 @@ const ChatReply = statelessStep('chat_reply', (input, ctx) => ctx.emit(`reply:${
 
 const ChatReplyUndoable = defineTasklet({
   name: 'chat_reply_undoable',
-  initialState: () => ({ said: [] }),
+  initState: () => ({ said: [] }),
   applyChange: (state, change) => {
     if (change.said === undefined) state.said.pop();
     else state.said.push(change.said);
@@ -631,8 +629,7 @@ export const statelessLoopBounded = defineBounded({
 // takes.
 const KeyedLoopCount = defineTasklet({
   name: 'keyed_loop_count',
-  dynamicCells: {},
-  initialState: () => ({ value: 0 }),
+  initState: () => ({ value: 0 }),
   applyChange: (state, change) => {
     state.value += change.delta;
   },
@@ -821,7 +818,7 @@ const WAKE_AFTER_ENV = 'FLEZHA_BENCH_WAKE_AFTER_MS';
 
 const BenchTurn = defineTasklet({
   name: 'bench_turn',
-  initialState: () => ({ turns: 0, last: '' }),
+  initState: () => ({ turns: 0, last: '' }),
   applyChange: (state, seen) => {
     state.turns += 1;
     state.last = seen.turn;

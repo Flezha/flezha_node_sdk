@@ -83,10 +83,12 @@ function splitHead(step) {
  * builder call, so it is read before the graph is declared.
  */
 function palette(role, mailbox) {
-  const common = { mailboxCapacity: mailbox, run: (value) => value };
+  const common = { mailboxCapacity: mailbox, run: (value, ctx) => ctx.emit(value) };
   switch (role) {
     case 'plain':
     case 'second':
+    // Dynamic by the row's `key` link into it, not by a field of its own.
+    case 'dynamic':
       return defineTasklet({ name: role, ...common });
     // A twin is a DIFFERENT tasklet claiming `plain`'s name: that is the
     // collision the row names.
@@ -100,14 +102,12 @@ function palette(role, mailbox) {
         cells: { keys: ['a', 'b'], cellsFor: () => ['a'] },
         ...common,
       });
-    case 'dynamic':
-      return defineTasklet({ name: role, dynamicCells: {}, ...common });
     // A logical clock over a tasklet that journals nothing: no `applyChange`
     // is what makes the change type empty.
     case 'nochange':
-      return defineTasklet({ name: role, clock: 'logical', ...common });
+      return defineTasklet({ name: role, logicalClock: true, ...common });
     case 'eventtime':
-      return defineTasklet({ name: role, clock: 'event_time', eventTime: () => 0n, ...common });
+      return defineTasklet({ name: role, eventTime: () => 0n, ...common });
     default:
       throw new Error(`the fixture names a palette role this interpreter does not bind: ${role}`);
   }
@@ -352,7 +352,7 @@ function declareShorthand(declaration, index) {
     factoryId: declaration.factoryId,
     sink: declaration.sink,
     input: declaration.input,
-    run: declaration.noout ? () => {} : (input) => input,
+    run: declaration.noout ? () => {} : (input, ctx) => ctx.emit(input),
     ...(declaration.topology ? { channels: () => {} } : {}),
   });
 }

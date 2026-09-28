@@ -7,8 +7,7 @@ import { TaskletTestHarness, ReplayMismatch } from '../dist/esm/testing.js';
 
 const Window = defineTasklet({
   name: 'rolling_window',
-  dynamicCells: {},
-  initialState: () => ({ samples: [] }),
+  initState: () => ({ samples: [] }),
   applyChange: (state, change) => {
     if (change.push !== undefined) state.samples.push(change.push);
     if (change.popFront !== undefined) state.samples.splice(0, change.popFront);
@@ -17,25 +16,22 @@ const Window = defineTasklet({
     ctx.change({ push: value });
     const over = ctx.state.samples.length - 3;
     if (over > 0) ctx.change({ popFront: over });
-    if (ctx.state.samples.length < 3) return undefined;
-    return ctx.state.samples.reduce((a, b) => a + b, 0) / 3;
+    if (ctx.state.samples.length < 3) return;
+    ctx.emit(ctx.state.samples.reduce((a, b) => a + b, 0) / 3);
   },
 });
 
 test('a defined handler runs with no runner and no controller', async () => {
   // Nothing here starts a runner or loads the native binary: a handler is an
   // ordinary function, and this is the proof of it.
-  const ctx = {
-    state: { samples: [1, 2] },
-    change() {},
-    now: () => 0n,
-  };
-  const returned = await Window.definition.run(3, {
-    ...ctx,
+  const emitted = [];
+  await Window.definition.run(3, {
     state: { samples: [1, 2, 3] },
     change() {},
+    now: () => 0n,
+    emit: (value) => emitted.push(value),
   });
-  assert.equal(returned, 2);
+  assert.deepEqual(emitted, [2]);
 });
 
 test('inputs, emits and the recorded change log are inspectable', async () => {
@@ -63,7 +59,7 @@ test('the replay gate reports both states when the fold does not rebuild one', a
   let folds = 0;
   const Impure = defineTasklet({
     name: 'impure_fold',
-    initialState: () => ({ total: 0 }),
+    initState: () => ({ total: 0 }),
     applyChange: (state, change) => {
       folds += 1;
       state.total += change.by * folds;
@@ -89,7 +85,7 @@ test('the replay gate reports both states when the fold does not rebuild one', a
 test('a timer fires with ctx.now() at its scheduled time', async () => {
   const Session = defineTasklet({
     name: 'session',
-    initialState: () => ({ closedAt: null }),
+    initState: () => ({ closedAt: null }),
     applyChange: (state, change) => {
       state.closedAt = change.closedAt;
     },
@@ -112,7 +108,7 @@ test('a timer fires with ctx.now() at its scheduled time', async () => {
 });
 
 test('the clock the next input is served at can be advanced', async () => {
-  const Clocked = defineTasklet({ name: 'clocked', run: (_i, ctx) => ctx.now() });
+  const Clocked = defineTasklet({ name: 'clocked', run: (_i, ctx) => ctx.emit(ctx.now()) });
   const harness = TaskletTestHarness.of(Clocked, { now: 10n });
   assert.deepEqual((await harness.input(1)).emits, [10n]);
   harness.advanceBy(5n);
@@ -139,7 +135,7 @@ test('a payload stamped at an older version reaches the declared migration', () 
       assert.equal(from, 1);
       return { items: bytes.length, currency: 'EUR' };
     },
-    initialState: () => ({ items: 0, currency: 'EUR' }),
+    initState: () => ({ items: 0, currency: 'EUR' }),
     applyChange: (state, change) => {
       state.items += change.by;
     },
@@ -188,7 +184,7 @@ test('a string and an object output are reported exactly as emitted', async () =
     name: 'emitter',
     run: (input, ctx) => {
       ctx.emit({ said: input });
-      return `echo: ${input}`;
+      ctx.emit(`echo: ${input}`);
     },
   });
   const harness = TaskletTestHarness.of(Emitter);
@@ -198,11 +194,12 @@ test('a string and an object output are reported exactly as emitted', async () =
 test('a spawn answers a handle already resolved to a new instance', async () => {
   const Spawner = defineTasklet({
     name: 'spawner',
-    run: async (input, ctx) => [
-      ctx.spawnBounded('worker', input).tryResult(),
-      ctx.spawnBounded('worker', input).tryResult(),
-      await ctx.spawnBounded('worker', input, { id: 'w1' }).wait(),
-    ],
+    run: async (input, ctx) =>
+      ctx.emit([
+        ctx.spawnBounded('worker', input).tryResult(),
+        ctx.spawnBounded('worker', input).tryResult(),
+        await ctx.spawnBounded('worker', input, { id: 'w1' }).wait(),
+      ]),
   });
   const { emits } = await TaskletTestHarness.of(Spawner).input('p');
   assert.deepEqual(emits, [

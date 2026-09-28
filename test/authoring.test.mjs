@@ -4,8 +4,8 @@
 // `test/fixtures/reference_topologies.txt` is where each one's case lives — one
 // row per refusal, read by every SDK's conformance run. What is left here is
 // the authoring surface: the shape a declaration builds, the names it derives,
-// which closure reaches which edge, and the two defects the record cannot
-// carry. `validate` is the call that submits, so it needs the process context.
+// which closure reaches which edge, and the defect the record cannot carry.
+// `validate` is the call that submits, so it needs the process context.
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
@@ -27,24 +27,15 @@ import { TaskletTestHarness } from '../dist/esm/testing.js';
 import { EmitError } from '../dist/esm/types.js';
 
 import { member } from './contract.mjs';
+import { refusal } from './dispatch-fixtures.mjs';
 import { testAppModule } from './test-app.mjs';
 
 loadNative().contextNew(ACTIVATION_SCHEMA_VERSION);
 
 const fixtures = await testAppModule('fixtures.mjs');
 
-const echo = (name, options = {}) => defineTasklet({ name, ...options, run: (input) => input });
-
-const refusal = (build) => {
-  try {
-    const spec = build();
-    validate(spec);
-  } catch (error) {
-    assert.ok(error instanceof DeclarationError, `expected a DeclarationError, got ${error}`);
-    return error;
-  }
-  assert.fail('expected a refusal');
-};
+const echo = (name, options = {}) =>
+  defineTasklet({ name, ...options, run: (input, ctx) => ctx.emit(input) });
 
 /** The channels the core derived, as `[name, kind, producer, consumers]`. */
 const derivedChannels = (spec) =>
@@ -90,14 +81,15 @@ test('a graph builds and its topology reaches the declaration', () => {
 test('keyBy declares a dynamic consumer and the key reaches the channel', () => {
   const counter = defineTasklet({
     name: 'counter',
-    dynamicCells: { idleTtlMs: 60_000, maxCells: 100 },
-    initialState: () => ({ seen: 0 }),
+    idleTtlSeconds: 60,
+    maxCells: 100,
+    initState: () => ({ seen: 0 }),
     applyChange: (state, change) => {
       state.seen += change.by;
     },
     run: (input, ctx) => {
       ctx.change({ by: 1 });
-      return input;
+      ctx.emit(input);
     },
   });
   const spec = defineUnbounded({
@@ -114,6 +106,7 @@ test('keyBy declares a dynamic consumer and the key reaches the channel', () => 
   const decl = toHostClassDecl(spec);
   assert.equal(decl.tasklets[0].cell_mode, 'dynamic');
   assert.equal(decl.tasklets[0].idle_ttl_ms, 60_000);
+  assert.equal(decl.tasklets[0].max_cells, 100);
   assert.equal(decl.channels[1].keyed, true);
 });
 
@@ -127,7 +120,7 @@ test('a tasklet that folds no change declares it, and a logical clock over it is
     channels: (c) =>
       c
         .input('in')
-        .into(defineTasklet({ name: 'ticker', clock: 'logical', run: (i) => i }))
+        .into(defineTasklet({ name: 'ticker', logicalClock: true, run: (i, ctx) => ctx.emit(i) }))
         .sink(),
   });
   assert.equal(toHostClassDecl(spec).tasklets[0].change_is_nochange, true);
@@ -212,8 +205,8 @@ test('a second mention under its own node name is a second node', () => {
 
 test('two tasklets claiming one node identity are refused', () => {
   const refused = refusal(() => {
-    const first = defineTasklet({ name: 'same', run: (i) => i });
-    const second = defineTasklet({ name: 'same', run: (i) => i });
+    const first = echo('same');
+    const second = echo('same');
     return defineUnbounded({
       factoryId: 'collide',
       channels: (c) => {
@@ -222,20 +215,6 @@ test('two tasklets claiming one node identity are refused', () => {
     });
   });
   assert.match(refused.message, /node identity/);
-});
-
-test('an event-time clock without an extractor is refused', () => {
-  const refused = refusal(() => {
-    const task = defineTasklet({ name: 'windowed', clock: 'event_time', run: (i) => i });
-    return defineUnbounded({
-      factoryId: 'no_extractor',
-      channels: (c) => c.input('in').into(task).sink(),
-    });
-  });
-  assert.match(
-    refused.message,
-    /windowed: declares an event_time clock but no eventTime extractor/,
-  );
 });
 
 // KI-122: three options, one implication. Each writes its own raw flag and the
@@ -386,8 +365,10 @@ test('state read but never folded is allowed; recording a change is not', async 
   // point of use rather than at declaration.
   const ReadOnly = defineTasklet({
     name: 'read_only',
-    initialState: () => ({ comparable: 'default' }),
-    run: (input, ctx) => (ctx.state.comparable === input ? input : undefined),
+    initState: () => ({ comparable: 'default' }),
+    run: (input, ctx) => {
+      if (ctx.state.comparable === input) ctx.emit(input);
+    },
   });
   const harness = TaskletTestHarness.of(ReadOnly);
   assert.deepEqual((await harness.input('default')).emits, ['default']);
@@ -395,7 +376,7 @@ test('state read but never folded is allowed; recording a change is not', async 
 
   const Recording = defineTasklet({
     name: 'recording',
-    initialState: () => ({ n: 0 }),
+    initState: () => ({ n: 0 }),
     run: (_input, ctx) => ctx.change({ by: 1 }),
   });
   await assert.rejects(
@@ -407,7 +388,7 @@ test('state read but never folded is allowed; recording a change is not', async 
 test('applyChange with no state to fold into is refused at definition', () => {
   assert.throws(
     () => defineTasklet({ name: 'nowhere', applyChange: () => {}, run: () => {} }),
-    (error) => /no initialState/.test(error.message),
+    (error) => /no initState/.test(error.message),
   );
 });
 
@@ -416,7 +397,7 @@ test('a declared state that cannot be encoded is refused at definition', () => {
     () =>
       defineTasklet({
         name: 'unencodable',
-        initialState: () => ({ pending: new Map() }),
+        initState: () => ({ pending: new Map() }),
         applyChange: () => {},
         run: () => {},
       }),
@@ -646,7 +627,7 @@ test('sleeping is a class setting of both kinds, defaulting to persistence on a 
 test('a bounded setting on an unbounded operator is refused in either form, naming it', () => {
   const forms = {
     full: { channels: (c) => c.input('in').into(echo('p')) },
-    short: { sink: 'out', run: (input) => input },
+    short: { sink: 'out', run: (input, ctx) => ctx.emit(input) },
   };
   for (const [field, value] of [
     ['loopMode', 'per_input'],
@@ -670,7 +651,7 @@ test('a bounded setting on an unbounded operator is refused in either form, nami
 test('the retired wake field is refused in either form, naming it', () => {
   const forms = {
     full: { channels: (c) => c.input('in').into(echo('p')) },
-    short: { sink: 'out', run: (input) => input },
+    short: { sink: 'out', run: (input, ctx) => ctx.emit(input) },
   };
   for (const [form, body] of Object.entries(forms)) {
     const { factoryId, message } = refusal(() =>
@@ -686,7 +667,7 @@ test('an unknown loop mode or rollback mode is refused at definition, naming the
   for (const [field, value, form] of [
     ['loopMode', 'forever', { channels }],
     ['rollbackMode', 'sometimes', { channels }],
-    ['loopMode', 'forever', { sink: 'out', run: (input) => input }],
+    ['loopMode', 'forever', { sink: 'out', run: (input, ctx) => ctx.emit(input) }],
   ]) {
     assert.throws(
       () => defineBounded({ factoryId: 'moded', [field]: value, ...form }),
@@ -890,7 +871,7 @@ test('a merge is refused by the core’s names', () => {
     }),
     ['EdgeAlreadyWired'],
   );
-  const keyed = echo('keyed', { dynamicCells: {} });
+  const keyed = echo('keyed');
   assert.deepEqual(
     refused((c) =>
       c
@@ -970,11 +951,11 @@ test('the router hands each key each document once, on that key’s own traffic'
 // An operator definition carrying one tasklet's `run` body in place of a
 // `channels` body is a whole operator of the function's kind, built on the
 // same graph path a hand-written one is built on. `SinkWithoutOutput` is not
-// among the refusals: a `.mjs` author runs no type checker and this SDK ships
-// no build step, so a body that returns nothing cannot be seen here. The
+// among the refusals: no `run` returns output and the output type is erased
+// before the SDK runs, so nothing here says whether a short form emits. The
 // manifest leaves `shorthand_typed_output` off and the row skips by name.
 
-const upper = (input) => input.toUpperCase();
+const upper = (input, ctx) => ctx.emit(input.toUpperCase());
 
 /** What the core is handed, and what it derives from it. */
 const declared = (spec) => ({ decl: toHostClassDecl(spec), derived: validate(spec) });
@@ -1067,13 +1048,13 @@ test('every tasklet field a short form carries reaches its generated tasklet', (
   const codec = { encode: (value) => encodeValue(value), decode: () => ({ n: 0 }) };
   const keyed = {
     cells: { keys: ['a', 'b'], cellsFor: () => ['a'] },
-    clock: 'logical',
+    logicalClock: true,
     mailboxCapacity: 7,
     schemaVersion: 3,
     minReadableSchemaVersion: 2,
     migrateState: () => ({ n: 0 }),
     migrateChange: () => 1,
-    initialState: () => ({ n: 0 }),
+    initState: () => ({ n: 0 }),
     applyChange: (state, change) => {
       state.n += change;
     },
@@ -1084,8 +1065,8 @@ test('every tasklet field a short form carries reaches its generated tasklet', (
     run: upper,
   };
   const dynamic = {
-    dynamicCells: { idleTtlMs: 60_000, maxCells: 10 },
-    clock: 'event_time',
+    idleTtlSeconds: 60,
+    maxCells: 10,
     eventTime: () => 0n,
     run: upper,
   };
@@ -1131,7 +1112,7 @@ test('a short-form key or a tasklet field beside a channels body is refused, nam
       ['input', 'prices'],
       ['codec', 'text'],
       ['mailboxCapacity', 8],
-      ['initialState', () => ({ n: 0 })],
+      ['initState', () => ({ n: 0 })],
       ['cells', { keys: ['a'] }],
     ]) {
       const { message } = refusal(() =>

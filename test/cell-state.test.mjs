@@ -1,0 +1,119 @@
+// A cell belongs to one operator.
+//
+// One registered class serves every operator of its factory on a runner, such
+// as each instance of a bounded operator or each partition of a stream, and
+// each has cells of its own under the same tasklet and cell key. Every
+// dispatch path that reads or writes a cell's state is driven here with two
+// operators side by side. The harness keeps one cell of its own, so its
+// restore is driven for one operator only, to show it fills the cell it reads.
+import assert from 'node:assert/strict';
+import test, { after } from 'node:test';
+
+import {
+  ACTIVATION_SCHEMA_VERSION,
+  decodeValue,
+  defineTasklet,
+  defineUnbounded,
+  encodeValue,
+  loadNative,
+} from '../dist/esm/index.js';
+import { answer } from '../dist/esm/dispatch.js';
+import { TaskletTestHarness } from '../dist/esm/testing.js';
+
+import { activationFor, depsFor, inputItem, jsonOf } from './dispatch-fixtures.mjs';
+
+// The operators are judged by the core, as a runner's are, before any answer.
+const native = loadNative();
+native.contextNew(ACTIVATION_SCHEMA_VERSION);
+after(() => native.contextFree());
+
+/** Keeps what it was sent, and undoes by emitting what its own cell holds. */
+const Kept = defineTasklet({
+  name: 'kept',
+  initState: () => ({ seen: [] }),
+  applyChange: (state, change) => {
+    state.seen.push(change);
+  },
+  run: (value, ctx) => ctx.change(value),
+  compensate: (_outputs, ctx) => ctx.emit([...ctx.state.seen]),
+});
+
+const KeptOperator = defineUnbounded({
+  factoryId: 'kept_operator',
+  channels: (c) => c.input('input').into(Kept).sink('out', { codec: 'msgpack' }),
+});
+
+const activation = activationFor('kept_operator');
+
+function operatorOf(deps) {
+  const ask = (kind, operator, extra = {}) =>
+    answer(activation({ kind, operator, ...extra }), deps);
+  return {
+    ask,
+    async work(operator, value) {
+      const result = await ask('work', operator, { items: [inputItem(value)] });
+      assert.equal(result.effects[0].verdict, 'ok', result.effects[0].message);
+    },
+    async read(operator) {
+      return jsonOf((await ask('live_state_read', operator)).json);
+    },
+  };
+}
+
+test('two operators of one factory keep their own cell', async () => {
+  const cells = operatorOf(depsFor(KeptOperator));
+  await cells.work('order_a', 'a');
+  await cells.work('order_b', 'b');
+  await cells.work('order_a', 'c');
+
+  assert.deepEqual(await cells.read('order_a'), { seen: ['a', 'c'] });
+  assert.deepEqual(await cells.read('order_b'), { seen: ['b'] });
+});
+
+test('a restore and an applied state reach only their own operator', async () => {
+  const cells = operatorOf(depsFor(KeptOperator));
+  const restored = await cells.ask('restore_fold', 'order_a', {
+    changes: [{ bytes: encodeValue('r') }],
+  });
+  const applied = await cells.ask('apply_state', 'order_b', {
+    stateJson: Buffer.from('{"seen":["m"]}'),
+  });
+
+  assert.equal(restored.outcome, 'restored');
+  assert.equal(applied.outcome, 'state_applied');
+  assert.deepEqual(await cells.read('order_a'), { seen: ['r'] });
+  assert.deepEqual(await cells.read('order_b'), { seen: ['m'] });
+  assert.deepEqual(await cells.read('order_c'), { seen: [] });
+});
+
+test("a snapshot and a migration serialize read their own operator's cell", async () => {
+  const cells = operatorOf(depsFor(KeptOperator));
+  await cells.work('order_a', 'a');
+  await cells.work('order_b', 'b');
+
+  const snapshot = await cells.ask('snapshot_request', 'order_b');
+  const migrated = await cells.ask('migration_serialize', 'order_b');
+
+  assert.deepEqual(decodeValue(snapshot.state), { seen: ['b'] });
+  assert.deepEqual(jsonOf(migrated.json), { seen: ['b'] });
+});
+
+test("a compensation reads its own operator's cell", async () => {
+  const cells = operatorOf(depsFor(KeptOperator));
+  await cells.work('order_a', 'a');
+  await cells.work('order_b', 'b');
+
+  const result = await cells.ask('compensate_run', 'order_b', { outputs: [] });
+
+  assert.deepEqual(decodeValue(result.effects[0].outputs[0].payload), ['b']);
+});
+
+test('a harness restore fills the cell it reads', async () => {
+  const harness = TaskletTestHarness.withPayload(
+    Kept,
+    { changes: [encodeValue('r')] },
+    { operator: 'order_a' },
+  );
+
+  assert.deepEqual(harness.currentState, { seen: ['r'] });
+});

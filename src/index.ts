@@ -9,7 +9,8 @@
 
 export { Admin } from './admin.js';
 export type { StartOptions, StartOutcome, StartResult } from './admin.js';
-export { defineUnbounded, defineTasklet, defineBounded } from './authoring.js';
+export { defineUnbounded, defineBounded } from './authoring.js';
+export { defineTasklet } from './definition.js';
 export type { ChannelSpec, ClassSpec, Link, TaskNode } from './authoring.js';
 export type { SpawnHandle } from './ctx.js';
 export {
@@ -50,9 +51,7 @@ export type {
   ChannelBuilder,
   ChannelCodec,
   CodecOptions,
-  ClockKind,
   Ctx,
-  DynamicCells,
   EmitOptions,
   IfRunning,
   LoopMode,
@@ -63,6 +62,7 @@ export type {
   TaskletDefinition,
   RollbackMode,
   RoutedDocument,
+  Sealed,
   ShortFormDefinition,
   SpawnOptions,
   SpawnOutcome,

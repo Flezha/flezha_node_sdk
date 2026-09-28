@@ -132,7 +132,7 @@ const checkpointClass = (factoryId, declare) =>
       c.effectivelyOnce();
       declare(c);
       c.input('input')
-        .into(defineTasklet({ name: `${factoryId}_tasklet`, run: (input) => input }))
+        .into(defineTasklet({ name: `${factoryId}_tasklet`, run: (input, ctx) => ctx.emit(input) }))
         .keyed()
         .sink('sink');
     },

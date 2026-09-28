@@ -31,8 +31,8 @@ const Split = defineTasklet({
 /** One Cell per word, minted on first sight of it. */
 const Tally = defineTasklet({
   name: 'tally',
-  dynamicCells: { idleTtlMs: 300_000 },
-  initialState: () => ({ seen: 0 }),
+  idleTtlSeconds: 300,
+  initState: () => ({ seen: 0 }),
   applyChange: (state, change) => {
     state.seen = change.seen;
   },
@@ -171,25 +171,30 @@ test('an undeclared entry reads JSON and an undeclared sink follows the value', 
   assert.deepEqual(released, ['a is 1', '{"a":1}']);
 });
 
-test('a sinkless short form whose run returns a value runs it once', async () => {
+// Plain JavaScript runs no type checker, so a returning `run` still loads.
+test('a short form whose run returns a value runs it once, and nothing reaches its sink', async () => {
   let calls = 0;
-  const Echoless = defineUnbounded({
-    factoryId: 'local_echoless_node',
+  const Returning = defineUnbounded({
+    factoryId: 'local_returning_node',
     input: 'ticks',
+    sink: 'out',
     codec: 'text',
     run: (tick) => {
       calls += 1;
       return `got ${tick}`;
     },
   });
-  const run = LocalOperator.start(Echoless);
+  const released = [];
+  const run = LocalOperator.start(Returning);
   try {
+    run.onSink('out', (output) => released.push(output));
     await run.feed('ticks', 'a');
     await run.runUntilIdle(5_000);
   } finally {
     await run.close();
   }
-  assert.equal(calls, 1, 'a value with nowhere to go is left alone, never retried');
+  assert.equal(calls, 1, 'a returned value is ignored, never retried');
+  assert.deepEqual(released, []);
 });
 
 test('a spawn with no controller anywhere is unavailable, from either read', async () => {

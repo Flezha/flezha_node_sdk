@@ -68,10 +68,10 @@ test('random identifiers are reported and the invocation still completes', async
   try {
     const Random = defineTasklet({
       name: 'random_id',
-      run: () => {
+      run: (_input, ctx) => {
         Math.random();
         globalThis.crypto.randomUUID();
-        return 'finished';
+        ctx.emit('finished');
       },
     });
     const applied = await TaskletTestHarness.of(Random).input(1);

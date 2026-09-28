@@ -36,22 +36,22 @@ function pinned(section) {
 function fullyDeclaredUnbounded(define = defineUnbounded) {
   const dynamic = defineTasklet({
     name: 'full_dynamic',
-    dynamicCells: { idleTtlMs: 30_000, maxCells: 64 },
-    clock: 'event_time',
+    idleTtlSeconds: 30,
+    maxCells: 64,
     eventTime: (input) => BigInt(input.at),
     mailboxCapacity: 512,
     schemaVersion: 2,
     minReadableSchemaVersion: 1,
     migrateState: (_from, bytes) => ({ seen: bytes.length }),
     migrateChange: () => ({ by: 1 }),
-    initialState: () => ({ seen: 0 }),
+    initState: () => ({ seen: 0 }),
     applyChange: (state, change) => {
       state.seen += change.by;
     },
     compensate: () => {},
     run: (input, ctx) => {
       ctx.change({ by: 1 });
-      return input;
+      ctx.emit(input);
     },
   });
   return define({
@@ -81,7 +81,7 @@ function fullyDeclaredStatic() {
   const statik = defineTasklet({
     name: 'full_static',
     cells: { keys: ['a', 'b'], cellsFor: () => ['a'] },
-    run: (input) => input,
+    run: (input, ctx) => ctx.emit(input),
   });
   return defineUnbounded({
     factoryId: 'node_decl_static',
@@ -259,7 +259,7 @@ test('the structured bounded topology is the reference, channel for channel', ()
 // A merge is no declaration key: each source is a chain the core reads, closed
 // by the `merge` link `flz_core::host::decl` deserializes.
 test('a merge source serialises as the core’s merge link, keyed after its mapping', () => {
-  const merged = (name) => defineTasklet({ name, dynamicCells: {}, run: (i) => i });
+  const merged = (name) => defineTasklet({ name, run: (i, ctx) => ctx.emit(i) });
   const decl = toHostClassDecl(
     defineUnbounded({
       factoryId: 'node_decl_merge',

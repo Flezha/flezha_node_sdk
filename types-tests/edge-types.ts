@@ -12,7 +12,7 @@
  * at registration and covered by `test/authoring.test.mjs`.
  */
 
-import { defineUnbounded, defineTasklet, defineBounded } from '../src/index.js';
+import { defineUnbounded, defineTasklet, defineBounded, type Ctx } from '../src/index.js';
 
 interface Trade {
   symbol: string;
@@ -24,19 +24,36 @@ interface Candle {
   close: number;
 }
 
-const Ohlc = defineTasklet({
+// The output type is the definition's type arguments, never the body's.
+const Ohlc = defineTasklet<Trade, Candle>({
   name: 'ohlc',
-  run: (trade: Trade): Candle => ({ symbol: trade.symbol, close: trade.price }),
+  run: (trade, ctx) => ctx.emit({ symbol: trade.symbol, close: trade.price }),
 });
 
-const Publish = defineTasklet({
+const Publish = defineTasklet<Candle, string>({
   name: 'publish',
-  run: (candle: Candle): string => `${candle.symbol}:${candle.close}`,
+  run: (candle, ctx) => ctx.emit(`${candle.symbol}:${candle.close}`),
 });
+
+// Or the annotation on the context, which names the state and change types too.
+const OhlcByContext = defineTasklet({
+  name: 'ohlc_by_context',
+  initState: () => ({ last: 0 }),
+  applyChange: (state, move: { price: number }) => {
+    state.last = move.price;
+  },
+  run: (trade: Trade, ctx: Ctx<Candle, { last: number }, { price: number }>) => {
+    ctx.change({ price: trade.price });
+    ctx.emit({ symbol: trade.symbol, close: trade.price });
+  },
+});
+
+/** A body that emits nothing, for the fixtures whose subject is elsewhere. */
+const quiet = (_line: string): void => {};
 
 const Count = defineTasklet({
   name: 'count',
-  initialState: () => ({ total: 0 }),
+  initState: () => ({ total: 0 }),
   applyChange: (state, change: { by: number }) => {
     state.total += change.by;
   },
@@ -114,6 +131,16 @@ export const refusals = defineUnbounded({
     // @ts-expect-error the mapping answers a string, not the merged Trade
     c.merge<Trade>().from(c.input('u', { codec: 'text' }), (line) => line);
 
+    // Either spelling of the output type is what the next hop is checked against.
+    c.input<Trade>('y').into(OhlcByContext).into(Publish);
+    // @ts-expect-error `OhlcByContext` emits Candle, not the Trade `Ohlc` reads
+    c.input<Trade>('z').into(OhlcByContext).into(Ohlc);
+
+    // A sealed chain ends where it says it does.
+    c.input<Trade>('sealed').into(Ohlc).into(Publish).sink('signals').sealed();
+    // @ts-expect-error a sealed chain takes no further wiring
+    c.input<Trade>('resealed').into(Ohlc).sink('candles').sealed().into(Publish);
+
     // A fan yields the element type, and the router hands on the document.
     c.input('v', { codec: 'text' })
       .flatMap((line) => line.split(','))
@@ -126,7 +153,7 @@ export const refusals = defineUnbounded({
 
 const BadChange = defineTasklet({
   name: 'bad_change',
-  initialState: () => ({ total: 0 }),
+  initState: () => ({ total: 0 }),
   applyChange: (state, change: { by: number }) => {
     state.total += change.by;
   },
@@ -144,10 +171,22 @@ const BadEmit = defineTasklet<Trade, Candle>({
   },
 });
 
+const NoOutput = defineTasklet({
+  name: 'no_output',
+  run: (trade: Trade, ctx) => {
+    // @ts-expect-error a tasklet that names no output type has nothing to emit
+    ctx.emit(trade);
+  },
+});
+
 export const moreRefusals = defineUnbounded({
   factoryId: 'more_refusals',
   channels: (c) => {
-    c.input<Trade>('j').branch([(edge) => edge.into(BadChange), (edge) => edge.into(BadEmit)]);
+    c.input<Trade>('j').branch([
+      (edge) => edge.into(BadChange),
+      (edge) => edge.into(BadEmit),
+      (edge) => edge.into(NoOutput),
+    ]);
   },
 });
 
@@ -157,12 +196,12 @@ export const shortForm = defineUnbounded({
   factoryId: 'short_form',
   sink: 'out',
   codec: 'text',
-  run: (line: string) => line.toUpperCase(),
+  run: (line: string, ctx: Ctx<string>) => ctx.emit(line.toUpperCase()),
 });
 
 export const statefulShortForm = defineBounded({
   factoryId: 'stateful_short_form',
-  initialState: () => ({ seen: [] as string[] }),
+  initState: () => ({ seen: [] as string[] }),
   applyChange: (state, change: string) => {
     state.seen.push(change);
   },
@@ -174,29 +213,29 @@ export const statefulShortForm = defineBounded({
 });
 
 // @ts-expect-error a short form carries its body in place of a topology body, never beside one
-defineUnbounded({ factoryId: 'both', run: (line: string) => line, channels: () => {} });
+defineUnbounded({ factoryId: 'both', run: quiet, channels: () => {} });
 
 // @ts-expect-error the kind is the function's own name, never a field
-defineBounded({ factoryId: 'kinded', kind: 'bounded', run: (line: string) => line });
+defineBounded({ factoryId: 'kinded', kind: 'bounded', run: quiet });
 
 // @ts-expect-error a short form's tasklet is named after its `factoryId`
-defineUnbounded({ factoryId: 'named', name: 'other', run: (line: string) => line });
+defineUnbounded({ factoryId: 'named', name: 'other', run: quiet });
 
 // A bounded short form writes its loop mode, the one class-level setting it carries.
 export const loopedShortForm = defineBounded({
   factoryId: 'looped',
   loopMode: 'per_input',
-  run: (line: string) => line,
+  run: quiet,
 });
 
 // @ts-expect-error any other class-level setting is the full form
-defineBounded({ factoryId: 'rolled', rollbackMode: 'keep_progress', run: (line: string) => line });
+defineBounded({ factoryId: 'rolled', rollbackMode: 'keep_progress', run: quiet });
 
 // @ts-expect-error `forever` is not a loop mode
-defineBounded({ factoryId: 'forever', loopMode: 'forever', run: (line: string) => line });
+defineBounded({ factoryId: 'forever', loopMode: 'forever', run: quiet });
 
 // @ts-expect-error a stream has no loop mode
-defineUnbounded({ factoryId: 'streamed', loopMode: 'per_input', run: (line: string) => line });
+defineUnbounded({ factoryId: 'streamed', loopMode: 'per_input', run: quiet });
 
 // @ts-expect-error retry is the edge's `retryMax`, never a bounded setting
 defineBounded({ factoryId: 'retried', retryAttempts: 0, channels: () => {} });
@@ -211,7 +250,28 @@ export const syncDurable = defineBounded({
 });
 
 // @ts-expect-error a tasklet carries no sink; the short form is an operator
-defineTasklet({ name: 'sinking', sink: 'out', run: (line: string) => line });
+defineTasklet({ name: 'sinking', sink: 'out', run: quiet });
 
 // @ts-expect-error a tasklet's body is `run`
-defineTasklet({ name: 'old', handle: (line: string) => line });
+defineTasklet({ name: 'old', handle: quiet });
+
+// @ts-expect-error a retired field is no field of a tasklet definition
+defineTasklet({ name: 'retired', dynamicCells: {}, run: quiet });
+
+// A value leaves a tasklet only through its context, so no hook returns one.
+const upper = (line: string): string => line.toUpperCase();
+
+// @ts-expect-error `run` returns nothing; a value leaves through `ctx.emit`
+defineTasklet({ name: 'returning', run: (trade: Trade) => trade });
+
+// @ts-expect-error an async `run` resolves to nothing either
+defineTasklet({ name: 'async_returning', run: async (trade: Trade) => trade });
+
+// @ts-expect-error a `run` handed over by reference is held to the same rule
+defineTasklet({ name: 'by_reference', run: upper });
+
+// @ts-expect-error a short form's `run` is a tasklet's
+defineUnbounded({ factoryId: 'returning_short', sink: 'out', run: upper });
+
+// @ts-expect-error `onTimer` returns nothing either
+defineTasklet({ name: 'returning_timer', run: quiet, onTimer: (firing) => firing.scheduledAt });

@@ -18,7 +18,7 @@ const asInt = (input) => (/^-?\d+$/.test(String(input)) ? Number(input) : 0);
 const keyedUpsertTasklet = (name, run) =>
   defineTasklet({
     name,
-    initialState: () => ({ values: {} }),
+    initState: () => ({ values: {} }),
     applyChange: (state, change) => {
       state.values[change.key] = change.value;
     },
@@ -106,7 +106,7 @@ export const tierStore = defineUnbounded({
 const counting = (name, run) =>
   defineTasklet({
     name,
-    initialState: () => ({ value: 0 }),
+    initState: () => ({ value: 0 }),
     applyChange: (state, change) => {
       state.value += change.delta;
     },
@@ -190,13 +190,13 @@ export const benchCheckpoint = defineUnbounded({
 // The durable-state reference: every input is appended through a change.
 const StoreInput = defineTasklet({
   name: 'store_input_tasklet',
-  initialState: () => ({ binary_inputs: [], text_inputs: [] }),
+  initState: () => ({ binary_inputs: [], text_inputs: [] }),
   applyChange: (state, change) => {
     state.text_inputs.push(change.push_text);
   },
   run: (input, ctx) => {
     ctx.change({ push_text: input });
-    return input;
+    ctx.emit(input);
   },
 });
 
@@ -211,12 +211,12 @@ export const storeInput = defineUnbounded({
 
 const CounterEntry = defineTasklet({
   name: 'counter_entry_tasklet',
-  run: (input) => asInt(input),
+  run: (input, ctx) => ctx.emit(asInt(input)),
 });
 
 const Counter = defineTasklet({
   name: 'counter_tasklet',
-  initialState: () => ({ value: 0 }),
+  initState: () => ({ value: 0 }),
   applyChange: (state, change) => {
     state.value += change.delta;
   },
@@ -254,14 +254,14 @@ export const persistenceOffCounter = defineUnbounded({
 
 const SleepingCounter = defineTasklet({
   name: 'sleeping_counter_tasklet',
-  initialState: () => ({ value: 0 }),
+  initState: () => ({ value: 0 }),
   applyChange: (state, change) => {
     state.value += change.delta;
   },
   run: (input, ctx) => {
     const [key, delta] = splitKeyed(input);
     ctx.change({ delta: asInt(delta) });
-    return `${key}=${ctx.state.value}`;
+    ctx.emit(`${key}=${ctx.state.value}`);
   },
 });
 
@@ -278,9 +278,9 @@ export const sleepingCounter = defineUnbounded({
 // Wire format: `<interval>:<ts>:<delta>`; a missing or unparsable part reads 0.
 const TickEntry = defineTasklet({
   name: 'tick_entry_tasklet',
-  run: (input) => {
+  run: (input, ctx) => {
     const [interval, ts, ...rest] = String(input).split(':');
-    return { interval: asInt(interval), ts: asInt(ts), delta: asInt(rest.join(':')) };
+    ctx.emit({ interval: asInt(interval), ts: asInt(ts), delta: asInt(rest.join(':')) });
   },
 });
 
@@ -290,7 +290,7 @@ const TickEntry = defineTasklet({
 // idempotent per `(interval, ts)` either way, so replay produces the same state.
 const Tick = defineTasklet({
   name: 'tick_tasklet',
-  initialState: () => ({ last: 0 }),
+  initState: () => ({ last: 0 }),
   applyChange: (state, change) => {
     state.last = change.delta;
   },
@@ -312,7 +312,7 @@ export const coalescingCounter = defineUnbounded({
 // change replay rebuilds the total on restore; no snapshot fast path needed.
 const ResumeProbe = defineTasklet({
   name: 'resume_probe_tasklet',
-  initialState: () => ({ total: 0 }),
+  initState: () => ({ total: 0 }),
   applyChange: (state, change) => {
     state.total += change.add;
   },
@@ -320,7 +320,7 @@ const ResumeProbe = defineTasklet({
     const delta = asInt(input);
     const total = ctx.state.total + delta;
     ctx.change({ add: delta });
-    return String(total);
+    ctx.emit(String(total));
   },
 });
 
@@ -344,7 +344,7 @@ export const resumeProbe = defineUnbounded({
 
 const EvolvingCartV1 = defineTasklet({
   name: 'evolving_cart',
-  initialState: () => ({ total: 0 }),
+  initState: () => ({ total: 0 }),
   applyChange: (state, change) => {
     state.total += change.add;
   },
@@ -352,7 +352,7 @@ const EvolvingCartV1 = defineTasklet({
     const delta = asInt(input);
     const total = ctx.state.total + delta;
     ctx.change({ add: delta });
-    return `${total}:`;
+    ctx.emit(`${total}:`);
   },
 });
 
@@ -360,7 +360,7 @@ const EvolvingCartV2 = defineTasklet({
   name: 'evolving_cart',
   schemaVersion: 2,
   minReadableSchemaVersion: 1,
-  initialState: () => ({ total: 0, currency: '' }),
+  initState: () => ({ total: 0, currency: '' }),
   applyChange: (state, change) => {
     state.total += change.add;
   },
@@ -379,7 +379,7 @@ const EvolvingCartV2 = defineTasklet({
     const total = ctx.state.total + delta;
     const currency = ctx.state.currency || 'EUR';
     ctx.change({ add: delta, note: 'live' });
-    return `${total}:${currency}`;
+    ctx.emit(`${total}:${currency}`);
   },
 });
 

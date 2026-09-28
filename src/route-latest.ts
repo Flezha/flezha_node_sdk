@@ -40,7 +40,7 @@ export const latestRouter: TaskletDefinition<
   RouterChange
 > = {
   name: 'route_latest',
-  initialState: () => ({ document: null, version: 0, delivered: {} }),
+  initState: () => ({ document: null, version: 0, delivered: {} }),
   // The key is the tested side of both unions: the codec omits an undefined
   // property, so a document or a retained value can arrive without its field.
   applyChange: (state, change) => {

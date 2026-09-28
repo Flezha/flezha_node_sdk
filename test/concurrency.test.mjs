@@ -34,14 +34,13 @@ loadNative().contextNew(ACTIVATION_SCHEMA_VERSION);
 
 const Accumulate = defineTasklet({
   name: 'accumulate',
-  dynamicCells: {},
-  initialState: () => ({ seen: [] }),
+  initState: () => ({ seen: [] }),
   applyChange: (state, change) => {
     state.seen.push(change.value);
   },
   run: (input, ctx) => {
     ctx.change({ value: input.value });
-    return [...ctx.state.seen];
+    ctx.emit([...ctx.state.seen]);
   },
 });
 

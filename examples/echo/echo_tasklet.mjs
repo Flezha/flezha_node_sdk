@@ -2,11 +2,11 @@ import { defineTasklet } from '@flezha/sdk';
 
 /**
  * A processing stage of the operator's graph, run once per message. This one
- * prefixes the input, and what `run` returns is emitted.
+ * prefixes the input and emits the result through its context, `ctx.emit`.
  *
  * `name` is the tasklet's stable identity. State is filed under it, so
  * renaming it later declares a different tasklet rather than renaming this
- * one. With no `initialState` and no `applyChange`, nothing is kept between
+ * one. With no `initState` and no `applyChange`, nothing is kept between
  * messages and nothing is journaled.
  *
  * Where the result goes is not decided here. The operator decides that, so the
@@ -14,5 +14,5 @@ import { defineTasklet } from '@flezha/sdk';
  */
 export const EchoTasklet = defineTasklet({
   name: 'echo',
-  run: (input) => `echo: ${input}`,
+  run: (input, ctx) => ctx.emit(`echo: ${input}`),
 });

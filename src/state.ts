@@ -134,7 +134,7 @@ export function foldRestore(
   cellKey: string | undefined,
   tasklet: string,
 ): unknown {
-  let state = definition.initialState?.(cellKey);
+  let state = definition.initState?.(cellKey);
   if (payload.snapshot) {
     state = decodeBody(definition, 'state', payload.snapshot, tasklet);
   }

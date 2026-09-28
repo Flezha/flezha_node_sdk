@@ -19,7 +19,7 @@ export * from './fixtures_state.mjs';
 
 const DoNothing = defineTasklet({
   name: 'do_nothing_tasklet',
-  run: (input) => input,
+  run: (input, ctx) => ctx.emit(input),
 });
 
 export const doNothing = defineUnbounded({
@@ -45,8 +45,10 @@ export const benchEcho = defineUnbounded({
 // nothing to journal, so the tasklet declares no change fold.
 const CompareFilter = defineTasklet({
   name: 'compare_filter_tasklet',
-  initialState: () => ({ comparable: 'default', inverted: false }),
-  run: (input, ctx) => (ctx.state.comparable === input ? input : undefined),
+  initState: () => ({ comparable: 'default', inverted: false }),
+  run: (input, ctx) => {
+    if (ctx.state.comparable === input) ctx.emit(input);
+  },
 });
 
 export const compareFilter = defineUnbounded({
@@ -68,18 +70,17 @@ const staticEntry = (name) =>
   defineTasklet({
     name,
     cells: { keys: STATIC_KEYS, cellsFor: staticCellsFor },
-    initialState: () => ({ seen: [] }),
+    initState: () => ({ seen: [] }),
     applyChange: (state, change) => {
       state.seen.push(change.push);
     },
     run: (input, ctx) => {
       ctx.change({ push: input });
-      return input;
+      ctx.emit(input);
     },
   });
 
-const passThrough = (name, options = {}) =>
-  defineTasklet({ name, ...options, run: (input) => input });
+const passThrough = (name) => defineTasklet({ name, run: (input, ctx) => ctx.emit(input) });
 
 const StaticEntry = staticEntry('static_entry_tasklet');
 const StaticDownstream = passThrough('static_downstream_tasklet');
@@ -134,20 +135,20 @@ export const sugarDoNothing = defineUnbounded({
   factoryId: 'sugar_do_nothing',
   sink: 'sugar_do_nothing_echo',
   codec: 'text',
-  run: (input) => input,
+  run: (input, ctx) => ctx.emit(input),
 });
 
 export const sugarStoreInput = defineUnbounded({
   factoryId: 'sugar_store_input',
   sink: 'sugar_store_sink',
   codec: 'text',
-  initialState: () => ({ text_inputs: [] }),
+  initState: () => ({ text_inputs: [] }),
   applyChange: (state, change) => {
     state.text_inputs.push(change.push);
   },
   run: (input, ctx) => {
     ctx.change({ push: input });
-    return input;
+    ctx.emit(input);
   },
 });
 
@@ -156,7 +157,7 @@ export const sugarNamedInput = defineUnbounded({
   sink: 'sugar_named_input_sink',
   input: 'prices',
   codec: 'text',
-  run: (input) => input,
+  run: (input, ctx) => ctx.emit(input),
 });
 
 export const sugarBounded = defineBounded({
@@ -164,7 +165,7 @@ export const sugarBounded = defineBounded({
   sink: 'sugar_bounded_placed',
   input: 'order',
   codec: 'text',
-  run: (input) => input,
+  run: (input, ctx) => ctx.emit(input),
 });
 
 // The one class-level setting a short form writes: one pass per message, so
@@ -174,7 +175,7 @@ export const sugarBoundedPerInput = defineBounded({
   sink: 'sugar_bounded_per_input_out',
   codec: 'text',
   loopMode: 'per_input',
-  run: (input) => input,
+  run: (input, ctx) => ctx.emit(input),
 });
 
 // No sink: the entry feeds a tasklet that only keeps state.
@@ -182,7 +183,7 @@ export const sugarStateOnly = defineUnbounded({
   factoryId: 'sugar_state_only',
   input: 'ticks',
   codec: 'text',
-  initialState: () => ({ seen: [] }),
+  initState: () => ({ seen: [] }),
   applyChange: (state, change) => {
     state.seen.push(change.push);
   },
@@ -252,8 +253,7 @@ const tagged = (source) => (payload) => ({ source, symbol: prefix(payload), payl
 
 const MergeLabel = defineTasklet({
   name: 'merge_label_tasklet',
-  dynamicCells: {},
-  run: (input) => `${input.source}:${input.payload}`,
+  run: (input, ctx) => ctx.emit(`${input.source}:${input.payload}`),
 });
 
 export const mergedInput = defineUnbounded({
@@ -274,7 +274,7 @@ export const mergedInput = defineUnbounded({
 // Every value transform on one edge: `drop` is filtered out, a comma list fans
 // out into one value per element, each is upper-cased and keyed on its prefix.
 
-const TransformLabel = passThrough('transform_label_tasklet', { dynamicCells: {} });
+const TransformLabel = passThrough('transform_label_tasklet');
 
 export const transformChain = defineUnbounded({
   factoryId: 'transform_chain',
@@ -298,7 +298,7 @@ const stress = (name, cellsFor) =>
   defineTasklet({
     name,
     cells: { keys: STRESS_KEYS, cellsFor },
-    run: (input) => input,
+    run: (input, ctx) => ctx.emit(input),
   });
 
 const StressA = stress('stress_a', () => STRESS_KEYS);
@@ -327,10 +327,10 @@ let antidoteTaken = false;
 
 const PoisonProbe = defineTasklet({
   name: 'poison_probe_tasklet',
-  run: (input) => {
+  run: (input, ctx) => {
     if (input === 'antidote') antidoteTaken = true;
     if (input === 'poison' && !antidoteTaken) throw new Error('poison payload');
-    return `ok:${input}`;
+    ctx.emit(`ok:${input}`);
   },
 });
 
@@ -345,7 +345,7 @@ let wedgeAborted = false;
 
 const WedgeProbe = defineTasklet({
   name: 'wedge_probe_tasklet',
-  run: async (input) => {
+  run: async (input, ctx) => {
     // Holds the dispatch loop forever: the runner stays connected and
     // heartbeating while its dispatch counter freezes — the wedge signature.
     // Synchronous on purpose; an await would free the loop, which is the whole
@@ -359,7 +359,7 @@ const WedgeProbe = defineTasklet({
       wedgeAborted = true;
       throw new Error('wedge_probe: killing the dispatch holding this activation');
     }
-    return `ok:${input}`;
+    ctx.emit(`ok:${input}`);
   },
 });
 
@@ -380,10 +380,9 @@ export const wedgeProbe = defineUnbounded({
 
 const Candle = defineTasklet({
   name: 'candle_tasklet',
-  clock: 'event_time',
   eventTime: (input) => Number(String(input).split(':')[0]) || 0,
   // Event times in fold order: the assertion surface.
-  initialState: () => ({ folded: [] }),
+  initState: () => ({ folded: [] }),
   applyChange: (state, change) => {
     state.folded.push(change.fold);
   },
@@ -415,7 +414,7 @@ export const candle = defineUnbounded({
 
 const SessionTimeout = defineTasklet({
   name: 'session_timeout_tasklet',
-  initialState: () => ({ touched: [], closed_at: [] }),
+  initState: () => ({ touched: [], closed_at: [] }),
   applyChange: (state, change) => {
     if ('touched' in change) state.touched.push(change.touched);
     else state.closed_at.push(change.closed);
@@ -446,13 +445,13 @@ const boundedMailboxTasklet = (name) =>
   defineTasklet({
     name,
     mailboxCapacity: 4,
-    initialState: () => ({ processed: 0 }),
+    initState: () => ({ processed: 0 }),
     applyChange: (state) => {
       state.processed += 1;
     },
     run: (input, ctx) => {
       ctx.change({ processed: true });
-      return input;
+      ctx.emit(input);
     },
   });
 
@@ -481,8 +480,7 @@ export const boundedMailboxDropOldest = boundedMailbox('drop_oldest');
 
 const PartitionRelay = defineTasklet({
   name: 'partition_relay_tasklet',
-  dynamicCells: {},
-  initialState: () => ({ seen: [] }),
+  initState: () => ({ seen: [] }),
   applyChange: (state, change) => {
     state.seen.push(change.push);
   },
@@ -503,16 +501,15 @@ export const partitionRelay = defineUnbounded({
 
 const DynamicCell = defineTasklet({
   name: 'dynamic_cell_tasklet',
-  dynamicCells: {
-    idleTtlMs: Number(process.env.DYN_TEST_TTL_MS) || undefined,
-  },
-  initialState: () => ({ seen: [] }),
+  // The e2e sets the TTL in milliseconds for every SDK; this one counts whole seconds.
+  idleTtlSeconds: Math.ceil(Number(process.env.DYN_TEST_TTL_MS) / 1000) || undefined,
+  initState: () => ({ seen: [] }),
   applyChange: (state, change) => {
     state.seen.push(change.push);
   },
   run: (input, ctx) => {
     ctx.change({ push: input });
-    return input;
+    ctx.emit(input);
   },
 });
 

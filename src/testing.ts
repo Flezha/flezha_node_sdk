@@ -93,7 +93,7 @@ export interface Invoked<TOut, TChange> {
 
 export class TaskletTestHarness<TIn, TOut, TState, TChange> {
   private state: TState;
-  private clock: bigint;
+  private time: bigint;
   private readonly log: TChange[] = [];
   private readonly emitted: TOut[] = [];
   private readonly spec: ClassSpec;
@@ -107,7 +107,7 @@ export class TaskletTestHarness<TIn, TOut, TState, TChange> {
     state: TState,
   ) {
     this.state = state;
-    this.clock = options.now ?? 0n;
+    this.time = options.now ?? 0n;
     // Wired by the production builder rather than by a hand-written topology
     // literal: one entry channel in, one plugin channel out. A field the
     // declaration gains later reaches the harness for free. The sink names the
@@ -130,7 +130,7 @@ export class TaskletTestHarness<TIn, TOut, TState, TChange> {
     tasklet: Tasklet<TIn, TOut, TState, TChange>,
     options: HarnessOptions<TState> = {},
   ): TaskletTestHarness<TIn, TOut, TState, TChange> {
-    const initial = options.state ?? (tasklet.definition.initialState?.(options.cellKey) as TState);
+    const initial = options.state ?? (tasklet.definition.initState?.(options.cellKey) as TState);
     return new TaskletTestHarness(tasklet, options, initial);
   }
 
@@ -205,7 +205,7 @@ export class TaskletTestHarness<TIn, TOut, TState, TChange> {
    * production.
    */
   async input(value: TIn): Promise<Invoked<TOut, TChange>> {
-    const ctx = this.context(this.clock);
+    const ctx = this.context(this.time);
     await invocation.run({ tasklet: this.tasklet.name }, () => ctx.handle(value));
     return this.collect(ctx);
   }
@@ -227,16 +227,16 @@ export class TaskletTestHarness<TIn, TOut, TState, TChange> {
 
   /** Move the clock the next input is served at. */
   advanceTo(now: bigint): void {
-    this.clock = now;
+    this.time = now;
   }
 
   /** Move the clock forward. */
   advanceBy(delta: bigint): void {
-    this.clock += delta;
+    this.time += delta;
   }
 
   get now(): bigint {
-    return this.clock;
+    return this.time;
   }
 
   /** The cell's state as the handler left it. */
@@ -264,7 +264,7 @@ export class TaskletTestHarness<TIn, TOut, TState, TChange> {
    */
   replayEquals(): void {
     const definition = this.tasklet.definition;
-    const replayed = definition.initialState?.(this.options.cellKey) as TState;
+    const replayed = definition.initState?.(this.options.cellKey) as TState;
     for (const change of this.log) definition.applyChange?.(replayed, change);
     if (!isDeepStrictEqual(replayed, this.state)) {
       throw new ReplayMismatch(this.tasklet.name, this.state, replayed);

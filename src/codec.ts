@@ -239,7 +239,7 @@ function describe(value: unknown): string | null {
 /**
  * Walk a declared sample and refuse what the codec cannot carry, naming the
  * type and the field. Run once at registration against the value
- * `initialState()` produces, so an author learns at startup rather than at the
+ * `initState()` produces, so an author learns at startup rather than at the
  * first restore that their state does not survive one.
  */
 export function assertRepresentable(typeName: string, sample: unknown): void {

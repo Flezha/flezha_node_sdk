@@ -7,14 +7,14 @@ import { TaskletTestHarness } from '../dist/esm/testing.js';
 
 const Counter = defineTasklet({
   name: 'counter',
-  initialState: () => ({ total: 0, tags: { last: '' } }),
+  initState: () => ({ total: 0, tags: { last: '' } }),
   applyChange: (state, change) => {
     if (change.kind === 'add') state.total += change.by;
     if (change.kind === 'tag') state.tags.last = change.value;
   },
   run: (input, ctx) => {
     ctx.change({ kind: 'add', by: input });
-    return ctx.state.total;
+    ctx.emit(ctx.state.total);
   },
 });
 
@@ -28,7 +28,7 @@ test('a change folds live and the handler reads the folded state', async () => {
 test('a direct assignment is refused naming the field and the change path', async () => {
   const Bad = defineTasklet({
     name: 'bad',
-    initialState: () => ({ total: 0 }),
+    initState: () => ({ total: 0 }),
     applyChange: (state, change) => {
       state.total += change.by;
     },
@@ -49,7 +49,7 @@ test('a direct assignment is refused naming the field and the change path', asyn
 test('the guard reaches a nested field, where the loss is the same', async () => {
   const Nested = defineTasklet({
     name: 'nested',
-    initialState: () => ({ tags: { last: '' } }),
+    initState: () => ({ tags: { last: '' } }),
     applyChange: (state, change) => {
       state.tags.last = change.value;
     },
@@ -74,7 +74,7 @@ test('applyChange retains its ability to mutate', async () => {
 test('deleting a field is refused too', async () => {
   const Deleter = defineTasklet({
     name: 'deleter',
-    initialState: () => ({ total: 0 }),
+    initState: () => ({ total: 0 }),
     applyChange: (state, change) => {
       state.total += change.by;
     },

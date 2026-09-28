@@ -71,53 +71,39 @@ function refuse(spec: ClassSpec, handler: string | null, defect: string): never 
   throw new DeclarationError(spec.factoryId, handler, defect);
 }
 
-function clockOf(node: TaskNode): string {
-  return node.tasklet.definition.clock ?? 'wall';
+/**
+ * The nodes some chain reaches through a `key` link. The cell mode is the
+ * wiring's, so one tasklet can be keyed in one operator and single in another.
+ */
+function keyedConsumers(spec: ClassSpec): Set<number> {
+  const keyed = new Set<number>();
+  for (const channel of spec.channels) {
+    for (const chain of channel.chains) {
+      let key = false;
+      for (const link of chain) {
+        if (link.link === 'key') key = true;
+        else if (key && (link.link === 'into' || link.link === 'merge')) keyed.add(link.tasklet);
+      }
+    }
+  }
+  return keyed;
 }
 
-function cellMode(node: TaskNode): 'single' | 'static' | 'dynamic' {
+function cellMode(node: TaskNode, keyed: Set<number>): 'single' | 'static' | 'dynamic' {
+  if (node.tasklet.definition.cells) return 'static';
+  return keyed.has(node.index) ? 'dynamic' : 'single';
+}
+
+function clockOf(node: TaskNode): 'wall' | 'logical' | 'event_time' {
   const def = node.tasklet.definition;
-  if (def.cells) return 'static';
-  if (def.dynamicCells) return 'dynamic';
-  return 'single';
+  if (def.eventTime) return 'event_time';
+  return def.logicalClock ? 'logical' : 'wall';
 }
 
 /**
- * The two defects the record cannot carry, per tasklet.
- *
- * An event-time extractor and a migration are host closures: the declaration
- * names neither, so the core has nothing to read and these are the only
- * tasklet-level refusals left on this side.
+ * The defect the record cannot carry: a migration is a host closure the
+ * declaration never names, so the core has nothing to read.
  */
-function checkTasklets(spec: ClassSpec): void {
-  for (const node of spec.tasklets) {
-    checkClocks(spec, node);
-    checkSchema(spec, node);
-  }
-}
-
-function checkClocks(spec: ClassSpec, node: TaskNode): void {
-  const def = node.tasklet.definition;
-  const clock = clockOf(node);
-
-  if (clock === 'event_time' && !def.eventTime) {
-    refuse(
-      spec,
-      node.name,
-      'declares an event_time clock but no eventTime extractor; the core evaluates the ' +
-        'declared clock per input and has nothing to evaluate',
-    );
-  }
-  if (clock !== 'event_time' && def.eventTime) {
-    refuse(
-      spec,
-      node.name,
-      `declares an eventTime extractor with clock \`${clock}\`; the extractor is only ` +
-        'consulted by an event_time clock, so one of the two is not what was meant',
-    );
-  }
-}
-
 function checkSchema(spec: ClassSpec, node: TaskNode): void {
   const def = node.tasklet.definition;
   if (def.minReadableSchemaVersion === undefined) return;
@@ -168,7 +154,7 @@ function refusalOf(spec: ClassSpec, error: Error): DeclarationError {
  * so the name this host addresses a channel by is the one the core registered.
  */
 export function validate(spec: ClassSpec, native: Native = loadNative()): DerivedDecl {
-  checkTasklets(spec);
+  for (const node of spec.tasklets) checkSchema(spec, node);
   let derived: DerivedDecl;
   try {
     const answer = native.checkClass(Buffer.from(JSON.stringify(toHostClassDecl(spec))));
@@ -210,17 +196,17 @@ function channelJson(channel: ChannelSpec): Record<string, unknown> {
   });
 }
 
-function taskletJson(spec: ClassSpec, node: TaskNode): Record<string, unknown> {
+function taskletJson(spec: ClassSpec, node: TaskNode, keyed: Set<number>): Record<string, unknown> {
   const def = node.tasklet.definition;
   return compact({
     name: node.name,
-    cell_mode: cellMode(node),
+    cell_mode: cellMode(node, keyed),
     cell_keys: def.cells?.keys ?? [],
-    idle_ttl_ms: def.dynamicCells?.idleTtlMs,
-    max_cells: def.dynamicCells?.maxCells,
+    idle_ttl_ms: def.idleTtlSeconds === undefined ? undefined : def.idleTtlSeconds * 1000,
+    max_cells: def.maxCells,
     cells_for_overridden: def.cells?.cellsFor !== undefined,
     compensate_overridden: def.compensate !== undefined,
-    clock: def.clock ?? 'wall',
+    clock: clockOf(node),
     mailbox_capacity: def.mailboxCapacity ?? 1024,
     // A tasklet that folds no change has the empty Change type, so a logical
     // clock over it would never advance; a class that journals nothing has it
@@ -237,6 +223,7 @@ function taskletJson(spec: ClassSpec, node: TaskNode): Record<string, unknown> {
  * reads: a key the core learns that Node cannot spell fails that test.
  */
 export function toHostClassDecl(spec: ClassSpec): Record<string, unknown> {
+  const keyed = keyedConsumers(spec);
   return compact({
     factory_id: spec.factoryId,
     persistent: spec.persistent,
@@ -256,7 +243,7 @@ export function toHostClassDecl(spec: ClassSpec): Record<string, unknown> {
     compact_after_bytes: spec.compactAfterBytes,
     sync_durability: spec.syncDurability,
     channels: spec.channels.map(channelJson),
-    tasklets: spec.tasklets.map((node) => taskletJson(spec, node)),
+    tasklets: spec.tasklets.map((node) => taskletJson(spec, node, keyed)),
     bounded: spec.bounded
       ? compact({
           loop_mode: spec.bounded.loopMode,

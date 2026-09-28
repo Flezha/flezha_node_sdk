@@ -16,7 +16,6 @@ export type ChannelCodec = 'bytes' | 'text' | 'json' | 'msgpack';
 export interface CodecOptions {
   codec: ChannelCodec;
 }
-export type ClockKind = 'wall' | 'logical' | 'event_time';
 export type TimerKind = 'event_time' | 'processing_time';
 export type BeyondWindowPolicy = 'process_as_arrival' | 'drop';
 export type LoopMode = 'once' | 'per_input' | 'chained';
@@ -139,24 +138,24 @@ export interface StaticCells<TIn> {
   cellsFor?: (input: TIn) => string[];
 }
 
-/** Dynamic cell mode: cells appear on first key, with optional limits. */
-export interface DynamicCells {
-  idleTtlMs?: number;
-  maxCells?: number;
-}
-
 export interface TaskletDefinition<TIn, TOut, TState, TChange> {
-  /** The tasklet's node identity within its operator. */
+  /** The tasklet's node identity within its operator, and where its state is filed. */
   name: string;
 
-  /** Fixed key set. Dynamic keying is declared on the wiring with `keyBy`. */
+  /**
+   * Fixed key set. Without it, a tasklet reached by a `keyBy` edge gets a
+   * cell per key, and any other has one cell.
+   */
   cells?: StaticCells<TIn>;
-  /** Lazy cells. The key comes from the wiring's `keyBy`. */
-  dynamicCells?: DynamicCells;
+  /** Seconds a keyed cell may sit idle before it is evicted. Unset never evicts. */
+  idleTtlSeconds?: number;
+  /** The most keyed cells held at once. */
+  maxCells?: number;
 
-  clock?: ClockKind;
-  /** Required by an event-time clock: the event time of an input. */
+  /** The event time of an input. Writing it puts the tasklet on the event-time clock. */
   eventTime?: (input: TIn) => bigint | number;
+  /** Serve `ctx.now()` from the cell's change sequence. Needs `applyChange`. */
+  logicalClock?: boolean;
 
   mailboxCapacity?: number;
 
@@ -168,7 +167,7 @@ export interface TaskletDefinition<TIn, TOut, TState, TChange> {
   migrateChange?: (fromVersion: number, bytes: Uint8Array) => TChange;
 
   /** The cell's starting state. Its absence declares a stateless tasklet. */
-  initialState?: (cellKey?: string) => TState;
+  initState?: (cellKey?: string) => TState;
   /** The replay path: fold one recorded change into the state. */
   applyChange?: (state: TState, change: TChange) => void;
 
@@ -176,14 +175,10 @@ export interface TaskletDefinition<TIn, TOut, TState, TChange> {
   changeCodec?: Codec<TChange>;
 
   /**
-   * The body. A returned value is emitted; `undefined` emits nothing, which is
-   * the warmup gate. A body that emits more than once per input uses
-   * `ctx.emit` and returns nothing.
+   * The body. A value leaves only through `ctx.emit` or `ctx.emitTo`; what
+   * `run` returns is ignored, and TypeScript refuses a `run` that returns one.
    */
-  run: (
-    input: TIn,
-    ctx: Ctx<TOut, TState, TChange>,
-  ) => TOut | undefined | void | Promise<TOut | undefined | void>;
+  run: (input: TIn, ctx: Ctx<TOut, TState, TChange>) => void | Promise<void>;
 
   /** A per-cell deadline fired. `ctx.now()` is the scheduled time. */
   onTimer?: (firing: TimerFiring, ctx: Ctx<TOut, TState, TChange>) => void | Promise<void>;
@@ -262,7 +257,16 @@ export interface Stream<T> {
   sink(encode: (value: T) => Uint8Array): Stream<T>;
   sink(options: CodecOptions): Stream<T>;
   sink(): Stream<T>;
+  /**
+   * State that the chain ends here. Purely type-level: the declared topology
+   * is the same without it, but a later `into`, transform or sink on it does
+   * not compile.
+   */
+  sealed(): Sealed;
 }
+
+/** A chain nothing follows. It has no builder methods. */
+export interface Sealed {}
 
 /**
  * Several streams feeding one tasklet, each lifted into its input `I` by a

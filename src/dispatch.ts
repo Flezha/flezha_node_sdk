@@ -24,12 +24,23 @@ import type {
 } from './native.js';
 import { foldRestore, rawState } from './state.js';
 
+/**
+ * Where one cell's state is kept: its operator's table, and its key there. The
+ * operator is part of it because one class serves every instance and
+ * partition of its factory on this runner, each with cells of its own under
+ * the same tasklet and key.
+ */
+export interface CellAddress {
+  table: Map<string, unknown>;
+  key: string;
+}
+
 /** A declared class, with the lookups dispatch needs on the hot path. */
 export class RegisteredClass {
   /** Channels each tasklet produces on, by tasklet index. */
   readonly outgoing: ChannelSpec[][];
-  /** Live cell state, keyed by tasklet index and cell key. */
-  private readonly cells = new Map<string, unknown>();
+  /** Live cell state: one table per operator, keyed by tasklet index and cell key. */
+  private readonly operators = new Map<string, Map<string, unknown>>();
 
   constructor(readonly spec: ClassSpec) {
     this.outgoing = spec.tasklets.map((node) =>
@@ -37,22 +48,25 @@ export class RegisteredClass {
     );
   }
 
-  private cellAddress(tasklet: number, cellKey: string | undefined): string {
-    return `${tasklet}/${cellKey ?? ''}`;
+  /** The address of the cell an activation names. */
+  address(activation: NativeActivation, node: TaskNode): CellAddress {
+    let table = this.operators.get(activation.operator);
+    if (!table) this.operators.set(activation.operator, (table = new Map()));
+    return { table, key: `${node.index}\0${activation.cellKey ?? ''}` };
   }
 
   /** The cell's live state, created from the declaration on first touch. */
-  stateOf(node: TaskNode, cellKey: string | undefined): unknown {
-    const key = this.cellAddress(node.index, cellKey);
-    if (!this.cells.has(key)) {
-      const initial = node.tasklet.definition.initialState;
-      this.cells.set(key, initial ? initial(cellKey) : undefined);
+  stateOf(node: TaskNode, address: CellAddress, cellKey: string | undefined): unknown {
+    const { table, key } = address;
+    if (!table.has(key)) {
+      const initial = node.tasklet.definition.initState;
+      table.set(key, initial ? initial(cellKey) : undefined);
     }
-    return this.cells.get(key);
+    return table.get(key);
   }
 
-  setState(node: TaskNode, cellKey: string | undefined, state: unknown): void {
-    this.cells.set(this.cellAddress(node.index, cellKey), state);
+  setState(address: CellAddress, state: unknown): void {
+    address.table.set(address.key, state);
   }
 }
 
@@ -147,36 +161,28 @@ export async function answer(
       );
     }
 
+    const address = registered.address(activation, node);
     switch (activation.kind) {
       case 'work':
-        return await runWork(activation, registered, node, deps);
+        return await runWork(activation, registered, node, address, deps);
       case 'restore_fold':
-        return restoreFold(activation, registered, node);
+        return restoreFold(activation, registered, node, address);
       case 'snapshot_request':
-        return snapshot(activation, registered, node);
+        return snapshot(activation, node, registered.stateOf(node, address, activation.cellKey));
       case 'live_state_read':
-        return {
-          token: activation.token,
-          outcome: 'state_json',
-          json: toStateJson(registered.stateOf(node, activation.cellKey)),
-        };
       case 'migration_serialize':
         return {
           token: activation.token,
-          outcome: 'migration_state',
-          json: toStateJson(registered.stateOf(node, activation.cellKey)),
+          outcome: activation.kind === 'live_state_read' ? 'state_json' : 'migration_state',
+          json: toStateJson(registered.stateOf(node, address, activation.cellKey)),
         };
       case 'apply_state':
-        registered.setState(
-          node,
-          activation.cellKey,
-          fromStateJson(activation.stateJson ?? Buffer.alloc(0)),
-        );
+        registered.setState(address, fromStateJson(activation.stateJson ?? Buffer.alloc(0)));
         return { token: activation.token, outcome: 'state_applied' };
       case 'key_request':
         return prepare(activation, registered);
       case 'compensate_run':
-        return await compensate(activation, registered, node, deps);
+        return await compensate(activation, registered, node, address, deps);
       default:
         return failed(activation.token, `unknown activation kind \`${activation.kind}\``, true);
     }
@@ -199,6 +205,7 @@ async function invoke(
   activation: NativeActivation,
   registered: RegisteredClass,
   node: TaskNode,
+  address: CellAddress,
   deps: DispatchDeps,
   at: { now: bigint; replay: boolean; offset?: bigint },
   body: (ctx: Invocation) => Promise<unknown>,
@@ -212,7 +219,7 @@ async function invoke(
     changeSeq: activation.changeSeq,
     now: at.now,
     replay: at.replay,
-    state: registered.stateOf(node, activation.cellKey),
+    state: registered.stateOf(node, address, activation.cellKey),
     token: activation.token,
     offset: at.offset,
     bridge: deps.bridge,
@@ -222,7 +229,7 @@ async function invoke(
     await invocation.run({ tasklet: node.name }, () => body(ctx));
     return ctx;
   } finally {
-    registered.setState(node, activation.cellKey, rawState(ctx.currentState));
+    registered.setState(address, rawState(ctx.currentState));
   }
 }
 
@@ -230,6 +237,7 @@ async function runWork(
   activation: NativeActivation,
   registered: RegisteredClass,
   node: TaskNode,
+  address: CellAddress,
   deps: DispatchDeps,
 ): Promise<NativeActivationResult> {
   const definition = node.tasklet.definition;
@@ -242,6 +250,7 @@ async function runWork(
         activation,
         registered,
         node,
+        address,
         deps,
         { now, replay: item.replay ?? false, offset: item.consumedOffset },
         async (ctx) => {
@@ -395,10 +404,10 @@ function restoreFold(
   activation: NativeActivation,
   registered: RegisteredClass,
   node: TaskNode,
+  address: CellAddress,
 ): NativeActivationResult {
   registered.setState(
-    node,
-    activation.cellKey,
+    address,
     foldRestore(
       node.tasklet.definition as never,
       { snapshot: activation.snapshot, changes: activation.changes },
@@ -411,11 +420,10 @@ function restoreFold(
 
 function snapshot(
   activation: NativeActivation,
-  registered: RegisteredClass,
   node: TaskNode,
+  state: unknown,
 ): NativeActivationResult {
   const codec = node.tasklet.definition.stateCodec;
-  const state = registered.stateOf(node, activation.cellKey);
   return {
     token: activation.token,
     outcome: 'snapshot',
@@ -469,6 +477,7 @@ async function compensate(
   activation: NativeActivation,
   registered: RegisteredClass,
   node: TaskNode,
+  address: CellAddress,
   deps: DispatchDeps,
 ): Promise<NativeActivationResult> {
   const definition = node.tasklet.definition;
@@ -480,6 +489,7 @@ async function compensate(
     activation,
     registered,
     node,
+    address,
     deps,
     { now: 0n, replay: false },
     async (ctx) => (definition.compensate as (o: unknown[], c: unknown) => unknown)(outputs, ctx),

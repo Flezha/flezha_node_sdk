@@ -54,7 +54,7 @@ nothing. That is why the refusal at load is explicit about what is missing.
 ## Writing an operator
 
 ```ts
-import { createRunner, defineUnbounded, defineTasklet } from '@flezha/sdk';
+import { createRunner, defineUnbounded, defineTasklet, type Ctx } from '@flezha/sdk';
 
 interface Trade {
   symbol: string;
@@ -66,15 +66,19 @@ interface Candle {
   close: number;
 }
 
+interface Close {
+  close: number;
+}
+
 const Ohlc = defineTasklet({
   name: 'ohlc',
-  initialState: () => ({ close: 0 }),
-  applyChange: (state, change: { close: number }) => {
+  initState: () => ({ close: 0 }),
+  applyChange: (state, change: Close) => {
     state.close = change.close;
   },
-  run: (trade: Trade, ctx): Candle => {
+  run: (trade: Trade, ctx: Ctx<Candle, Close, Close>) => {
     ctx.change({ close: trade.price });
-    return { symbol: trade.symbol, close: ctx.state.close };
+    ctx.emit({ symbol: trade.symbol, close: ctx.state.close });
   },
 });
 
@@ -96,9 +100,13 @@ await runner.registerFactory('./candles.js');
 await runner.run();
 ```
 
-State is mutated only through declared changes: declared state is rebuilt from
-its recorded changes on restart, so assigning to a field of `ctx.state` throws
-rather than being silently lost. A mismatched `.into(...)` is a compile error.
+A value leaves a tasklet only through `ctx.emit`, and what `run` returns is
+ignored. The output type is the annotation on `ctx`, as here, or the type
+arguments, `defineTasklet<Trade, Candle>(...)`. `keyBy` gives each symbol a cell
+of its own. State is mutated only through declared changes: declared state is
+rebuilt from its recorded changes on restart, so assigning to a field of
+`ctx.state` throws rather than being silently lost. A mismatched `.into(...)` is
+a compile error.
 
 ## Licence
 
