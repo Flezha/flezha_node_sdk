@@ -15,7 +15,7 @@ import { isDeepStrictEqual } from 'node:util';
 
 import { defineUnbounded, type ChannelSpec, type ClassSpec, type TaskNode } from './authoring.js';
 import { decodeValue } from './codec.js';
-import { Invocation, type SpawnBridge } from './ctx.js';
+import { Invocation, type CoreBridge } from './ctx.js';
 import { invocation } from './determinism.js';
 import { flezhaError } from './errors.js';
 import { foldRestore, rawState, type RestoreBody } from './state.js';
@@ -50,7 +50,7 @@ const BASE32 = 'abcdefghijklmnopqrstuvwxyz234567';
  * under the id it gave, or under one shaped like a generated id, counted
  * rather than drawn so a test reads the same ids every run.
  */
-function resolvedSpawns(): SpawnBridge {
+function resolvedSpawns(): CoreBridge {
   const answers: string[] = [];
   const read = (handle: bigint): string | null => answers[Number(handle) - 1] ?? null;
   return {
@@ -64,6 +64,8 @@ function resolvedSpawns(): SpawnBridge {
     },
     spawnTryResult: read,
     spawnWait: async (handle) => read(handle),
+    // No controller, so no listener: a part is encoded and dropped.
+    part: () => {},
   };
 }
 
@@ -175,6 +177,7 @@ export class TaskletTestHarness<TIn, TOut, TState, TChange> {
       replay: false,
       state: this.state,
       token: 0n,
+      item: 0,
       bridge: this.spawns,
     });
   }

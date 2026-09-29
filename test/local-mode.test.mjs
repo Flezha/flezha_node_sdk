@@ -233,3 +233,58 @@ test('a spawn with no controller anywhere is unavailable, from either read', asy
   }
   assert.deepEqual(released, ['FlezhaError spawn.unavailable FlezhaError spawn.unavailable']);
 });
+
+test('a local run drops every part and releases the output alone', async () => {
+  const Parts = defineTasklet({
+    name: 'parts',
+    run: (input, ctx) => {
+      ctx.part(`${input}-1`);
+      ctx.emit(`done:${input}`);
+    },
+  });
+  const released = [];
+  const run = LocalOperator.start(
+    defineUnbounded({
+      factoryId: 'local_parts_node',
+      channels: (c) => c.input('in', { codec: 'text' }).into(Parts).sink('answer'),
+    }),
+  );
+  try {
+    run.onSink('answer', (output) => released.push(utf8(output.payload)));
+    await run.feed('in', 'p');
+    await run.runUntilIdle(5_000);
+  } finally {
+    await run.close();
+  }
+  assert.deepEqual(released, ['done:p']);
+});
+
+test('the core refuses a part whose channel ends in no sink', async () => {
+  const refused = [];
+  const Refused = defineTasklet({
+    name: 'refused',
+    run: (input, ctx) => {
+      try {
+        ctx.part(input);
+      } catch (error) {
+        refused.push(error.code);
+      }
+      ctx.emit(input);
+    },
+  });
+  const Drain = defineTasklet({ name: 'drain', run: () => {} });
+  const graphs = {
+    local_part_to_tasklet_node: (c) => c.input('in', { codec: 'text' }).into(Refused).into(Drain),
+    local_part_to_response_node: (c) => c.input('in', { codec: 'text' }).into(Refused).response(),
+  };
+  for (const [factoryId, channels] of Object.entries(graphs)) {
+    const run = LocalOperator.start(defineUnbounded({ factoryId, channels }));
+    try {
+      await run.feed('in', 'p');
+      await run.runUntilIdle(5_000);
+    } finally {
+      await run.close();
+    }
+  }
+  assert.deepEqual(refused, ['part.no_sink', 'part.no_sink']);
+});

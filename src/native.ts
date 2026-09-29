@@ -220,6 +220,8 @@ export interface Native {
   ): bigint;
   /** The handle's answer as JSON once it has arrived, `null` before. Never waits. */
   spawnTryResult(handle: bigint): string | null;
+  /** Send a part of work item `item` of the live activation `token`. Never waits. */
+  part(token: bigint, item: number, payload: Uint8Array): void;
   spawnWait(handle: bigint, timeoutMs: number): Promise<string | null>;
   adminCall(verb: string, args: string): Promise<string>;
   monotonicNanos(): bigint;

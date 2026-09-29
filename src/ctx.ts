@@ -33,8 +33,11 @@ import type {
 /** Metadata keys the runtime owns. A handler that sets one is refused. */
 const RESERVED_PREFIX = 'flz.';
 
-/** The addon entries a spawn reads. */
-export type SpawnBridge = Pick<Native, 'spawnRequest' | 'spawnTryResult' | 'spawnWait'>;
+/** The addon entries a spawn and a part reach. */
+export type CoreBridge = Pick<Native, 'spawnRequest' | 'spawnTryResult' | 'spawnWait' | 'part'>;
+
+/** The item index of an invocation that runs no work item; the core refuses its part. */
+export const NO_ITEM = 0xffff_ffff;
 
 /** The core ends a read at the request's own deadline, so a read this long always answers. */
 const WAIT_MS = 0xffff_ffff;
@@ -49,10 +52,10 @@ type SpawnAnswer = { id: string; outcome: SpawnOutcome };
  * leaves no promise to reject unobserved: the core logs its failure once instead.
  */
 export class SpawnHandle {
-  readonly #bridge: SpawnBridge;
+  readonly #bridge: CoreBridge;
   readonly #handle: bigint;
 
-  constructor(bridge: SpawnBridge, handle: bigint) {
+  constructor(bridge: CoreBridge, handle: bigint) {
     this.#bridge = bridge;
     this.#handle = handle;
   }
@@ -92,12 +95,14 @@ export interface InvocationInput {
   state: unknown;
   /** The activation this invocation runs under, which a spawn it makes belongs to. */
   token: bigint;
+  /** The index of this invocation's work item in its activation, which a part names. */
+  item: number;
   /**
    * The input-log offset of the item this invocation runs, which a spawn it makes carries so a
    * crash re-run of the same input resolves to the worker the first run spawned.
    */
   offset?: bigint;
-  bridge: SpawnBridge;
+  bridge: CoreBridge;
   /** Set for a `compensate` hook, which registers no timer. */
   compensating?: boolean;
 }
@@ -228,6 +233,15 @@ export class Invocation implements Ctx<unknown, unknown, unknown> {
       metadata: [],
       payload: encodeValue(value),
     };
+  }
+
+  part(value: unknown): void {
+    // The core previews the tasklet's first output channel and refuses one that ends in no
+    // sink, so a channel with no plugin end sends no bytes.
+    const channel = this.input.outgoing[0];
+    const payload =
+      channel?.sink !== undefined ? Buffer.from(channel.sinkEncode!(value)) : new Uint8Array();
+    this.input.bridge.part(this.input.token, this.input.item, payload);
   }
 
   emitTo(channel: string, value: unknown, options?: EmitOptions): void {

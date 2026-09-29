@@ -12,7 +12,7 @@
 import { applyTransforms, isStructuredBounded } from './authoring.js';
 import type { ChannelSpec, ClassSpec, ConsumerEdge, TaskNode } from './authoring.js';
 import { decodeValue, encodeValue, fromStateJson, toStateJson } from './codec.js';
-import { Invocation, type SpawnBridge } from './ctx.js';
+import { Invocation, NO_ITEM, type CoreBridge } from './ctx.js';
 import { invocation } from './determinism.js';
 import { flezhaError } from './errors.js';
 import { log } from './logger.js';
@@ -117,7 +117,7 @@ function isNonRetryable(error: unknown): boolean {
 
 export interface DispatchDeps {
   registry: Registry;
-  bridge: SpawnBridge;
+  bridge: CoreBridge;
 }
 
 /**
@@ -205,7 +205,7 @@ async function invoke(
   node: TaskNode,
   address: CellAddress,
   deps: DispatchDeps,
-  at: { now: bigint; replay: boolean; offset?: bigint },
+  at: { now: bigint; replay: boolean; offset?: bigint; item: number },
   body: (ctx: Invocation) => Promise<unknown>,
 ): Promise<Invocation> {
   const ctx = new Invocation({
@@ -219,6 +219,7 @@ async function invoke(
     replay: at.replay,
     state: registered.stateOf(node, address, activation.cellKey),
     token: activation.token,
+    item: at.item,
     offset: at.offset,
     bridge: deps.bridge,
     compensating: activation.kind === 'compensate_run',
@@ -241,7 +242,7 @@ async function runWork(
   const definition = node.tasklet.definition;
   const effects: NativeItemEffect[] = [];
 
-  for (const item of activation.items ?? []) {
+  for (const [index, item] of (activation.items ?? []).entries()) {
     const now = item.now ?? 0n;
     try {
       const ctx = await invoke(
@@ -250,7 +251,7 @@ async function runWork(
         node,
         address,
         deps,
-        { now, replay: item.replay ?? false, offset: item.consumedOffset },
+        { now, replay: item.replay ?? false, offset: item.consumedOffset, item: index },
         async (ctx) => {
           if (item.kind === 'timer') {
             if (!definition.onTimer) {
@@ -487,7 +488,7 @@ async function compensate(
     node,
     address,
     deps,
-    { now: 0n, replay: false },
+    { now: 0n, replay: false, item: NO_ITEM },
     async (ctx) => (definition.compensate as (o: unknown[], c: unknown) => unknown)(outputs, ctx),
   );
   return { token: activation.token, outcome: 'work', effects: [ctx.effect(undefined)] };

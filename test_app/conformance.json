@@ -108,6 +108,7 @@
       "bench_loop_bounded"
     ],
     "call_response": ["call_echo", "call_downstream", "call_split", "call_turn"],
+    "parts": ["part_echo", "part_echo_bounded"],
     "partitioned": ["partition_relay", "dynamic_cell", "keyed_loop_bounded"],
     "dynamic_cell": ["dynamic_cell"],
     "pool_wedge": ["wedge_probe"],

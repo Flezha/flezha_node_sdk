@@ -577,3 +577,48 @@ export const callSplit = defineUnbounded({
       .response();
   },
 });
+
+// -- parts ------------------------------------------------------------------
+//
+// For an input `n` the tasklet sends the parts `1` .. `n` and then emits
+// `done:<n>` on its sink `answer`, in an unbounded operator and in a
+// `per_input` bounded one. `retry:<n>` sends its parts and then fails
+// retryably the first time this process sees it, so the retry's parts number
+// from 0 again under the next attempt.
+
+const failedOnce = new Set();
+
+const sendParts = (input, ctx) => {
+  const count = input.startsWith('retry:') ? input.slice('retry:'.length) : input;
+  if (!/^\d+$/.test(count)) {
+    throw Object.assign(new Error(`not a part count: ${input}`), { nonRetryable: true });
+  }
+  for (let part = 1; part <= Number(count); part += 1) ctx.part(String(part));
+  if (input.startsWith('retry:') && !failedOnce.has(input)) {
+    failedOnce.add(input);
+    throw new Error(`first attempt of ${input}`);
+  }
+  ctx.emit(`done:${count}`);
+};
+
+export const partEcho = defineUnbounded({
+  factoryId: 'part_echo',
+  channels: (c) => {
+    c.input('in', { codec: 'text' })
+      .retryBackoffMs(25)
+      .into(defineTasklet({ name: 'part_echo', run: sendParts }))
+      .sink('answer');
+  },
+});
+
+export const partEchoBounded = defineBounded({
+  factoryId: 'part_echo_bounded',
+  loopMode: 'per_input',
+  maxDurationMs: 600_000,
+  channels: (c) => {
+    c.input('in', { codec: 'text' })
+      .retryBackoffMs(25)
+      .into(defineTasklet({ name: 'part_echo_turn', run: sendParts }))
+      .sink('answer');
+  },
+});

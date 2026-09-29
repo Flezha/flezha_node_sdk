@@ -101,7 +101,8 @@ await runner.run();
 ```
 
 A value leaves a tasklet only through `ctx.emit`, and what `run` returns is
-ignored. The output type is the annotation on `ctx`, as here, or the type
+ignored; `ctx.part(value)` sends a listener a preview of that output while `run`
+is still working. The output type is the annotation on `ctx`, as here, or the type
 arguments, `defineTasklet<Trade, Candle>(...)`. `keyBy` gives each symbol a cell
 of its own. State is mutated only through declared changes: declared state is
 rebuilt from its recorded changes on restart, so assigning to a field of

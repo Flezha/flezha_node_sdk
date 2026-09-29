@@ -81,6 +81,18 @@ export interface Ctx<TOut = never, TState = void, TChange = never> {
   emit(value: TOut, options?: EmitOptions): void;
   /** Emit onto a named channel — the spelling for a tasklet with several. */
   emitTo(channel: string, value: unknown, options?: EmitOptions): void;
+  /**
+   * Send a part: a preview of the output this invocation is producing, which
+   * leaves now rather than when the handler returns. It previews the tasklet's
+   * own output channel and is encoded as `emit(value)` would encode it there.
+   * It never waits: a part that cannot leave at once is dropped, and a replayed
+   * input sends none. A listener receives it, numbered from 0 within each
+   * attempt; a sink never does, and nothing about it is durable. Throws a
+   * `FlezhaError` with code `part.no_sink` when the output channel does not end
+   * in a sink (a `response()` end is not one), and `part.outside_invocation`
+   * through a context kept past its invocation.
+   */
+  part(value: TOut): void;
 
   /** Register a processing-time timer `ms` from `now()`. Returns its time. */
   timerAfter(ms: number | bigint): bigint;
