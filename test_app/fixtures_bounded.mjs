@@ -777,6 +777,62 @@ export const chatRewindBounded = defineBounded({
   },
 });
 
+// failing_turn_loop_bounded: a session whose turn can fail after `note`
+// committed. `note` records each message and its undo moves the latest one to
+// `undone`; `answer` replies `re:<message>` on the sink `answer`, and fails on
+// `boom` always, on `boom-once` while the release env is unset (the first
+// runner of a crash drill), and on `boom-until-healed` until a `heal` turn set
+// its state. failing_turn_all_or_nothing_bounded is the same under
+// all-or-nothing.
+
+const Note = defineTasklet({
+  name: 'note',
+  initState: () => ({ notes: [], undone: [] }),
+  applyChange: (state, change) => {
+    if (change.noted !== undefined) state.notes.push(change.noted);
+    else if (state.notes.length > 0) state.undone.push(state.notes.pop());
+  },
+  run: (input, ctx) => {
+    ctx.change({ noted: input });
+    ctx.emit(input);
+  },
+  compensate: (_outputs, ctx) => ctx.change({ undone: true }),
+});
+
+const failsTurn = (input, state) =>
+  input === 'boom' ||
+  (input === 'boom-once' && !process.env[RELEASE_ENV]) ||
+  (input === 'boom-until-healed' && !state.healed);
+
+const Answer = defineTasklet({
+  name: 'answer',
+  initState: () => ({ healed: false }),
+  applyChange: (state) => {
+    state.healed = true;
+  },
+  run: (input, ctx) => {
+    if (failsTurn(input, ctx.state)) throw new Error(`answer refused ${input}`);
+    if (input === 'heal') ctx.change({ healed: true });
+    ctx.emit(`re:${input}`);
+  },
+});
+
+const failingTurnLoop = (factoryId, rollbackMode) =>
+  defineBounded({
+    factoryId,
+    ...loopKnobs,
+    rollbackMode,
+    channels: (c) => {
+      c.input('in', { codec: 'text' }).into(Note).named('noted').into(Answer).sink('answer');
+    },
+  });
+
+export const failingTurnLoopBounded = failingTurnLoop('failing_turn_loop_bounded', 'keep_progress');
+export const failingTurnAllOrNothingBounded = failingTurnLoop(
+  'failing_turn_all_or_nothing_bounded',
+  'all_or_nothing',
+);
+
 // -- the bench chains -------------------------------------------------------
 //
 // What `mix bench.bounded --scenario chain` drives (bounded_loop.rs:232): K
