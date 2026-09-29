@@ -18,22 +18,16 @@ import type {
   NativeOutput,
   NativeTimerOp,
 } from './native.js';
+import { flezhaError } from './errors.js';
 import { cellIdentity, stableId } from './identity.js';
 import { readOnlyState } from './state.js';
-import {
-  EmitError,
-  SpawnAlreadyRunningError,
-  SpawnFactoryNotBoundedError,
-  SpawnFactoryUnknownError,
-  SpawnRefusedError,
-  SpawnTimeoutError,
-  SpawnUnavailableError,
-  type Ctx,
-  type EmitOptions,
-  type SpawnOptions,
-  type SpawnOutcome,
-  type SpawnResult,
-  type TimerKind,
+import type {
+  Ctx,
+  EmitOptions,
+  SpawnOptions,
+  SpawnOutcome,
+  SpawnResult,
+  TimerKind,
 } from './types.js';
 
 /** Metadata keys the runtime owns. A handler that sets one is refused. */
@@ -45,19 +39,8 @@ export type SpawnBridge = Pick<Native, 'spawnRequest' | 'spawnTryResult' | 'spaw
 /** The core ends a read at the request's own deadline, so a read this long always answers. */
 const WAIT_MS = 0xffff_ffff;
 
-const FAILURES = {
-  already_running: SpawnAlreadyRunningError,
-  factory_unknown: SpawnFactoryUnknownError,
-  factory_not_bounded: SpawnFactoryNotBoundedError,
-  refused: SpawnRefusedError,
-  timeout: SpawnTimeoutError,
-  unavailable: SpawnUnavailableError,
-};
-
-/** What the core answers a resolved read with. */
-type SpawnAnswer =
-  | { id: string; outcome: SpawnOutcome }
-  | { id: string; error: keyof typeof FAILURES; message: string };
+/** What the core answers a resolved read with; a failed one is thrown as a `FlezhaError`. */
+type SpawnAnswer = { id: string; outcome: SpawnOutcome };
 
 /**
  * A spawn's answer, read inside the invocation that made it. Every read asks
@@ -74,13 +57,13 @@ export class SpawnHandle {
     this.#handle = handle;
   }
 
-  /** The result once the answer has arrived, `null` while pending. Throws the failure. */
+  /** The result once the answer has arrived, `null` while pending. Throws the failure as a `FlezhaError`. */
   tryResult(): SpawnResult | null {
     const json = this.#bridge.spawnTryResult(this.#handle);
     return json === null ? null : resultOf(json);
   }
 
-  /** Resolves to the result, or rejects with the failure. The wait runs off the event loop. */
+  /** Resolves to the result, or rejects with the failure as a `FlezhaError`. The wait runs off the event loop. */
   async wait(): Promise<SpawnResult> {
     let json: string | null = null;
     while (json === null) {
@@ -90,11 +73,10 @@ export class SpawnHandle {
   }
 }
 
-/** The result a resolved answer carries, or its failure thrown. */
+/** The result a resolved answer carries. */
 function resultOf(json: string): SpawnResult {
-  const answer = JSON.parse(json) as SpawnAnswer;
-  if ('outcome' in answer) return { id: answer.id, outcome: answer.outcome };
-  throw new FAILURES[answer.error](answer.id, answer.message);
+  const { id, outcome } = JSON.parse(json) as SpawnAnswer;
+  return { id, outcome };
 }
 
 export interface InvocationInput {
@@ -120,16 +102,12 @@ export interface InvocationInput {
   compensating?: boolean;
 }
 
-function metaList(metadata: Record<string, string> | undefined, tasklet: string): NativeMeta[] {
+function metaList(metadata: Record<string, string> | undefined): NativeMeta[] {
   if (!metadata) return [];
   return Object.entries(metadata).map(([key, value]) => {
-    if (key.startsWith(RESERVED_PREFIX)) {
-      throw new EmitError(
-        `${tasklet}: metadata key \`${key}\` is inside the reserved \`${RESERVED_PREFIX}\` ` +
-          'namespace, which the runtime stamps itself (cell identity, sequence, key and ' +
-          'offset); choose a key outside it',
-      );
-    }
+    // The runtime stamps cell identity, sequence, key and offset there itself.
+    if (key.startsWith(RESERVED_PREFIX))
+      throw flezhaError('runtime.reserved_metadata_key', { key });
     return { key, value };
   });
 }
@@ -191,10 +169,7 @@ export class Invocation implements Ctx<unknown, unknown, unknown> {
   change(change: unknown): void {
     const definition = this.input.node.tasklet.definition;
     if (!definition.applyChange) {
-      throw new EmitError(
-        `${this.input.node.name}: recorded a change but declares no applyChange; a change ` +
-          'that cannot be folded cannot rebuild the state it describes',
-      );
+      throw flezhaError('runtime.change_without_apply_change', { tasklet: this.input.node.name });
     }
     const codec = definition.changeCodec;
     // The rule every host->core bytes site here follows: msgpack's own
@@ -219,13 +194,12 @@ export class Invocation implements Ctx<unknown, unknown, unknown> {
       ? this.input.outgoing.filter((channel) => channel.name === options.channel)
       : this.input.outgoing;
     if (targets.length === 0) {
-      throw new EmitError(
-        options?.channel
-          ? `${this.input.node.name}: emits on channel \`${options.channel}\`, which it does ` +
-              'not produce on'
-          : `${this.input.node.name}: emits but declares no output channel; wire its edge ` +
-              'with .into(...) or .sink(...)',
-      );
+      throw options?.channel
+        ? flezhaError('runtime.channel_not_produced', {
+            tasklet: this.input.node.name,
+            channel: options.channel,
+          })
+        : flezhaError('runtime.no_output_channel', { tasklet: this.input.node.name });
     }
     for (const channel of targets) {
       // A channel with no consumer releases nothing on the edge path: on a
@@ -281,7 +255,7 @@ export class Invocation implements Ctx<unknown, unknown, unknown> {
       pluginChannel: undefined,
       key: options?.key ?? edge.keyBy?.(transformed) ?? this.input.cellKey,
       eventTime: extractor ? BigInt(extractor(transformed)) : undefined,
-      metadata: metaList(options?.metadata, this.input.node.name),
+      metadata: metaList(options?.metadata),
       payload: encodeValue(transformed),
     }));
   }
@@ -297,12 +271,9 @@ export class Invocation implements Ctx<unknown, unknown, unknown> {
   ): NativeOutput {
     const key = options?.key ?? this.input.cellKey;
     if (channel.keyed && key === undefined) {
-      throw new EmitError(
-        `${this.input.node.name}: emits on keyed channel \`${channel.name}\` with no key, ` +
-          'and has no cell key of its own to fall back on; pass { key } on the emit',
-      );
+      throw flezhaError('runtime.key_required_on_keyed_channel', { channel: channel.name });
     }
-    const metadata = metaList(options?.metadata, this.input.node.name);
+    const metadata = metaList(options?.metadata);
     this.stampIdentity(metadata, channel, key);
     return {
       target: 'plugin',
@@ -342,17 +313,12 @@ export class Invocation implements Ctx<unknown, unknown, unknown> {
   }
 
   /** A rollback is no place to arm a deadline: a `compensate` hook refuses every timer call. */
-  private refuseTimersInCompensate(call: string): void {
-    if (this.input.compensating) {
-      throw new Error(
-        `TimersUnavailable: ${this.input.node.name}: ${call} inside compensate; only a ` +
-          "tasklet's run / onTimer register timers",
-      );
-    }
+  private refuseTimersInCompensate(): void {
+    if (this.input.compensating) throw flezhaError('runtime.timers_unavailable');
   }
 
   timerAfter(ms: number | bigint): bigint {
-    this.refuseTimersInCompensate('timerAfter');
+    this.refuseTimersInCompensate();
     // Anchored on `now()`, never an ambient read: that is what makes a
     // replayed invocation register the timestamp the live one did.
     const at = this.input.now + BigInt(ms);
@@ -361,14 +327,14 @@ export class Invocation implements Ctx<unknown, unknown, unknown> {
   }
 
   timerAtEventTime(at: number | bigint): bigint {
-    this.refuseTimersInCompensate('timerAtEventTime');
+    this.refuseTimersInCompensate();
     const scheduledAt = BigInt(at);
     this.timers.push({ kind: 'event_time', scheduledAt, register: true });
     return scheduledAt;
   }
 
   cancelTimer(kind: TimerKind, at: bigint): void {
-    this.refuseTimersInCompensate('cancelTimer');
+    this.refuseTimersInCompensate();
     this.timers.push({ kind, scheduledAt: at, register: false });
   }
 
@@ -380,7 +346,7 @@ export class Invocation implements Ctx<unknown, unknown, unknown> {
     this.completion =
       result === undefined || result === null
         ? new Uint8Array()
-        : plainPayload(result, this.input.node.name);
+        : plainPayload(result, `tasklet '${this.input.node.name}'`);
   }
 
   spawnBounded(factoryId: string, payload: unknown, options: SpawnOptions = {}): SpawnHandle {
@@ -400,7 +366,7 @@ export class Invocation implements Ctx<unknown, unknown, unknown> {
       this.input.token,
       factoryId,
       id ?? '',
-      plainPayload(payload, this.input.node.name),
+      plainPayload(payload, `tasklet '${this.input.node.name}'`),
       ifRunning ?? '',
       this.input.replay,
       this.input.offset,

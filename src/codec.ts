@@ -22,7 +22,8 @@
 
 import { decode as msgpackDecode, encode as msgpackEncode, ExtensionCodec } from '@msgpack/msgpack';
 
-import { EmitError, type ChannelCodec } from './types.js';
+import { flezhaError } from './errors.js';
+import type { ChannelCodec } from './types.js';
 
 /** A hand-written codec, for a type the default cannot carry. */
 export interface Codec<T> {
@@ -142,11 +143,11 @@ export function channelEncoder(
           ? Buffer.from(value, 'utf8')
           : refusePayload(channel, codec, value);
     case 'json':
-      return (value) => jsonPayload(`channel \`${channel.name}\``, value);
+      return (value) => jsonPayload(`channel '${channel.name}'`, value);
     case 'msgpack':
       return encodeValue;
     default:
-      return (value) => plainPayload(value, `channel \`${channel.name}\``);
+      return (value) => plainPayload(value, `channel '${channel.name}'`);
   }
 }
 
@@ -179,13 +180,15 @@ function jsonPayload(owner: string, value: unknown): Uint8Array {
   } catch (error) {
     reason = (error as Error).message;
   }
-  throw new EmitError(`${owner}: a ${typeName(value)} cannot be sent as JSON: ${reason}`);
+  throw flezhaError('runtime.value_not_json', { owner, type: typeName(value), reason });
 }
 
 function refusePayload(channel: NamedChannel, codec: ChannelCodec, value: unknown): never {
-  throw new EmitError(
-    `channel \`${channel.name}\` names the ${codec} codec and cannot send a ${typeName(value)}`,
-  );
+  throw flezhaError('runtime.value_wrong_for_codec', {
+    channel: channel.name,
+    codec,
+    type: typeName(value),
+  });
 }
 
 function typeName(value: unknown): string {
@@ -193,19 +196,9 @@ function typeName(value: unknown): string {
   return typeof value === 'object' ? (value.constructor?.name ?? 'object') : typeof value;
 }
 
-/**
- * A value the codec cannot represent, named by the declaring type and the
- * path to the offending field.
- */
-export class UnrepresentableValueError extends Error {
-  constructor(
-    readonly typeName: string,
-    readonly path: string,
-    readonly reason: string,
-  ) {
-    super(`${typeName}.${path} cannot be encoded for durable state: ${reason}`);
-    this.name = 'UnrepresentableValueError';
-  }
+/** A value the codec cannot represent, named by the declaring type and the path to the field. */
+function unrepresentable(typeName: string, path: string, reason: string): Error {
+  return flezhaError('topology.state_unrepresentable', { path: `${typeName}.${path}`, reason });
 }
 
 function describe(value: unknown): string | null {
@@ -247,13 +240,13 @@ export function assertRepresentable(typeName: string, sample: unknown): void {
 
   const walk = (value: unknown, path: string): void => {
     const reason = describe(value);
-    if (reason) throw new UnrepresentableValueError(typeName, path || '<root>', reason);
+    if (reason) throw unrepresentable(typeName, path || '<root>', reason);
 
     if (value === null || typeof value !== 'object') return;
     if (value instanceof Date || ArrayBuffer.isView(value)) return;
 
     if (seen.has(value)) {
-      throw new UnrepresentableValueError(
+      throw unrepresentable(
         typeName,
         path || '<root>',
         'the value refers back to itself; MessagePack has no representation for a cycle',
@@ -267,7 +260,7 @@ export function assertRepresentable(typeName: string, sample: unknown): void {
           // An absent property is representable — the key is omitted. An
           // absent array element is not: the slot must hold something, and nil
           // would decode as `null`, which is a different value.
-          throw new UnrepresentableValueError(
+          throw unrepresentable(
             typeName,
             `${path}[${index}]`,
             'an array element is undefined; use null for an empty slot, since ' +

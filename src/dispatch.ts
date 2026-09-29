@@ -14,6 +14,7 @@ import type { ChannelSpec, ClassSpec, ConsumerEdge, TaskNode } from './authoring
 import { decodeValue, encodeValue, fromStateJson, toStateJson } from './codec.js';
 import { Invocation, type SpawnBridge } from './ctx.js';
 import { invocation } from './determinism.js';
+import { flezhaError } from './errors.js';
 import { log } from './logger.js';
 import type {
   Native,
@@ -75,10 +76,7 @@ export class Registry {
 
   add(spec: ClassSpec): RegisteredClass {
     if (this.classes.has(spec.factoryId)) {
-      throw new Error(
-        `DuplicateFactoryId: \`${spec.factoryId}\` is already declared on this runner; a ` +
-          'runner declares each factory id once',
-      );
+      throw flezhaError('topology.duplicate_factory_id', { factory_id: spec.factoryId });
     }
     const registered = new RegisteredClass(spec);
     this.classes.set(spec.factoryId, registered);
@@ -256,10 +254,8 @@ async function runWork(
         async (ctx) => {
           if (item.kind === 'timer') {
             if (!definition.onTimer) {
-              throw new Error(
-                `${node.name} registered a timer but declares no onTimer; registration is a ` +
-                  'runtime call, so this cannot be refused at declaration time',
-              );
+              // Registration is a runtime call, so this cannot be refused at declaration time.
+              throw flezhaError('runtime.timer_without_on_timer', { tasklet: node.name });
             }
             await definition.onTimer(
               { kind: item.timerKind ?? 'processing_time', scheduledAt: item.scheduledAt ?? now },

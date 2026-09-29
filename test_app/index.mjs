@@ -60,10 +60,13 @@ if (refusalFixture) {
 try {
   await runner.run();
 } catch (error) {
-  // A refused declaration names itself: the verdict's own names ride the
-  // exception as data, and the drill reads them off this process's output.
-  const names = error.refusals ?? [];
-  if (names.length > 0) console.error(`[node_runner] declaration refused: ${names.join(', ')}`);
+  // A refused declaration names itself: the error's code, and every issue's
+  // code the core listed, ride the exception as data, and the drill reads them
+  // off this process's output.
+  if (typeof error.code === 'string' && error.details) {
+    const issues = Array.isArray(error.details.issues) ? error.details.issues : [error];
+    console.error(`[node_runner] declaration refused: ${issues.map((i) => i.code).join(', ')}`);
+  }
   console.error(String(error.stack ?? error));
   process.exit(1);
 }

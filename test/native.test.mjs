@@ -12,6 +12,7 @@ import {
   ACTIVATION_SCHEMA_VERSION,
   defineUnbounded,
   defineTasklet,
+  FlezhaError,
   loadNative,
   toHostClassDecl,
 } from '../dist/esm/index.js';
@@ -94,9 +95,10 @@ test('a skewed binary refuses to start, naming both versions', () => {
   assert.throws(
     () => native.contextNew(ACTIVATION_SCHEMA_VERSION + 1),
     (error) =>
-      /schema version mismatch/.test(error.message) &&
-      error.message.includes(String(ACTIVATION_SCHEMA_VERSION + 1)) &&
-      error.message.includes(String(native.schemaVersion())),
+      error instanceof FlezhaError &&
+      error.code === 'runtime.schema_mismatch' &&
+      error.details.shim === ACTIVATION_SCHEMA_VERSION + 1 &&
+      error.details.core === native.schemaVersion(),
   );
 });
 
@@ -108,14 +110,18 @@ test('the package and the binary agree on the activation schema', () => {
   );
 });
 
-test('a core refusal carries the engine detail', () => {
+test('a core refusal is the one error, carrying the code and the engine detail', () => {
   native.contextNew(ACTIVATION_SCHEMA_VERSION);
   try {
     assert.throws(
       () => native.declareClass(Buffer.from('{"factory_id":"x"}')),
-      (error) => error.message.includes('sdk_lang'),
+      (error) =>
+        error instanceof FlezhaError &&
+        error.code === 'topology.declaration_unreadable' &&
+        error.class === 'invalid' &&
+        error.details.reason.includes('sdk_lang'),
     );
-    assert.match(native.lastError(), /sdk_lang/);
+    assert.equal(JSON.parse(native.lastError()).error.code, 'topology.declaration_unreadable');
   } finally {
     native.contextFree();
   }

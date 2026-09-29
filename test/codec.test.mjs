@@ -2,12 +2,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import {
-  assertRepresentable,
-  decodeValue,
-  encodeValue,
-  UnrepresentableValueError,
-} from '../dist/esm/index.js';
+import { assertRepresentable, decodeValue, encodeValue, FlezhaError } from '../dist/esm/index.js';
 
 const roundTrip = (value) => decodeValue(encodeValue(value));
 
@@ -70,16 +65,17 @@ test('an unrepresentable field is refused naming the type and the field', () => 
   assert.throws(
     () => assertRepresentable('Cart', { total: 1, onCheckout: () => {} }),
     (error) =>
-      error instanceof UnrepresentableValueError &&
-      error.message.includes('Cart.onCheckout') &&
-      error.message.includes('function'),
+      error instanceof FlezhaError &&
+      error.code === 'topology.state_unrepresentable' &&
+      error.details.path === 'Cart.onCheckout' &&
+      error.details.reason.includes('function'),
   );
 });
 
 test('a nested unrepresentable field names its path', () => {
   assert.throws(
     () => assertRepresentable('Order', { lines: [{ sku: 'a', tag: Symbol('x') }] }),
-    (error) => error.message.includes('Order.lines[0].tag'),
+    (error) => error.details.path === 'Order.lines[0].tag',
   );
 });
 
@@ -88,14 +84,14 @@ test('a cycle is refused rather than encoded', () => {
   looped.self = looped;
   assert.throws(
     () => assertRepresentable('Node', looped),
-    (e) => e.message.includes('itself'),
+    (e) => e.code === 'topology.state_unrepresentable' && e.details.reason.includes('itself'),
   );
 });
 
 test('an undefined array element is refused, since a slot cannot be omitted', () => {
   assert.throws(
     () => assertRepresentable('Window', { samples: [1, undefined, 3] }),
-    (error) => error.message.includes('Window.samples[1]') && error.message.includes('null'),
+    (error) => error.details.path === 'Window.samples[1]' && error.details.reason.includes('null'),
   );
 });
 
@@ -107,7 +103,7 @@ test('a class instance is refused rather than silently flattened', () => {
   }
   assert.throws(
     () => assertRepresentable('Invoice', { due: new Money(5) }),
-    (error) => error.message.includes('Invoice.due') && error.message.includes('Money'),
+    (error) => error.details.path === 'Invoice.due' && error.details.reason.includes('Money'),
   );
 });
 

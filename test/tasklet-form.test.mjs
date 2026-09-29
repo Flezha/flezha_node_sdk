@@ -18,7 +18,14 @@ import {
 import { answer } from '../dist/esm/dispatch.js';
 import { TaskletTestHarness } from '../dist/esm/testing.js';
 
-import { activationFor, depsFor, inputItem, jsonOf, refusal } from './dispatch-fixtures.mjs';
+import {
+  activationFor,
+  codesOf,
+  depsFor,
+  inputItem,
+  jsonOf,
+  refusal,
+} from './dispatch-fixtures.mjs';
 
 const native = loadNative();
 native.contextNew(ACTIVATION_SCHEMA_VERSION);
@@ -137,8 +144,9 @@ test('an idle TTL that is not a positive whole number is refused, naming it', ()
     const error = refusal(() =>
       defineTasklet({ name: 'sessions', idleTtlSeconds: ttl, ...emitting }),
     );
-    assert.equal(error.handler, 'sessions');
-    assert.match(error.message, /idleTtlSeconds/, String(ttl));
+    assert.equal(error.code, 'topology.invalid_setting', String(ttl));
+    assert.equal(error.details.declaration, "tasklet 'sessions'");
+    assert.equal(error.details.setting, 'idleTtlSeconds');
   }
 });
 
@@ -174,12 +182,12 @@ test('the event time an input carries is what the crossing answers', async () =>
   assert.equal(result.prepared[0].eventTime, 1_720_000_000_000n);
 });
 
-test('event time and the logical clock together are refused, naming both', () => {
+test('event time and the logical clock together are refused as two clocks', () => {
   const error = refusal(() =>
     defineTasklet({ name: 'both', eventTime: () => 0, logicalClock: true, ...emitting }),
   );
-  assert.match(error.message, /eventTime/);
-  assert.match(error.message, /logicalClock/);
+  assert.equal(error.code, 'topology.two_clocks');
+  assert.deepEqual(error.details, { tasklet: 'both' });
 });
 
 test('the initial state comes from initState, with the cell key a keyed cell has', async () => {
@@ -201,11 +209,12 @@ test('the initial state comes from initState, with the cell key a keyed cell has
   assert.deepEqual(TaskletTestHarness.of(Totals).currentState, { key: undefined, total: 0 });
 });
 
-test('a fold with no initial state is refused, naming both', () => {
+test('a fold with no initial state is refused, naming the tasklet', () => {
   const error = refusal(() =>
     defineTasklet({ name: 'nowhere', applyChange: () => {}, ...emitting }),
   );
-  assert.match(error.message, /applyChange but no initState/);
+  assert.equal(error.code, 'topology.change_without_state');
+  assert.deepEqual(error.details, { tasklet: 'nowhere' });
 });
 
 test('a change is plain data, folded live and folded again on restore', async () => {
@@ -236,9 +245,10 @@ test('a retired or unknown tasklet field is refused, naming it and the tasklet',
     ['applyChanges', () => {}, undefined],
   ]) {
     const error = refusal(() => defineTasklet({ name: 'old_form', [field]: value, ...emitting }));
-    assert.equal(error.handler, 'old_form');
-    assert.ok(error.message.includes(`\`${field}\``), error.message);
-    if (now) assert.ok(error.message.includes(now), error.message);
+    assert.equal(error.code, 'topology.unknown_field');
+    assert.equal(error.details.declaration, "tasklet 'old_form'");
+    assert.ok(error.details.fields.includes(`\`${field}\``), error.message);
+    if (now) assert.ok(error.details.fields.includes(now), error.message);
   }
 });
 
@@ -253,14 +263,16 @@ test('a retired hook a definition inherits is refused as well', () => {
     }
   }
   const error = refusal(() => defineTasklet(new Legacy()));
-  assert.ok(error.message.includes('`initialState`'), error.message);
+  assert.equal(error.code, 'topology.unknown_field');
+  assert.ok(error.details.fields.includes('`initialState`'), error.message);
 });
 
 test('a retired field on a short form is refused, naming it', () => {
   const error = refusal(() =>
     defineUnbounded({ factoryId: 'old_short', sink: 'out', dynamicCells: {}, ...emitting }),
   );
-  assert.ok(error.message.includes('`dynamicCells`'), error.message);
+  assert.equal(error.code, 'topology.unknown_field');
+  assert.ok(error.details.fields.includes('`dynamicCells`'), error.message);
 });
 
 // --- the cell mode is read from the wiring -----------------------------------
@@ -335,7 +347,7 @@ test('one definition takes its mode from each wiring', () => {
   );
 });
 
-test('a static key set fed by keyBy is refused as KeyByOnUnkeyableTarget', () => {
+test('a static key set fed by keyBy is refused as topology.key_by_on_unkeyable_target', () => {
   const error = refusal(() =>
     keyedInto(
       defineTasklet({
@@ -345,7 +357,7 @@ test('a static key set fed by keyBy is refused as KeyByOnUnkeyableTarget', () =>
       }),
     ),
   );
-  assert.ok(error.refusals.includes('KeyByOnUnkeyableTarget'), error.message);
+  assert.ok(codesOf(error).includes('topology.key_by_on_unkeyable_target'), error.message);
   assert.match(error.message, /fixed/);
 });
 

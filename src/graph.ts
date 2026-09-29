@@ -18,7 +18,7 @@
 
 import type { ChannelKind, ChannelSpec, ClassSpec, ConsumerEdge, TaskNode } from './authoring.js';
 import { loadNative, type Native } from './native.js';
-import { DeclarationError } from './types.js';
+import { flezhaError } from './errors.js';
 
 /** The Node SDK's byte in the core's `sdk_lang` allocation table. */
 export const SDK_LANG_NODE = 4;
@@ -43,11 +43,6 @@ export interface DerivedEdge {
   chain: number;
 }
 
-/** One refusal, as the core answers it beside the rendered verdict. */
-interface VerdictIssue {
-  name: string;
-}
-
 /** One channel, as the core derived it from the record. */
 export interface DerivedChannel {
   index: number;
@@ -65,10 +60,6 @@ export interface DerivedDecl {
   channels: DerivedChannel[];
   /** `checkpoint` when any checkpoint key was declared, else `per_input`. */
   ack_granularity: 'per_input' | 'checkpoint';
-}
-
-function refuse(spec: ClassSpec, handler: string | null, defect: string): never {
-  throw new DeclarationError(spec.factoryId, handler, defect);
 }
 
 /**
@@ -104,64 +95,36 @@ function clockOf(node: TaskNode): 'wall' | 'logical' | 'event_time' {
  * The defect the record cannot carry: a migration is a host closure the
  * declaration never names, so the core has nothing to read.
  */
-function checkSchema(spec: ClassSpec, node: TaskNode): void {
+function checkSchema(node: TaskNode): void {
   const def = node.tasklet.definition;
   if (def.minReadableSchemaVersion === undefined) return;
 
   const floor = def.minReadableSchemaVersion;
-  const running = def.schemaVersion ?? 1;
-  if (floor > running) {
-    refuse(
-      spec,
-      node.name,
-      `declares minReadableSchemaVersion ${floor} above its schemaVersion ${running}`,
-    );
+  const version = def.schemaVersion ?? 1;
+  if (floor > version) {
+    throw flezhaError('topology.schema_floor_above_version', {
+      tasklet: node.name,
+      floor,
+      version,
+    });
   }
-  if (floor < running && !def.migrateState && !def.migrateChange) {
-    refuse(
-      spec,
-      node.name,
-      `declares it reads back to schema version ${floor} but supplies no migration; a ` +
-        'floor without one fails at the first old record instead of at startup',
-    );
+  if (floor < version && !def.migrateState && !def.migrateChange) {
+    // A floor with no migration fails at the first old record instead of at startup.
+    throw flezhaError('topology.schema_floor_without_migration', { tasklet: node.name, floor });
   }
-}
-
-/**
- * The core's verdict as this SDK's own exception. The names are read off the
- * verdict the core answered with — JSON on the thrown error's `cause` — and
- * kept apart on `refusals`, so a caller reads data rather than the prose.
- */
-function refusalOf(spec: ClassSpec, error: Error): DeclarationError {
-  const verdict = error.cause;
-  const issues =
-    verdict instanceof Error
-      ? (JSON.parse(verdict.message) as { issues: VerdictIssue[] }).issues
-      : [];
-  return new DeclarationError(
-    spec.factoryId,
-    null,
-    error.message,
-    issues.map((issue) => issue.name),
-  );
 }
 
 /**
  * Submit the record and answer what the core derived from it.
  *
- * On a refusal this throws the verdict — every name the core returned, in one
- * `DeclarationError`. On success the derived channel names are written back,
+ * On a refusal this throws the core's `FlezhaError`, whose `details.issues`
+ * lists every refusal by its code. On success the derived channel names are written back,
  * so the name this host addresses a channel by is the one the core registered.
  */
 export function validate(spec: ClassSpec, native: Native = loadNative()): DerivedDecl {
-  for (const node of spec.tasklets) checkSchema(spec, node);
-  let derived: DerivedDecl;
-  try {
-    const answer = native.checkClass(Buffer.from(JSON.stringify(toHostClassDecl(spec))));
-    derived = JSON.parse(answer.toString('utf8')) as DerivedDecl;
-  } catch (error) {
-    throw refusalOf(spec, error as Error);
-  }
+  for (const node of spec.tasklets) checkSchema(node);
+  const answer = native.checkClass(Buffer.from(JSON.stringify(toHostClassDecl(spec))));
+  const derived = JSON.parse(answer.toString('utf8')) as DerivedDecl;
   for (const channel of derived.channels) {
     const declared = spec.channels[channel.index] as ChannelSpec;
     declared.name = channel.name;

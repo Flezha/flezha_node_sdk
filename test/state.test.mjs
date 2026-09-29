@@ -2,7 +2,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { defineTasklet, StateMutationError } from '../dist/esm/index.js';
+import { defineTasklet, FlezhaError } from '../dist/esm/index.js';
 import { TaskletTestHarness } from '../dist/esm/testing.js';
 
 const Counter = defineTasklet({
@@ -40,9 +40,10 @@ test('a direct assignment is refused naming the field and the change path', asyn
   await assert.rejects(
     () => harness.input(1),
     (error) =>
-      error instanceof StateMutationError &&
-      error.message.includes('state.total') &&
-      error.message.includes('ctx.change'),
+      error instanceof FlezhaError &&
+      error.code === 'runtime.state_mutated' &&
+      error.details.tasklet === 'bad' &&
+      error.details.path === 'total',
   );
 });
 
@@ -60,7 +61,7 @@ test('the guard reaches a nested field, where the loss is the same', async () =>
   const harness = TaskletTestHarness.of(Nested);
   await assert.rejects(
     () => harness.input(1),
-    (error) => error.message.includes('state.tags.last'),
+    (error) => error.code === 'runtime.state_mutated' && error.details.path === 'tags.last',
   );
 });
 
@@ -84,6 +85,6 @@ test('deleting a field is refused too', async () => {
   });
   await assert.rejects(
     () => TaskletTestHarness.of(Deleter).input(1),
-    (error) => error instanceof StateMutationError,
+    (error) => error instanceof FlezhaError && error.code === 'runtime.state_mutated',
   );
 });

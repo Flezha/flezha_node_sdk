@@ -173,8 +173,8 @@ test('a controller capability is refused by name, not approximated', async () =>
   await assert.rejects(
     async () => LocalOperator.start(tierStore),
     (error) => {
-      assert.match(error.message, /effectively_once/);
-      assert.match(error.message, /requires a controller/);
+      assert.equal(error.code, 'runtime.local_needs_controller');
+      assert.match(error.details.capability, /effectively_once/);
       return true;
     },
   );

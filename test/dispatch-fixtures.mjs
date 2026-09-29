@@ -2,7 +2,7 @@
 // depends on, the activation the core hands out, and a declaration's refusal.
 import assert from 'node:assert/strict';
 
-import { DeclarationError, defineUnbounded, defineTasklet, validate } from '../dist/esm/index.js';
+import { FlezhaError, defineUnbounded, defineTasklet, validate } from '../dist/esm/index.js';
 import { Registry, answer } from '../dist/esm/dispatch.js';
 
 /**
@@ -44,6 +44,8 @@ export function spawnBridge(
     bridge.reads.push(kind);
     const at = Number(handle) - 1;
     answers[at] ??= answerFor(bridge.requests[at]);
+    // A failed spawn is thrown, as the addon throws the core's error document.
+    if (answers[at]?.error) throw FlezhaError.fromDocument(JSON.stringify(answers[at]));
     return answers[at] === null ? null : JSON.stringify(answers[at]);
   };
   return bridge;
@@ -95,13 +97,22 @@ export const inputItem = (value, overrides = {}) => ({
 /** A plugin frame read back as the JSON a sink naming no codec sends. */
 export const jsonOf = (bytes) => JSON.parse(Buffer.from(bytes).toString('utf8'));
 
-/** The DeclarationError that building and submitting `build()` throws. */
+/** The FlezhaError that building and submitting `build()` throws. */
 export function refusal(build) {
   try {
     validate(build());
   } catch (error) {
-    assert.ok(error instanceof DeclarationError, `expected a DeclarationError, got ${error}`);
+    assert.ok(error instanceof FlezhaError, `expected a FlezhaError, got ${error}`);
     return error;
   }
   return assert.fail('expected a refusal');
 }
+
+/** Every code a refusal names: each issue the core listed, else its own. */
+export function codesOf(error) {
+  const { issues } = error.details;
+  return Array.isArray(issues) ? issues.map((issue) => issue.code) : [error.code];
+}
+
+/** An `assert.throws` / `assert.rejects` matcher for a FlezhaError with `code`. */
+export const coded = (code) => (error) => error instanceof FlezhaError && error.code === code;

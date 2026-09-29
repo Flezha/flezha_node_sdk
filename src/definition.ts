@@ -9,16 +9,16 @@
 
 import { assertRepresentable } from './codec.js';
 import type { ClassSpec } from './authoring.js';
-import {
-  DeclarationError,
-  type BoundedDefinition,
-  type ChannelBuilder,
-  type CodecOptions,
-  type OperatorDefinition,
-  type ShortFormDefinition,
-  type Stream,
-  type Tasklet,
-  type TaskletDefinition,
+import { flezhaError } from './errors.js';
+import type {
+  BoundedDefinition,
+  ChannelBuilder,
+  CodecOptions,
+  OperatorDefinition,
+  ShortFormDefinition,
+  Stream,
+  Tasklet,
+  TaskletDefinition,
 } from './types.js';
 
 /**
@@ -34,41 +34,58 @@ import {
 export function defineTasklet<TIn, TOut = never, TState = void, TChange = never>(
   definition: TaskletDefinition<TIn, TOut, TState, TChange>,
 ): Tasklet<TIn, TOut, TState, TChange> {
-  const refuse = (defect: string): never => {
-    throw new DeclarationError('<tasklet>', definition.name ?? null, defect);
-  };
+  const tasklet = definition.name || '<tasklet>';
   const operatorFields = written(definition, ['kind', ...SHORT_FORM_KEYS]);
   if (operatorFields) {
-    refuse(
-      `declares ${operatorFields}, which a tasklet does not carry; the short form is declared ` +
-        'with `defineUnbounded` or `defineBounded`, whose name is its kind',
-    );
+    throw flezhaError('topology.operator_field_on_tasklet', {
+      tasklet,
+      fields: operatorFields,
+      instead: '`defineUnbounded` or `defineBounded`',
+    });
   }
   if (!definition.name || !definition.name.trim()) {
-    throw new DeclarationError('<tasklet>', null, 'a tasklet declares a non-empty name');
+    throw flezhaError('topology.tasklet_name_missing', { tasklet });
   }
   if ((definition as { handle?: unknown }).handle !== undefined) {
-    refuse("declares `handle`; a tasklet's body is named `run`");
+    throw flezhaError('topology.retired_callback', {
+      tasklet,
+      callback: '`handle`',
+      instead: '`run`',
+    });
   }
   const unknown = unknownFields(definition, TASKLET_DEFINITION_FIELDS);
-  if (unknown) refuse(`declares ${unknown}, which a tasklet definition does not carry`);
-  if (typeof definition.run !== 'function') refuse('a tasklet declares its body, `run`');
+  if (unknown) {
+    throw flezhaError('topology.unknown_field', {
+      declaration: `tasklet '${tasklet}'`,
+      fields: unknown,
+    });
+  }
+  if (typeof definition.run !== 'function') {
+    throw flezhaError('topology.missing_body', {
+      declaration: `tasklet '${tasklet}'`,
+      body: '`run`',
+    });
+  }
   // State without a fold is legitimate: a value seeded at start and read but
   // never mutated has nothing to journal, and `ctx.change` already refuses at
   // the point of use. A fold with no state to fold into is not.
   if (!definition.initState && definition.applyChange) {
-    refuse('declares applyChange but no initState; there is nothing for a change to fold into');
+    throw flezhaError('topology.change_without_state', { tasklet });
   }
   const ttl = definition.idleTtlSeconds;
   if (ttl !== undefined && !(Number.isInteger(ttl) && ttl > 0)) {
-    const shown = typeof ttl === 'number' ? String(ttl) : JSON.stringify(ttl);
-    refuse(`declares idleTtlSeconds ${shown}; an idle TTL is a positive whole number of seconds`);
+    throw flezhaError('topology.invalid_setting', {
+      declaration: `tasklet '${tasklet}'`,
+      setting: 'idleTtlSeconds',
+      value: typeof ttl === 'number' ? String(ttl) : JSON.stringify(ttl),
+      expected: 'a positive whole number of seconds',
+    });
   }
   if (definition.eventTime && definition.logicalClock) {
-    refuse('declares both eventTime and logicalClock; a tasklet runs on one clock');
+    throw flezhaError('topology.two_clocks', { tasklet });
   }
   if (definition.cells && definition.cells.keys.length === 0) {
-    refuse('declares an empty static key set; a static tasklet names its cells');
+    throw flezhaError('topology.static_tasklet_without_cell_keys', { tasklet });
   }
   // A state that cannot be encoded cannot be restored, and the first anyone
   // would learn of it is a restart. Walk the declared starting state now.
@@ -228,11 +245,10 @@ interface EntryBuilder {
 /**
  * The channels body a definition wires: its own `channels`, or, for a §5 short
  * form carrying one tasklet's `run` body in their place, the body a
- * hand-written single-tasklet operator carries. `ShortFormWithTopology` is
- * the one contract refusal (`authoring_contract.md` §5.2) raised here, and it
- * carries its name in `refusals` and at the start of the message.
+ * hand-written single-tasklet operator carries. `topology.short_form_with_topology`
+ * is the one contract refusal (`authoring_contract.md` §5.2) raised here.
  *
- * `SinkWithoutOutput` is not raised: a `.mjs` definition declares no output
+ * `topology.sink_without_output` is not raised: a `.mjs` definition declares no output
  * type the SDK can read, a TypeScript one names it only in types erased before
  * the SDK runs, and no `run` returns output, so nothing here says whether a
  * short form emits. The Node manifest does not list `shorthand_typed_output`
@@ -243,76 +259,59 @@ export function channelsOf(
   kind: ClassSpec['kind'],
 ): (builder: ChannelBuilder & EntryBuilder) => void {
   if (typeof definition.factoryId !== 'string' || !definition.factoryId.trim()) {
-    throw new DeclarationError('<operator>', null, 'an operator declares a non-empty `factoryId`');
+    throw flezhaError('topology.missing_factory_id', { operator: '<operator>' });
   }
-  const refuse = refuseFor(definition.factoryId);
+  const factoryId = definition.factoryId;
   const foreign = kind === 'unbounded' ? written(definition, BOUNDED_SETTINGS) : '';
   if (foreign) {
-    refuse(
-      `declares ${foreign}, which only a bounded operator carries; an unbounded operator has no loop, rollback or ` +
-        'lifecycle setting, so the operator is declared with `defineBounded` or without it',
-    );
+    throw flezhaError('topology.bounded_setting_on_unbounded', {
+      factory_id: factoryId,
+      settings: foreign,
+    });
   }
   const unknown = unknownFields(definition, DEFINITION_FIELDS);
-  if (unknown) refuse(`declares unknown ${unknown}; an operator definition carries no such field`);
+  if (unknown) {
+    throw flezhaError('topology.unknown_field', {
+      declaration: `operator '${factoryId}'`,
+      fields: unknown,
+    });
+  }
   const { channels } = definition;
   const { run } = definition as { run?: unknown };
   if (run !== undefined && channels !== undefined) {
-    refuse(
-      'ShortFormWithTopology: declares both `run` and `channels`; a short form carries its one ' +
-        "tasklet's body in place of a topology body",
-      ['ShortFormWithTopology'],
-    );
+    throw flezhaError('topology.short_form_with_topology', { factory_id: factoryId });
   }
   if (run === undefined) {
     if (typeof channels !== 'function') {
-      refuse(
-        'declares no body; an operator wires its tasklets in `channels`, or carries one ' +
-          "tasklet's `run` body as the short form",
-      );
+      throw flezhaError('topology.missing_body', {
+        declaration: `operator '${factoryId}'`,
+        body: "`channels`, or one tasklet's `run` as the short form",
+      });
     }
     const keys = written(definition, [...SHORT_FORM_KEYS, ...TASKLET_FIELDS]);
     if (keys) {
-      refuse(
-        `declares ${keys} beside \`channels\`; a full form wires its entry channels, codecs ` +
-          "and sinks in `channels` itself, and declares each tasklet's fields on its " +
-          '`defineTasklet`',
-      );
+      throw flezhaError('topology.short_form_field_on_full_form', {
+        factory_id: factoryId,
+        fields: keys,
+      });
     }
     return channels as (builder: ChannelBuilder) => void;
   }
   return shortFormBody(definition as ShortForm & Pick<BoundedDefinition, 'loopMode'>);
 }
 
-/** A refusal of the operator `factoryId` names, under the core's names when given. */
-function refuseFor(factoryId: string): (defect: string, refusals?: string[]) => never {
-  return (defect, refusals = []) => {
-    throw new DeclarationError(factoryId, null, defect, refusals);
-  };
-}
-
 /** The channels body a §5 short form stands for, once its operator fields are judged. */
 function shortFormBody(
   definition: ShortForm & Pick<BoundedDefinition, 'loopMode'>,
 ): (builder: ChannelBuilder & EntryBuilder) => void {
-  const refuse = refuseFor(definition.factoryId);
-  if (written(definition, ['kind'])) {
-    refuse(
-      'declares `kind` on a short form; the kind is the name of the function that declares it ' +
-        '(`defineUnbounded` or `defineBounded`), not a field',
-    );
-  }
-  if (written(definition, ['name'])) {
-    refuse(
-      "declares `name` on a short form; a short form's tasklet is named after its `factoryId`",
-    );
-  }
-  const settings = written(definition, CLASS_SETTINGS);
-  if (settings) {
-    refuse(
-      `declares ${settings} on a short form; a class-level setting is the full form's, and the ` +
-        'short form keeps every one at its default',
-    );
+  // The kind is the declaring function's name, the tasklet is named after the
+  // factory id, and every class-level setting keeps its default.
+  const fields = written(definition, ['kind', 'name', ...CLASS_SETTINGS]);
+  if (fields) {
+    throw flezhaError('topology.setting_on_short_form', {
+      factory_id: definition.factoryId,
+      fields,
+    });
   }
   const { factoryId, sink, input = 'input', codec } = definition;
   // The tasklet's own fields, own or inherited; the operator's stay behind.

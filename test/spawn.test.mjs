@@ -5,17 +5,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import {
-  ACTIVATION_SCHEMA_VERSION,
-  SpawnAlreadyRunningError,
-  SpawnError,
-  SpawnFactoryNotBoundedError,
-  SpawnFactoryUnknownError,
-  SpawnRefusedError,
-  SpawnTimeoutError,
-  SpawnUnavailableError,
-  loadNative,
-} from '../dist/esm/index.js';
+import { ACTIVATION_SCHEMA_VERSION, FlezhaError, loadNative } from '../dist/esm/index.js';
 
 import { handleOnce, spawnBridge } from './dispatch-fixtures.mjs';
 
@@ -29,6 +19,11 @@ const caught = (read) => {
     return error;
   }
 };
+
+/** The error document the core answers a failed spawn read with. */
+const failed = (code, message, details = {}) => ({
+  error: { code, class: 'conflict', message, details, hint: null },
+});
 
 /** Run `body` on one input and require the input to have been handled cleanly. */
 async function handled(bridge, body, item) {
@@ -101,11 +96,9 @@ test('a spawn resolves to the id it resolved to, generated or given', async () =
 });
 
 test('the error policy is sent, and a running id is thrown by both reads', async () => {
-  const bridge = spawnBridge((request) => ({
-    id: request.id,
-    error: 'already_running',
-    message: 'an instance of `w1` is already running and if_running was Error',
-  }));
+  const bridge = spawnBridge(() =>
+    failed('operator.already_running', "operator 'w1' is already running", { operator: 'w1' }),
+  );
   const failures = [];
   await handled(bridge, async (input, ctx) => {
     const handle = ctx.spawnBounded('worker', input, { id: 'w1', ifRunning: 'error' });
@@ -116,9 +109,9 @@ test('the error policy is sent, and a running id is thrown by both reads', async
   });
   assert.equal(bridge.requests[0].ifRunning, 'error');
   const [waited, tried] = failures;
-  assert.ok(waited instanceof SpawnAlreadyRunningError && waited instanceof SpawnError);
-  assert.equal(waited.name, 'SpawnAlreadyRunningError');
-  assert.equal(waited.id, 'w1');
+  assert.ok(waited instanceof FlezhaError);
+  assert.equal(waited.code, 'operator.already_running');
+  assert.deepEqual(waited.details, { operator: 'w1' });
   assert.deepEqual(tried, waited, 'every read answers the resolved failure');
   assert.deepEqual(bridge.reads, ['wait', 'try']);
 });
@@ -134,18 +127,16 @@ test('ifRunning without an id throws a TypeError naming both, and sends nothing'
   assert.deepEqual(bridge.requests, []);
 });
 
-test('each failure the core answers is thrown as its own class', async () => {
-  const classes = {
-    already_running: SpawnAlreadyRunningError,
-    factory_unknown: SpawnFactoryUnknownError,
-    factory_not_bounded: SpawnFactoryNotBoundedError,
-    refused: SpawnRefusedError,
-    timeout: SpawnTimeoutError,
-    unavailable: SpawnUnavailableError,
-  };
-  for (const [kind, Class] of Object.entries(classes)) {
-    const message = `the core's sentence for ${kind}`;
-    const bridge = spawnBridge(() => ({ id: '', error: kind, message }));
+test('each failure the core answers is thrown as the one error, carrying its code', async () => {
+  for (const code of [
+    'operator.already_running',
+    'operator.factory_unknown',
+    'operator.factory_not_bounded',
+    'quota.exceeded',
+    'spawn.timeout',
+    'spawn.unavailable',
+  ]) {
+    const bridge = spawnBridge(() => failed(code, `the core's sentence for ${code}`));
     let failure;
     await handled(bridge, async (input, ctx) => {
       failure = await ctx
@@ -153,8 +144,9 @@ test('each failure the core answers is thrown as its own class', async () => {
         .wait()
         .catch((error) => error);
     });
-    assert.ok(failure instanceof Class, `${kind} was thrown as ${failure?.name}`);
-    assert.equal(failure.message, message);
+    assert.ok(failure instanceof FlezhaError, `${code} was thrown as ${failure?.name}`);
+    assert.equal(failure.code, code);
+    assert.equal(failure.message, `${code}: the core's sentence for ${code}`);
   }
 });
 
@@ -163,7 +155,7 @@ test('a failure nobody reads faults nothing and leaves no promise to reject', as
   const onRejection = (reason) => rejections.push(reason);
   process.on('unhandledRejection', onRejection);
   try {
-    const bridge = spawnBridge(() => ({ id: '', error: 'refused', message: 'refused: quota' }));
+    const bridge = spawnBridge(() => failed('quota.exceeded', 'the quota is reached'));
     const effect = await handled(bridge, (input, ctx) => {
       ctx.spawnBounded('worker', input);
       ctx.emit(input);

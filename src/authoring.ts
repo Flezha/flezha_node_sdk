@@ -10,9 +10,9 @@
 
 import { CHANNEL_CODECS, channelDecoder, channelEncoder, type Codec } from './codec.js';
 import { channelsOf, defineTasklet, type EitherForm } from './definition.js';
+import { flezhaError } from './errors.js';
 import { latestRouter, type RouterInput } from './route-latest.js';
 import {
-  DeclarationError,
   type BeyondWindowPolicy,
   type ChannelBuilder,
   type ChannelCodec,
@@ -279,18 +279,14 @@ class Builder implements ChannelBuilder {
     )?.codec;
     if (codec === undefined) return [callable, undefined];
     if (callable !== undefined) {
-      throw new DeclarationError(
-        this.factoryId,
-        channel.name,
-        'names both a codec and its own callable; give one',
-      );
+      throw flezhaError('topology.codec_with_callable', { channel: channel.name });
     }
     if (!CHANNEL_CODECS.includes(codec)) {
-      throw new DeclarationError(
-        this.factoryId,
-        channel.name,
-        `unknown codec \`${codec}\`; a channel codec is one of ${CHANNEL_CODECS.join(', ')}`,
-      );
+      throw flezhaError('topology.unknown_codec', {
+        channel: channel.name,
+        codec,
+        codecs: [...CHANNEL_CODECS],
+      });
     }
     return [undefined, codec];
   }
@@ -311,13 +307,7 @@ class Builder implements ChannelBuilder {
       // The node table is keyed by identity and physically cannot hold two, so
       // the record the core would judge is unwritable. The refusal answers
       // under the core's own name all the same.
-      throw new DeclarationError(
-        this.factoryId,
-        identity,
-        'two different tasklets claim this node identity; name one of them with ' +
-          '`named(...)` so each node has its own',
-        ['NodeIdentityCollision'],
-      );
+      throw flezhaError('topology.node_identity_collision', { name: identity });
     }
     const node: TaskNode = { index: this.tasklets.length, name: identity, tasklet };
     this.tasklets.push(node);
@@ -527,15 +517,11 @@ class EdgeStream<T> implements Stream<T> {
     // here is what keeps the shorter forms from spelling `sink(undefined, x)`.
     const name = typeof nameOrEncode === 'string' ? nameOrEncode : undefined;
     const rest = name === undefined ? [nameOrEncode, encodeOrOptions] : [encodeOrOptions, options];
-    if (this.from.source !== 'tasklet') {
+    if (this.from.source === 'entry') {
       // Not a topology rule the core states: a record whose entry channel
       // carries a sink derives a plugin channel with no producer, and there is
       // nothing in it that says which end fed the plugin.
-      throw new DeclarationError(
-        this.builder.factoryId,
-        name ?? '<derived>',
-        'a plugin sink is fed by a tasklet; wire the entry channel into one first',
-      );
+      throw flezhaError('topology.sink_on_entry', { channel: this.from.channel.name });
     }
     const channel = this.channel();
     // A chain of its own: the sink terminates the channel rather than this
@@ -651,11 +637,11 @@ export function defineBounded(definition: EitherForm<BoundedDefinition>): ClassS
   for (const [field, modes] of Object.entries(BOUNDED_MODES)) {
     const value = bounded[field as keyof typeof BOUNDED_MODES];
     if (!Object.hasOwn(modes, value)) {
-      throw new DeclarationError(
-        spec.factoryId,
-        null,
-        `unknown ${field} \`${value}\`; a ${field} is one of ${Object.keys(modes).join(', ')}`,
-      );
+      throw flezhaError('topology.invalid_mode', {
+        factory_id: spec.factoryId,
+        knob: field,
+        value: String(value),
+      });
     }
   }
   return { ...spec, bounded };

@@ -3,7 +3,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { Admin } from '../dist/esm/index.js';
+import { Admin, FlezhaError, loadNative } from '../dist/esm/index.js';
 
 /** An addon whose one admin call is recorded and answered with `answer`. */
 function answering(answer) {
@@ -33,7 +33,26 @@ test('a start with an id sends it and answers only the id and the outcome', asyn
 });
 
 test('a refused start rejects the way every refused call does', async () => {
-  const refusal = new Error('quota exceeded: max_operators');
+  const refusal = FlezhaError.fromDocument(
+    JSON.stringify({
+      error: {
+        code: 'quota.exceeded',
+        class: 'conflict',
+        message: "the namespace's operators quota is reached (3 of 3)",
+        details: { kind: 'operators', current: 3, limit: 3 },
+        hint: 'flz namespace show',
+      },
+    }),
+  );
   const { admin } = answering(refusal);
   await assert.rejects(admin.startOperator('echo'), refusal);
+});
+
+// The addon's own failure reaches the caller as the one error, carrying the
+// core's code: here the call made before the runner has a context.
+test('an administration call the core refuses rejects with its code', async () => {
+  await assert.rejects(
+    new Admin(loadNative()).listOperators(),
+    (error) => error instanceof FlezhaError && error.code === 'runtime.runner_not_started',
+  );
 });

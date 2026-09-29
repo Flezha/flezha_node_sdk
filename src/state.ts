@@ -15,23 +15,20 @@
  */
 
 import { decodeValue } from './codec.js';
+import { flezhaError } from './errors.js';
 import type { TaskletDefinition } from './types.js';
 
 const RAW = Symbol('flezha.state.raw');
 
-export class StateMutationError extends Error {
-  constructor(
-    readonly tasklet: string,
-    readonly path: string,
-  ) {
-    super(
-      `${tasklet}: state.${path} was assigned directly. Declared state is rebuilt from ` +
-        `its recorded changes on restart, so a direct assignment is lost there and reported ` +
-        `nowhere. Record it instead: ctx.change({ ... }), which applyChange folds into the ` +
-        `state on both the live path and the replay one.`,
-    );
-    this.name = 'StateMutationError';
-  }
+/**
+ * Declared state is rebuilt from its recorded changes on restart, so a direct
+ * assignment is lost there and reported nowhere: it is refused where it is made.
+ */
+function mutated(tasklet: string, at: string, property: string | symbol): Error {
+  return flezhaError('runtime.state_mutated', {
+    tasklet,
+    path: at ? `${at}.${String(property)}` : String(property),
+  });
 }
 
 function guard<T extends object>(tasklet: string, target: T, path: string): T {
@@ -49,13 +46,13 @@ function guard<T extends object>(tasklet: string, target: T, path: string): T {
         return wrap(next, at ? `${at}.${String(property)}` : String(property));
       },
       set(_inner, property) {
-        throw new StateMutationError(tasklet, at ? `${at}.${String(property)}` : String(property));
+        throw mutated(tasklet, at, property);
       },
       defineProperty(_inner, property) {
-        throw new StateMutationError(tasklet, at ? `${at}.${String(property)}` : String(property));
+        throw mutated(tasklet, at, property);
       },
       deleteProperty(_inner, property) {
-        throw new StateMutationError(tasklet, at ? `${at}.${String(property)}` : String(property));
+        throw mutated(tasklet, at, property);
       },
     });
     cache.set(value, proxied);

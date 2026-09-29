@@ -14,6 +14,7 @@ import { pathToFileURL } from 'node:url';
 import type { ClassSpec } from './authoring.js';
 import { Admin } from './admin.js';
 import { envPositive } from './env.js';
+import { flezhaError, isFlezhaError } from './errors.js';
 import { toHostClassDecl, validate } from './graph.js';
 import { installDeterminismWarnings, uninstallDeterminismWarnings } from './determinism.js';
 import { Registry, dispatch, dispatchDeps } from './dispatch.js';
@@ -40,10 +41,8 @@ const STDIN_EOF_GRACE_MS = 5_000;
 
 /**
  * Import a handler module, naming the specifier and chaining the cause. A
- * declaration refusal passes through as thrown, because a graph built at module
- * scope refuses while its module is imported. It is recognised by its
- * `refusals` list rather than by `instanceof`, since the module may have loaded
- * the SDK's other build.
+ * `FlezhaError` passes through as thrown, because a graph built at module scope
+ * refuses while its module is imported.
  */
 export async function importModule(specifier: string): Promise<unknown> {
   const resolved =
@@ -51,7 +50,7 @@ export async function importModule(specifier: string): Promise<unknown> {
   try {
     return await importSpecifier(resolved);
   } catch (cause) {
-    if (Array.isArray((cause as { refusals?: unknown } | null)?.refusals)) throw cause;
+    if (isFlezhaError(cause)) throw cause;
     throw new Error(
       `could not import handler module \`${specifier}\`; a runner registers handlers by ` +
         'module specifier so every dispatch loop can import them itself',
@@ -70,12 +69,7 @@ export function specsFrom(specifier: string, module: unknown): ClassSpec[] {
       if (!specs.includes(spec)) specs.push(spec);
     }
   }
-  if (specs.length === 0) {
-    throw new Error(
-      `handler module \`${specifier}\` exports no operator; export the value ` +
-        '`defineUnbounded(...)` or `defineBounded(...)` returned',
-    );
-  }
+  if (specs.length === 0) throw flezhaError('topology.no_operator_exported', { module: specifier });
   return specs;
 }
 
@@ -138,15 +132,10 @@ export class Runner {
    */
   async unregisterFactory(specifier: string): Promise<void> {
     if (this.native || this.registry) {
-      throw new Error(
-        `\`${specifier}\` cannot be unregistered: a running Node runner cannot stop serving a ` +
-          'started declaration',
-      );
+      throw flezhaError('runtime.factory_in_service', { module: specifier });
     }
     const at = this.specifiers.indexOf(specifier);
-    if (at < 0) {
-      throw new Error(`\`${specifier}\` is not registered on this runner`);
-    }
+    if (at < 0) throw flezhaError('runtime.class_not_registered', { factory: specifier });
     this.specifiers.splice(at, 1);
   }
 

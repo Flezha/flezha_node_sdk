@@ -7,6 +7,8 @@
  * over `identity ‖ change seq ‖ per-invocation ordinal`.
  */
 
+import { flezhaError } from './errors.js';
+
 const FNV128_OFFSET_BASIS = 0x6c62272e07bb014262b821756295c58dn;
 const FNV128_PRIME = 0x0000000001000000000000000000013bn;
 const MASK128 = (1n << 128n) - 1n;
@@ -29,11 +31,13 @@ export function cellIdentity(instanceId: string, taskletName: string, cellKey: s
   const instance = Buffer.from(instanceId, 'utf8');
   const tasklet = Buffer.from(taskletName, 'utf8');
   const key = Buffer.from(cellKey, 'utf8');
-  if (instance.length > 255 || tasklet.length > 255) {
-    throw new Error('operator class / tasklet id must be at most 255 bytes');
-  }
-  if (key.length > 0xffff) {
-    throw new Error('cell key must be at most 65535 bytes');
+  for (const [part, value, bytes, limit] of [
+    ['operator id', instanceId, instance, 255],
+    ['tasklet name', taskletName, tasklet, 255],
+    ['cell key', cellKey, key, 0xffff],
+  ] as const) {
+    if (bytes.length > limit)
+      throw flezhaError('runtime.identity_too_long', { part, value, limit });
   }
   const out = Buffer.alloc(1 + instance.length + 1 + tasklet.length + 2 + key.length);
   let at = 0;

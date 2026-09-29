@@ -17,6 +17,7 @@ import { defineUnbounded, type ChannelSpec, type ClassSpec, type TaskNode } from
 import { decodeValue } from './codec.js';
 import { Invocation, type SpawnBridge } from './ctx.js';
 import { invocation } from './determinism.js';
+import { flezhaError } from './errors.js';
 import { foldRestore, rawState, type RestoreBody } from './state.js';
 import type { Tasklet, TimerKind, TimerFiring } from './types.js';
 
@@ -214,10 +215,7 @@ export class TaskletTestHarness<TIn, TOut, TState, TChange> {
   async fireTimer(kind: TimerKind, scheduledAt: bigint): Promise<Invoked<TOut, TChange>> {
     const onTimer = this.tasklet.definition.onTimer;
     if (!onTimer) {
-      throw new Error(
-        `${this.tasklet.name} declares no onTimer; a tasklet that registers a timer ` +
-          'handles its firing',
-      );
+      throw flezhaError('runtime.timer_without_on_timer', { tasklet: this.tasklet.name });
     }
     const firing: TimerFiring = { kind, scheduledAt };
     const ctx = this.context(scheduledAt);

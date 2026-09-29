@@ -20,7 +20,7 @@ import { fileURLToPath } from 'node:url';
 
 import {
   ACTIVATION_SCHEMA_VERSION,
-  DeclarationError,
+  FlezhaError,
   defineUnbounded,
   defineTasklet,
   defineBounded,
@@ -358,16 +358,14 @@ function declareShorthand(declaration, index) {
 }
 
 /**
- * A refused row's verdict. The names are the error's own, never re-derived
- * here: a `DeclarationError` carries the core's, or none for a refusal this SDK
- * made on its own surface, and any other error is one the contract requires to
- * begin with its name.
+ * A refused row's verdict. The names are the error's own codes, never
+ * re-derived here: every issue the core listed, or the one code of a refusal
+ * this SDK made itself.
  */
 function refused(row, error) {
-  const names =
-    error instanceof DeclarationError
-      ? [...error.refusals]
-      : [error.message.split(':', 1)[0].trim()];
+  if (!(error instanceof FlezhaError)) throw error;
+  const issues = error.details.issues;
+  const names = Array.isArray(issues) ? issues.map((issue) => issue.code) : [error.code];
   return { topology: row.topology, outcome: 'refused', names, defect: error.message };
 }
 
@@ -396,7 +394,6 @@ function judge(row) {
       derived: derivedOf(validate(specForTopology(row.topology))),
     };
   } catch (error) {
-    if (!(error instanceof DeclarationError)) throw error;
     return refused(row, error);
   }
 }

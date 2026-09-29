@@ -8,7 +8,7 @@ import test, { after } from 'node:test';
 
 import {
   ACTIVATION_SCHEMA_VERSION,
-  DeclarationError,
+  FlezhaError,
   decodeValue,
   defineUnbounded,
   defineTasklet,
@@ -17,6 +17,7 @@ import {
   loadNative,
 } from '../dist/esm/index.js';
 import { Registry, answer, dispatch } from '../dist/esm/dispatch.js';
+import { cellIdentity } from '../dist/esm/identity.js';
 import { createRunner, importModule, loadRegistry, specsFrom } from '../dist/esm/runner.js';
 
 import { activationFor, depsFor, inputItem, jsonOf } from './dispatch-fixtures.mjs';
@@ -309,7 +310,7 @@ test('an unanswerable activation abandons rather than retiring its cell', async 
   const reported = await said(() =>
     dispatch(activation({ token: 42n, items: [inputItem(1)] }), native, fixture()),
   );
-  assert.match(reported, /unknown activation token 42/);
+  assert.match(reported, /runtime\.unknown_activation_token: activation token 42 /);
   assert.match(reported, /abandoning activation 42 failed/);
 });
 
@@ -341,7 +342,7 @@ test('an activation for an unknown factory is answered, not dropped', async () =
   assert.equal(completed[0].outcome, 'failed');
   assert.match(completed[0].error, /no class registered/);
   assert.equal(completed[0].nonRetryable, true);
-  assert.match(reported, /unknown activation token 13/);
+  assert.match(reported, /runtime\.unknown_activation_token: activation token 13 /);
 });
 
 test('a module specifier is imported and its operators registered', async () => {
@@ -418,8 +419,7 @@ test('a refusal raised while a handler module is imported keeps its own name', a
   );
   await assert.rejects(
     () => loadRegistry([module]),
-    (error) =>
-      error instanceof DeclarationError && error.refusals.includes('NodeIdentityCollision'),
+    (error) => error instanceof FlezhaError && error.code === 'topology.node_identity_collision',
   );
 });
 
@@ -442,7 +442,7 @@ test('a module exporting no operator is refused naming the specifier', async () 
   writeFileSync(module, 'export const nothing = 1;\n');
   await assert.rejects(
     () => loadRegistry([module]),
-    (error) => error.message.includes(module) && error.message.includes('exports no operator'),
+    (error) => error.code === 'topology.no_operator_exported' && error.details.module === module,
   );
 });
 
@@ -451,7 +451,9 @@ test('a duplicate factory id fails at the second declaration, naming it', () => 
   registry.add(Spec);
   assert.throws(
     () => registry.add(Spec),
-    (error) => error.message.startsWith('DuplicateFactoryId') && error.message.includes('counters'),
+    (error) =>
+      error.message.startsWith('topology.duplicate_factory_id') &&
+      error.details.factory_id === 'counters',
   );
 });
 
@@ -721,7 +723,7 @@ test('every timer call inside a bounded tasklet reaches the item effect as a tim
   }
 });
 
-test('a timer call inside a compensate hook fails naming TimersUnavailable', async () => {
+test('a timer call inside a compensate hook fails naming runtime.timers_unavailable', async () => {
   const Undo = defineTasklet({
     name: 'undo',
     run: () => {},
@@ -738,7 +740,7 @@ test('a timer call inside a compensate hook fails naming TimersUnavailable', asy
     depsFor(spec),
   );
   assert.equal(result.outcome, 'failed');
-  assert.match(result.error, /TimersUnavailable: undo: timerAfter inside compensate/);
+  assert.match(result.error, /runtime\.timers_unavailable: /);
 });
 
 test('the same graph on an unbounded class releases one output per consumer', async () => {
@@ -1062,7 +1064,7 @@ test('registerFactory rejects a module exporting no operator, before run()', asy
   const runner = createRunner('register_factory_empty_ns');
   await assert.rejects(
     () => runner.registerFactory(module),
-    (error) => error.message.includes(module) && error.message.includes('exports no operator'),
+    (error) => error.code === 'topology.no_operator_exported' && error.details.module === module,
   );
 });
 
@@ -1079,7 +1081,7 @@ test('unregisterFactory undoes a pre-run registration and names an unknown one',
   await runner.unregisterFactory(module);
   await assert.rejects(
     () => runner.unregisterFactory(module),
-    (error) => error.message.includes(module) && error.message.includes('not registered'),
+    (error) => error.code === 'runtime.class_not_registered' && error.details.factory === module,
   );
 });
 
@@ -1110,6 +1112,16 @@ test('a post-start registerFactory declares against the core and the workers', a
 
   await assert.rejects(
     () => runner.unregisterFactory(module),
-    (error) => error.message.includes('cannot stop serving a started declaration'),
+    (error) => error.code === 'runtime.factory_in_service' && error.details.module === module,
+  );
+});
+
+test('an identity part over its length is refused naming it', () => {
+  assert.throws(
+    () => cellIdentity('op', 't'.repeat(256), ''),
+    (error) =>
+      error.code === 'runtime.identity_too_long' &&
+      error.details.part === 'tasklet name' &&
+      error.details.limit === 255,
   );
 });

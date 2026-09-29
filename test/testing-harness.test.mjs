@@ -173,7 +173,7 @@ test('a reserved metadata key is refused naming the key', async () => {
   });
   await assert.rejects(
     () => TaskletTestHarness.of(Meta).input(1),
-    (error) => error.message.includes('flz.key') && error.message.includes('reserved'),
+    (error) => error.code === 'runtime.reserved_metadata_key' && error.details.key === 'flz.key',
   );
 });
 

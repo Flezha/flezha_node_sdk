@@ -134,7 +134,10 @@ test('a channel the class does not declare is refused by name', async () => {
   try {
     await assert.rejects(
       () => run.feed('nope', '1'),
-      (refusal) => refusal.message.includes('nope') && refusal.message.includes('lines'),
+      (refusal) =>
+        refusal.code === 'runtime.channel_undeclared' &&
+        refusal.details.channel === 'nope' &&
+        String(refusal.details.channels).includes('lines'),
       'the refusal names the channel and what is declared',
     );
   } finally {
@@ -211,7 +214,7 @@ test('a spawn with no controller anywhere is unavailable, from either read', asy
         .spawnBounded('worker', input, { id: 'w1' })
         .wait()
         .catch((error) => error);
-      ctx.emit(`${tried?.name} ${waited.name} ${waited.id}: ${waited.message}`);
+      ctx.emit(`${tried?.name} ${tried?.code} ${waited.name} ${waited.code}`);
     },
   });
   const released = [];
@@ -228,7 +231,5 @@ test('a spawn with no controller anywhere is unavailable, from either read', asy
   } finally {
     await run.close();
   }
-  assert.deepEqual(released, [
-    'SpawnUnavailableError SpawnUnavailableError w1: no control plane to request a spawn on',
-  ]);
+  assert.deepEqual(released, ['FlezhaError spawn.unavailable FlezhaError spawn.unavailable']);
 });

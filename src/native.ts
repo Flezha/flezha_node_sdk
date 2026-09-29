@@ -14,6 +14,7 @@ import {
   nativePlatformFor,
   platformPackageName,
 } from './platforms.js';
+import { fromNative } from './errors.js';
 import { requireNative, runtimeDir } from './runtime-shim.js';
 
 /** One metadata pair, in declared order. The schema allows a repeated key. */
@@ -223,6 +224,8 @@ export interface Native {
   adminCall(verb: string, args: string): Promise<string>;
   monotonicNanos(): bigint;
   lastError(): string | null;
+  /** The JSON error document of `code`, its message rendered from `detailsJson`. */
+  errorDocument(code: string, detailsJson: string): string;
   setLogCallback(callback: ((line: NativeLogLine) => void) | null): void;
   setHostDrainedCallback(callback: (() => void) | null): void;
   watchStdinEof(graceMs: number): void;
@@ -305,7 +308,7 @@ export function loadNative(): Native {
   const attempts: string[] = [];
   for (const candidate of nativeCandidates()) {
     try {
-      loaded = requireNative(candidate) as Native;
+      loaded = raisingFlezhaErrors(requireNative(candidate) as Native);
       return loaded;
     } catch (cause) {
       // First line only: a `require` failure carries a multi-line resolution
@@ -314,6 +317,34 @@ export function loadNative(): Native {
     }
   }
   throw nativeResolutionError(attempts);
+}
+
+/**
+ * The addon with every failure it throws or rejects with turned into a
+ * `FlezhaError`: each export's message is the core's JSON error document.
+ */
+function raisingFlezhaErrors(addon: Native): Native {
+  const wrapped: Record<string, unknown> = {};
+  for (const name of Object.getOwnPropertyNames(addon)) {
+    const value = (addon as unknown as Record<string, unknown>)[name];
+    wrapped[name] =
+      typeof value !== 'function'
+        ? value
+        : (...args: unknown[]) => {
+            let answer: unknown;
+            try {
+              answer = (value as (...a: unknown[]) => unknown)(...args);
+            } catch (error) {
+              throw fromNative(error);
+            }
+            return answer instanceof Promise
+              ? answer.catch((error: unknown) => {
+                  throw fromNative(error);
+                })
+              : answer;
+          };
+  }
+  return wrapped as unknown as Native;
 }
 
 /** Test seam: forget the loaded addon so the next call resolves again. */

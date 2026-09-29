@@ -13,13 +13,7 @@ export { defineUnbounded, defineBounded } from './authoring.js';
 export { defineTasklet } from './definition.js';
 export type { ChannelSpec, ClassSpec, Link, TaskNode } from './authoring.js';
 export type { SpawnHandle } from './ctx.js';
-export {
-  assertRepresentable,
-  decodeValue,
-  encodeValue,
-  msgpack,
-  UnrepresentableValueError,
-} from './codec.js';
+export { assertRepresentable, decodeValue, encodeValue, msgpack } from './codec.js';
 export type { Codec } from './codec.js';
 // The runner's declared-class registry. Exported because it owns "a runner
 // declares each factory id once", and the conformance run drives that rule
@@ -34,18 +28,9 @@ export type { Logger, LogLevel } from './logger.js';
 export { loadNative, nativePackageName } from './native.js';
 export type { Native } from './native.js';
 export { ACTIVATION_SCHEMA_VERSION, createRunner, Runner } from './runner.js';
-export { StateMutationError } from './state.js';
 export { DELAY_WARN_MS } from './loop-watch.js';
-export {
-  DeclarationError,
-  SpawnAlreadyRunningError,
-  SpawnError,
-  SpawnFactoryNotBoundedError,
-  SpawnFactoryUnknownError,
-  SpawnRefusedError,
-  SpawnTimeoutError,
-  SpawnUnavailableError,
-} from './types.js';
+export { FlezhaError } from './errors.js';
+export type { ErrorClass, ErrorFields } from './errors.js';
 export type {
   BeyondWindowPolicy,
   ChannelBuilder,
