@@ -521,6 +521,51 @@ test('sink(...) returns the handle, so a consumer wires behind it', () => {
   );
 });
 
+test('response() records its link and ends the channel as a sink would, keeping the name', () => {
+  const terminal = defineUnbounded({
+    factoryId: 'answers',
+    channels: (c) => {
+      c.input('in').into(echo('producer')).response();
+    },
+  });
+  const hybrid = defineUnbounded({
+    factoryId: 'answers_and_feeds',
+    channels: (c) => {
+      c.input('in').into(echo('producer')).response().into(echo('consumer'));
+    },
+  });
+  const channelsOf = (spec) =>
+    validate(spec).channels.map((channel) => [
+      channel.name,
+      channel.kind,
+      channel.consumers.map((edge) => edge.tasklet),
+      channel.sink,
+    ]);
+  assert.deepEqual(toHostClassDecl(terminal).channels[1].chains, [[{ link: 'response' }]]);
+  // A response is a plugin end but not a sink: the core names no sink for it.
+  assert.deepEqual(channelsOf(terminal), [
+    ['in', 'entry', [0], null],
+    ['producer', 'plugin', [], null],
+  ]);
+  assert.deepEqual(channelsOf(hybrid), [
+    ['in', 'entry', [0], null],
+    ['producer', 'inter_task', [1], null],
+  ]);
+});
+
+test('a sink beside a response on one channel is refused as ending twice', () => {
+  const error = refusal(() =>
+    defineUnbounded({
+      factoryId: 'ends_twice',
+      channels: (c) => {
+        c.input('in').into(echo('producer')).sink('out').response();
+      },
+    }),
+  );
+  assert.deepEqual(codesOf(error), ['topology.channel_ends_twice']);
+  assert.equal(error.details.issues[0].details.channel, 'out');
+});
+
 test('keyed() reaches the channel of a handle that also declares a sink', () => {
   const spec = defineUnbounded({
     factoryId: 'keyed_hybrid',

@@ -257,6 +257,17 @@ export interface Stream<T> {
   sink(encode: (value: T) => Uint8Array): Stream<T>;
   sink(options: CodecOptions): Stream<T>;
   sink(): Stream<T>;
+  /**
+   * Terminate this edge's channel on the answer to the outside call its input
+   * carried: each value emitted on it answers that caller and reaches no
+   * plugin. It takes no name, so the channel keeps the one it would have
+   * without it, and returns the handle, so consumers may follow it exactly as
+   * after `sink`. A channel ends in one sink or one response.
+   *
+   * It encodes as `sink` does: a serializer, a `{ codec }`, or neither.
+   */
+  response(encode?: (value: T) => Uint8Array): Stream<T>;
+  response(options: CodecOptions): Stream<T>;
 }
 
 /**

@@ -226,6 +226,9 @@ function specOf(row) {
           case 'sink':
             stream = arg === '' ? stream.sink() : stream.sink(arg);
             break;
+          case 'response':
+            stream = stream.response();
+            break;
           case 'into':
             stream = stream.into(taskletFor(arg));
             handles.set(arg, stream);

@@ -526,3 +526,54 @@ export const dynamicCell = defineUnbounded({
       .sink('kafka');
   },
 });
+
+// -- call_response ----------------------------------------------------------
+//
+// Operators an outside caller calls and whose graph answers it through
+// `response()`: from the first tasklet, from a downstream one, and from
+// whichever of two filtered paths the input took. `call_turn` is the bounded
+// one, in fixtures_bounded.mjs.
+
+export const callEcho = defineUnbounded({
+  factoryId: 'call_echo',
+  channels: (c) => {
+    c.input('in', { codec: 'text' }).into(passThrough('call_echo')).response();
+  },
+});
+
+const CallAnswer = defineTasklet({
+  name: 'call_answer',
+  run: (input, ctx) => ctx.emit(`re:${input}`),
+});
+
+export const callDownstream = defineUnbounded({
+  factoryId: 'call_downstream',
+  channels: (c) => {
+    c.input('in', { codec: 'text' }).into(passThrough('call_parse')).into(CallAnswer).response();
+  },
+});
+
+// An input starting `no` takes the refused path, every other the accepted one.
+const CallAccept = defineTasklet({
+  name: 'call_accept',
+  run: (input, ctx) => ctx.emit(`accepted:${input}`),
+});
+const CallRefuse = defineTasklet({
+  name: 'call_refuse',
+  run: (input, ctx) => ctx.emit(`refused:${input}`),
+});
+
+export const callSplit = defineUnbounded({
+  factoryId: 'call_split',
+  channels: (c) => {
+    const admitted = c.input('in', { codec: 'text' }).into(passThrough('call_admit'));
+    admitted
+      .filter((input) => !input.startsWith('no'))
+      .into(CallAccept)
+      .response();
+    admitted
+      .filter((input) => input.startsWith('no'))
+      .into(CallRefuse)
+      .response();
+  },
+});

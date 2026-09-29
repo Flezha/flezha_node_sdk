@@ -897,3 +897,15 @@ export const benchLoopBounded = defineBounded({
     c.input('in', { codec: 'text' }).into(BenchTurn).named('mid').into(ChatReply).sink('out');
   },
 });
+
+// call_turn: a durable per-input loop whose turn answers the outside call
+// through `response()`.
+export const callTurn = defineBounded({
+  factoryId: 'call_turn',
+  ...loopKnobs,
+  channels: (c) => {
+    c.input('in', { codec: 'text' })
+      .into(statelessStep('call_turn', (input, ctx) => ctx.emit(input)))
+      .response();
+  },
+});

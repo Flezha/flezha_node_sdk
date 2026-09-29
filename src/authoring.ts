@@ -64,9 +64,13 @@ export type Link =
   | { link: 'key' }
   | { link: 'named'; name: string }
   | { link: 'sink'; name?: string }
+  | { link: 'response' }
   | { link: 'into'; tasklet: number }
   | { link: 'merge'; tasklet: number; group: number }
   | { link: 'branch'; arms: number };
+
+/** The links that end a channel on the plugin layer. */
+type PlugEnd = Extract<Link, { link: 'sink' | 'response' }>;
 
 /** The links that close a chain onto a consumer edge. */
 type EdgeLink = Extract<Link, { link: 'into' | 'merge' }>;
@@ -91,7 +95,10 @@ export interface ChannelSpec {
   retryMax?: number;
   retryBackoffMs?: number;
   keyed: boolean;
-  /** The plugin sink attached to this channel; absent means none. */
+  /**
+   * The channel's name once a plugin end, a sink or a response, is attached;
+   * absent means none. The core's answer names no sink for a response.
+   */
   sink?: string;
   /**
    * An entry channel's payload decoder: its own, its codec's, or JSON. Absent
@@ -517,6 +524,18 @@ class EdgeStream<T> implements Stream<T> {
     // here is what keeps the shorter forms from spelling `sink(undefined, x)`.
     const name = typeof nameOrEncode === 'string' ? nameOrEncode : undefined;
     const rest = name === undefined ? [nameOrEncode, encodeOrOptions] : [encodeOrOptions, options];
+    return this.plugEnd(name === undefined ? { link: 'sink' } : { link: 'sink', name }, name, rest);
+  }
+
+  response(encodeOrOptions?: ((value: T) => Uint8Array) | CodecOptions): Stream<T> {
+    return this.plugEnd({ link: 'response' }, undefined, [encodeOrOptions]);
+  }
+
+  /**
+   * Attach a plugin end, a sink or a response: both leave as a plugin output
+   * encoded the same way, and the core refuses a second end on a channel.
+   */
+  private plugEnd(end: PlugEnd, name: string | undefined, rest: unknown[]): Stream<T> {
     if (this.from.source === 'entry') {
       // Not a topology rule the core states: a record whose entry channel
       // carries a sink derives a plugin channel with no producer, and there is
@@ -528,7 +547,7 @@ class EdgeStream<T> implements Stream<T> {
     // handle, so `.into(...)` still chains after it and the value reaches both
     // the consumer mailboxes and the sink. Terminality is the absence of
     // further wiring, not a different method.
-    channel.chains.push(name === undefined ? [{ link: 'sink' }] : [{ link: 'sink', name }]);
+    channel.chains.push([end]);
     // The sink names the channel: `sink('x')` IS the name, and `sink()` leaves
     // it derived. One string, which is what the core answers back.
     if (name !== undefined) channel.name = name;

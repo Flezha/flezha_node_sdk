@@ -108,6 +108,26 @@ test('a work batch answers one effect per item, in order', async () => {
   assert.equal(result.effects[0].eventTime, 1_000n);
 });
 
+test('an emit on a response channel leaves as the plugin output a sink’s would', async () => {
+  const spec = defineUnbounded({
+    factoryId: 'answering',
+    channels: (c) =>
+      c
+        .input('in')
+        .into(defineTasklet({ name: 'answer', run: (input, ctx) => ctx.emit(input) }))
+        .response(),
+  });
+  const result = await answer(
+    activationFor('answering')({ items: [inputItem('hi')] }),
+    depsFor(spec),
+  );
+  const [output] = result.effects[0].outputs;
+  assert.deepEqual(
+    [output.target, output.pluginChannel, Buffer.from(output.payload).toString('utf8')],
+    ['plugin', 'answer', 'hi'],
+  );
+});
+
 test('a throwing handler is a retryable verdict and stops the batch', async () => {
   const Throwing = defineTasklet({
     name: 'throwing',
