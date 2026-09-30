@@ -33,6 +33,7 @@ import { ascendTo } from '../test/contract.mjs';
 import { manifest } from '../test/test-app.mjs';
 import { hybridChannel } from './fixtures.mjs';
 import { tierCommitBlockBounded } from './fixtures_bounded.mjs';
+import { render } from './fixtures_call.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 // Walked up to rather than counted: this module runs from its real path, and
@@ -111,6 +112,24 @@ function palette(role, mailbox) {
     default:
       throw new Error(`the fixture names a palette role this interpreter does not bind: ${role}`);
   }
+}
+
+/**
+ * `<x>.call…(<arg>)`: a 500 ms call whose Response channel is wired back by
+ * `wireBack` into the role that produces `x`, unless the step leaves it unread.
+ */
+function callStep(stream, verb, arg, wireBack) {
+  const target = {
+    call: arg,
+    call_unread: arg,
+    call_factory: { factory: arg },
+    call_factory_nocreate: { factory: arg, create: false },
+    call_deadline: 'pricing',
+  }[verb];
+  const deadlineMs = verb === 'call_deadline' ? Number(arg) : 500;
+  const response = stream.call(target, { deadlineMs, codec: 'text' });
+  if (verb !== 'call_unread') wireBack(response.map(render));
+  return response;
 }
 
 /**
@@ -228,6 +247,13 @@ function specOf(row) {
             break;
           case 'response':
             stream = stream.response();
+            break;
+          case 'call':
+          case 'call_unread':
+          case 'call_factory':
+          case 'call_factory_nocreate':
+          case 'call_deadline':
+            stream = callStep(stream, verb, arg, (response) => response.into(taskletFor(id)));
             break;
           case 'into':
             stream = stream.into(taskletFor(arg));

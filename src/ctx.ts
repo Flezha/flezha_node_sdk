@@ -218,8 +218,29 @@ export class Invocation implements Ctx<unknown, unknown, unknown> {
           this.outputs.push(...this.edgeOutputs(channel, edge, value, options));
         }
       }
-      if (channel.sink !== undefined) this.outputs.push(this.pluginOutput(channel, value, options));
+      if (channel.callEnd !== undefined) {
+        this.outputs.push(...this.callOutputs(channel, value, options));
+      } else if (channel.sink !== undefined) {
+        this.outputs.push(
+          this.pluginOutput(channel, value, options, options?.key ?? this.input.cellKey),
+        );
+      }
     }
+  }
+
+  /**
+   * A call end's requests: the value through the call chain's transforms,
+   * each keyed by the chain alone. The core stamps them as calls at settle.
+   */
+  private callOutputs(
+    channel: ChannelSpec,
+    value: unknown,
+    options: EmitOptions | undefined,
+  ): NativeOutput[] {
+    const end = channel.callEnd!;
+    return applyTransforms(end.transforms, value).map((request) =>
+      this.pluginOutput(channel, request, options, end.keyBy?.(request)),
+    );
   }
 
   private boundedOutput(channel: ChannelSpec, edge: ConsumerEdge, value: unknown): NativeOutput {
@@ -282,8 +303,8 @@ export class Invocation implements Ctx<unknown, unknown, unknown> {
     channel: ChannelSpec,
     value: unknown,
     options: EmitOptions | undefined,
+    key: string | undefined,
   ): NativeOutput {
-    const key = options?.key ?? this.input.cellKey;
     if (channel.keyed && key === undefined) {
       throw flezhaError('runtime.key_required_on_keyed_channel', { channel: channel.name });
     }

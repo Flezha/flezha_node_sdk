@@ -11,6 +11,7 @@ export { Admin } from './admin.js';
 export type { StartOptions, StartOutcome, StartResult } from './admin.js';
 export { defineUnbounded, defineBounded } from './authoring.js';
 export { defineTasklet } from './definition.js';
+export type { CallOptions, CallTarget, Response } from './call.js';
 export type { ChannelSpec, ClassSpec, Link, TaskNode } from './authoring.js';
 export type { SpawnHandle } from './ctx.js';
 export { assertRepresentable, decodeValue, encodeValue, msgpack } from './codec.js';

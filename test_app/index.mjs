@@ -21,6 +21,7 @@ const here = dirname(fileURLToPath(import.meta.url));
 const namespace = process.argv[2] || 'default';
 const fixtures = resolve(here, 'fixtures.mjs');
 const bounded = resolve(here, 'fixtures_bounded.mjs');
+const calls = resolve(here, 'fixtures_call.mjs');
 const conformance = resolve(here, 'conformance.mjs');
 const workers = Number(process.env.FLEZHA_NODE_WORKERS ?? 0) || 0;
 const reportAt = process.env.FLEZHA_CONFORMANCE_REPORT;
@@ -55,6 +56,7 @@ if (refusalFixture) {
 } else {
   await runner.registerFactory(fixtures);
   await runner.registerFactory(bounded);
+  await runner.registerFactory(calls);
 }
 
 try {

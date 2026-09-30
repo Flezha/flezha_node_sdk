@@ -15,7 +15,15 @@
   },
   "connect_timeout_ms": 60000,
   "transports": ["uds", "quic"],
-  "topology_surfaces": ["branch", "merge", "bounded", "sync_durability", "shorthand", "response"],
+  "topology_surfaces": [
+    "branch",
+    "merge",
+    "bounded",
+    "sync_durability",
+    "shorthand",
+    "response",
+    "call"
+  ],
   "dispatch": {
     "model": "event-loop",
     "detail": "Activations run on JavaScript event loops; the veneer owns its executor rather than libuv's pool.",
@@ -108,6 +116,13 @@
       "bench_loop_bounded"
     ],
     "call_response": ["call_echo", "call_downstream", "call_split", "call_turn"],
+    "operator_call": [
+      "call_pricing",
+      "call_orders",
+      "call_agent",
+      "call_gateway",
+      "call_tool_session"
+    ],
     "parts": ["part_echo", "part_echo_bounded"],
     "partitioned": ["partition_relay", "dynamic_cell", "keyed_loop_bounded"],
     "dynamic_cell": ["dynamic_cell"],

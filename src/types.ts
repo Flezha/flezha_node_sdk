@@ -6,6 +6,7 @@
  * mismatched edge is a compile error rather than a registration-time one.
  */
 
+import type { CallOptions, CallTarget, Response } from './call.js';
 import type { Codec } from './codec.js';
 import type { SpawnHandle } from './ctx.js';
 
@@ -280,6 +281,15 @@ export interface Stream<T> {
    */
   response(encode?: (value: T) => Uint8Array): Stream<T>;
   response(options: CodecOptions): Stream<T>;
+  /**
+   * End this edge's chain in a call to another operator: each value that
+   * reaches it, after this chain's transforms and key, is one request. The
+   * call waits for nothing: its outcome arrives later as a `Response` on the
+   * entry channel this answers, `<this channel>.response`, which must feed a
+   * tasklet (the calling one included). A channel ends in one sink, one
+   * response or one call; an entry channel ends in none.
+   */
+  call<A = unknown>(target: CallTarget, options: CallOptions): Stream<Response<T, A>>;
 }
 
 /**

@@ -8,6 +8,14 @@
  * input does not accept, before the program runs.
  */
 
+import {
+  callCodec,
+  callLink,
+  type CallLink,
+  type CallOptions,
+  type CallTarget,
+  type Response,
+} from './call.js';
 import { CHANNEL_CODECS, channelDecoder, channelEncoder, type Codec } from './codec.js';
 import { channelsOf, defineTasklet, type EitherForm } from './definition.js';
 import { flezhaError } from './errors.js';
@@ -67,7 +75,8 @@ export type Link =
   | { link: 'response' }
   | { link: 'into'; tasklet: number }
   | { link: 'merge'; tasklet: number; group: number }
-  | { link: 'branch'; arms: number };
+  | { link: 'branch'; arms: number }
+  | CallLink;
 
 /** The links that end a channel on the plugin layer. */
 type PlugEnd = Extract<Link, { link: 'sink' | 'response' }>;
@@ -96,8 +105,8 @@ export interface ChannelSpec {
   retryBackoffMs?: number;
   keyed: boolean;
   /**
-   * The channel's name once a plugin end, a sink or a response, is attached;
-   * absent means none. The core's answer names no sink for a response.
+   * The channel's name once a plugin end, a sink, a response or a call, is
+   * attached; absent means none. The core's answer names no sink for the last two.
    */
   sink?: string;
   /**
@@ -113,6 +122,8 @@ export interface ChannelSpec {
    * tasklet bytes it cannot read.
    */
   sinkEncode?: (value: unknown) => Uint8Array;
+  /** A `call(...)` end's chain: applied to each value before it becomes a request. */
+  callEnd?: Omit<ConsumerEdge, 'tasklet'>;
 }
 
 export interface BoundedSpec {
@@ -531,18 +542,24 @@ class EdgeStream<T> implements Stream<T> {
     return this.plugEnd({ link: 'response' }, undefined, [encodeOrOptions]);
   }
 
+  call<A = unknown>(target: CallTarget, options: CallOptions): Stream<Response<T, A>> {
+    const channel = this.plugChannel();
+    const [, codec] = this.builder.channelCodec(channel, [options]);
+    const [encode, decode] = callCodec(codec, channel);
+    // The call closes this handle's chain: its transforms and key are the end's.
+    this.record(channel, callLink(target, options.deadlineMs, `${channel.name}.response`));
+    channel.callEnd = { transforms: this.pending.transforms, keyBy: this.pending.keyBy };
+    channel.sink ??= channel.name;
+    channel.sinkEncode ??= encode;
+    return this.builder.input(`${channel.name}.response`, decode) as Stream<Response<T, A>>;
+  }
+
   /**
    * Attach a plugin end, a sink or a response: both leave as a plugin output
    * encoded the same way, and the core refuses a second end on a channel.
    */
   private plugEnd(end: PlugEnd, name: string | undefined, rest: unknown[]): Stream<T> {
-    if (this.from.source === 'entry') {
-      // Not a topology rule the core states: a record whose entry channel
-      // carries a sink derives a plugin channel with no producer, and there is
-      // nothing in it that says which end fed the plugin.
-      throw flezhaError('topology.sink_on_entry', { channel: this.from.channel.name });
-    }
-    const channel = this.channel();
+    const channel = this.plugChannel();
     // A chain of its own: the sink terminates the channel rather than this
     // handle, so `.into(...)` still chains after it and the value reaches both
     // the consumer mailboxes and the sink. Terminality is the absence of
@@ -560,6 +577,17 @@ class EdgeStream<T> implements Stream<T> {
       channel.sinkEncode = serialize ?? channelEncoder(codec, channel);
     }
     return this;
+  }
+
+  /** The channel a plugin end attaches to; an entry channel has none. */
+  private plugChannel(): ChannelSpec {
+    if (this.from.source === 'entry') {
+      // Not a topology rule the core states: a record whose entry channel
+      // carries a sink derives a plugin channel with no producer, and there is
+      // nothing in it that says which end fed the plugin.
+      throw flezhaError('topology.sink_on_entry', { channel: this.from.channel.name });
+    }
+    return this.channel();
   }
 }
 
