@@ -287,6 +287,27 @@ test('a prepare crossing answers one key per payload, in order', async () => {
   assert.deepEqual(await keysAt(Spec, 0, '7', '8'), [['7'], ['8']]);
 });
 
+test('a prepare crossing answers the keyed consumer behind an unkeyed one', async () => {
+  const Watch = defineTasklet({ name: 'watch', run: (input, ctx) => ctx.emit(input) });
+  const spec = defineUnbounded({
+    factoryId: 'split_keyed',
+    channels: (c) => {
+      const entry = c.input('in');
+      entry
+        .filter((value) => value === 'drop')
+        .into(Watch)
+        .sink('dropped');
+      entry
+        .filter((value) => value !== 'drop')
+        .keyBy((value) => value.split(':')[0])
+        .into(Counter)
+        .keyed()
+        .sink('out');
+    },
+  });
+  assert.deepEqual(await keysAt(spec, 0, '"a:1"', '"drop"'), [['a'], []]);
+});
+
 test('one payload failing its prepare does not fail the others', async () => {
   const Windowed = defineTasklet({
     name: 'windowed',

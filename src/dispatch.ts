@@ -437,10 +437,16 @@ function prepare(
     return failed(activation.token, 'a key request carried no payloads', true);
   }
   const channel = registered.spec.channels[request.channel] as ChannelSpec | undefined;
-  // The crossing answers one key set for the whole payload, so it reads the
-  // first consumer edge — the one the core routes the answer to.
-  const edge = channel?.consumers[0];
-  const node = edge === undefined ? undefined : registered.spec.tasklets[edge.tasklet];
+  // The crossing answers one key set for the whole payload, which the core
+  // hands every keyed consumer, so it reads the first keyed consumer's edge:
+  // an unkeyed one's filter must not drop the key.
+  const tasklets = registered.spec.tasklets;
+  const consumers = channel?.consumers ?? [];
+  const edge =
+    consumers.find(
+      (e) => e.keyBy !== undefined || tasklets[e.tasklet]?.tasklet.definition.cells?.cellsFor,
+    ) ?? consumers[0];
+  const node = edge === undefined ? undefined : tasklets[edge.tasklet];
   const definition = node?.tasklet.definition;
 
   const answers: NativePrepareAnswer[] = request.payloads.map((payload) => {
