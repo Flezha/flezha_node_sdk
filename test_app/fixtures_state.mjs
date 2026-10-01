@@ -82,17 +82,28 @@ export const benchKeyed = keyedUpsert('bench_keyed');
 // Declared DropNothing: a durable-input-log operator that shed at its mailbox
 // would hold the min-watermark on the shed offset forever while the log behind
 // it kept growing.
+const tierStoreChannels = (c) => {
+  c.input('input', { codec: 'text' })
+    .onFull('drop_nothing')
+    .retryBackoffMs(300)
+    .into(TierStore)
+    .keyed()
+    .sink('sink');
+};
+
 export const tierStore = defineOperator({
   factoryId: 'tier_store',
   flow: { exactly: 'effectively_once' },
-  channels: (c) => {
-    c.input('input', { codec: 'text' })
-      .onFull('drop_nothing')
-      .retryBackoffMs(300)
-      .into(TierStore)
-      .keyed()
-      .sink('sink');
-  },
+  channels: tierStoreChannels,
+});
+
+// The same store kept `durable: remote`: an input is acknowledged only once the
+// durability backend holds the records it produced.
+export const remoteTierStore = defineOperator({
+  factoryId: 'remote_tier_store',
+  flow: { exactly: 'effectively_once' },
+  durable: 'remote',
+  channels: tierStoreChannels,
 });
 
 // -- tier_chain -------------------------------------------------------------

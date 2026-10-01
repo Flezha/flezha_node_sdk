@@ -659,11 +659,9 @@ test('the durability reaches the declaration as the tree, its members as the cor
   );
 });
 
-test('a remote flow class reaches the core and is refused by its name', () => {
-  const error = refusal(() =>
-    defineOperator({ factoryId: 'remote', durable: 'remote', ...forms.full }),
-  );
-  assert.deepEqual(codesOf(error), ['topology.remote_on_flow'], error.message);
+test('a flow class may keep its work remote', () => {
+  const op = defineOperator({ factoryId: 'remote', durable: 'remote', ...forms.full });
+  assert.equal(toHostClassDecl(op).durable, 'remote');
 });
 
 test('a class that names both runs, or a kind word where its run is written, is refused as its run', () => {
