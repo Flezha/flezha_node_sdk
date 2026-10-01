@@ -12,7 +12,7 @@ export type { StartOptions, StartOutcome, StartResult } from './admin.js';
 export { defineOperator } from './authoring.js';
 export { defineTasklet } from './definition.js';
 export type { CallOptions, CallTarget, Response } from './call.js';
-export type { ChannelSpec, ClassSpec, Link, TaskNode } from './authoring.js';
+export type { ChannelSpec, ClassSpec, EmbedOptions, Link, TaskNode } from './authoring.js';
 export type { SpawnHandle } from './ctx.js';
 export { assertRepresentable, decodeValue, encodeValue, msgpack } from './codec.js';
 export type { Codec } from './codec.js';

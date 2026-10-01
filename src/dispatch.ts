@@ -43,6 +43,9 @@ export class RegisteredClass {
   /** Live cell state: one table per operator, keyed by tasklet index and cell key. */
   private readonly operators = new Map<string, Map<string, unknown>>();
 
+  /** Declared only to be embedded by another class, never announced. */
+  embedded = false;
+
   constructor(readonly spec: ClassSpec) {
     this.outgoing = spec.tasklets.map((node) =>
       spec.channels.filter((channel) => channel.producer === node.index),
@@ -74,12 +77,23 @@ export class RegisteredClass {
 export class Registry {
   private readonly classes = new Map<string, RegisteredClass>();
 
-  add(spec: ClassSpec): RegisteredClass {
-    if (this.classes.has(spec.factoryId)) {
-      throw flezhaError('topology.duplicate_factory_id', { factory_id: spec.factoryId });
+  /** Add `spec` and, `embedded`, every steps class it embeds that is not here yet. */
+  add(spec: ClassSpec, embedded = false): RegisteredClass {
+    const existing = this.classes.get(spec.factoryId);
+    if (existing) {
+      // The one class, embedded by another and registered on its own too.
+      if (existing.spec !== spec || (!existing.embedded && !embedded)) {
+        throw flezhaError('topology.duplicate_factory_id', { factory_id: spec.factoryId });
+      }
+      existing.embedded &&= embedded;
+      return existing;
     }
     const registered = new RegisteredClass(spec);
+    registered.embedded = embedded;
     this.classes.set(spec.factoryId, registered);
+    for (const node of spec.tasklets) {
+      if (node.embeds) this.add(node.embeds, true);
+    }
     return registered;
   }
 

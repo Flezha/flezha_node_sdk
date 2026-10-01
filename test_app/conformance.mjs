@@ -113,6 +113,34 @@ function palette(role, mailbox) {
   }
 }
 
+/** The operator class the fixture header describes for a class role. */
+function classFor(role) {
+  const steps = (each) => ({ steps: { each } });
+  const declared = {
+    inner_session: [steps('per_input'), (c) => c.input('turns').into(palette('plain'))],
+    inner_loop: [steps('chained'), (c) => c.input('turns').into(palette('plain')).named('carry')],
+    inner_cleanup: [{}, (c) => c.input('raw').into(palette('plain')).into(palette('second'))],
+    inner_two_entries: [
+      steps('per_input'),
+      (c) => {
+        c.input('a').into(palette('plain'));
+        c.input('b').into(palette('second'));
+      },
+    ],
+    inner_two_exits: [
+      steps('per_input'),
+      (c) => {
+        const turns = c.input('turns');
+        turns.into(palette('plain'));
+        turns.into(palette('second'));
+      },
+    ],
+  }[role];
+  if (!declared) throw new Error(`the fixture names a class role this interpreter does not bind: ${role}`);
+  const [settings, channels] = declared;
+  return defineOperator({ factoryId: role, ...settings, channels });
+}
+
 /**
  * `<x>.call…(<arg>)`: a 500 ms call whose Response channel is wired back by
  * `wireBack` into the role that produces `x`, unless the step leaves it unread.
@@ -233,6 +261,10 @@ function specOf(row) {
             break;
           case 'into':
             stream = stream.into(taskletFor(arg));
+            handles.set(arg, stream);
+            break;
+          case 'into_class':
+            stream = stream.into(classFor(arg));
             handles.set(arg, stream);
             break;
           default:

@@ -22,6 +22,7 @@ const namespace = process.argv[2] || 'default';
 const fixtures = resolve(here, 'fixtures.mjs');
 const steps = resolve(here, 'fixtures_steps.mjs');
 const calls = resolve(here, 'fixtures_call.mjs');
+const inner = resolve(here, 'fixtures_inner.mjs');
 const conformance = resolve(here, 'conformance.mjs');
 const workers = Number(process.env.FLEZHA_NODE_WORKERS ?? 0) || 0;
 const reportAt = process.env.FLEZHA_CONFORMANCE_REPORT;
@@ -57,6 +58,7 @@ if (refusalFixture) {
   await runner.registerFactory(fixtures);
   await runner.registerFactory(steps);
   await runner.registerFactory(calls);
+  await runner.registerFactory(inner);
 }
 
 try {

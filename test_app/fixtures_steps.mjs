@@ -12,23 +12,9 @@
 
 import { defineOperator, defineTasklet } from '@flezha/sdk';
 
-import { fixtureDurable, prefix } from './fixture_support.mjs';
+import { RELEASE_ENV, blockUntilReleased, fixtureDurable, prefix } from './fixture_support.mjs';
 
 // -- the release gate -------------------------------------------------------
-
-const RELEASE_ENV = 'FLEZHA_STEPS_E2E_RELEASE';
-
-/**
- * Hold this activation until a runner boots with the release variable set.
- *
- * The harness kills the first runner and launches its replacement with the
- * variable present, so the gate is a boot-time decision: never settling on the
- * first runner, returning at once on the second. It SUSPENDS rather than holds
- * — every other activation on this event loop, the control pings among them,
- * has to keep running while a fixture waits here.
- */
-const blockUntilReleased = () =>
-  process.env[RELEASE_ENV] ? Promise.resolve() : new Promise(() => {});
 
 /** Park at `point` when this runner was booted to hold there, until the release. */
 const holdAt = (point) =>

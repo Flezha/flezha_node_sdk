@@ -93,8 +93,25 @@ function fullyDeclaredStatic() {
   });
 }
 
+/** A steps class embedded by name on an edge, and the class embedding it. */
+function fullyDeclaredEmbedding() {
+  const inner = defineOperator({
+    factoryId: 'node_decl_embedded',
+    steps: { each: 'per_input' },
+    channels: (c) => c.input('in').into(defineTasklet({ name: 'turn', run: () => {} })),
+  });
+  const outer = defineOperator({
+    factoryId: 'node_decl_embedding',
+    channels: (c) => c.input('in').into(inner, { input: 'in' }).sink(),
+  });
+  return { inner, outer };
+}
+
 test('every class key the fixture pins has a Node spelling', () => {
-  const emitted = new Set(Object.keys(toHostClassDecl(fullyDeclaredFlow())));
+  const emitted = new Set([
+    ...Object.keys(toHostClassDecl(fullyDeclaredFlow())),
+    ...Object.keys(toHostClassDecl(fullyDeclaredEmbedding().inner, true)),
+  ]);
   const missing = pinned('class').filter((key) => !emitted.has(key));
   assert.deepEqual(
     missing,
@@ -115,8 +132,8 @@ test('every tasklet key the fixture pins has a Node spelling', () => {
   // `idle_ttl_ms` and `max_cells`, a static one `cell_keys`, and neither
   // carries the other's.
   const emitted = new Set(
-    [fullyDeclaredFlow(), fullyDeclaredStatic()]
-      .map(toHostClassDecl)
+    [fullyDeclaredFlow(), fullyDeclaredStatic(), fullyDeclaredEmbedding().outer]
+      .map((spec) => toHostClassDecl(spec))
       .flatMap((decl) => decl.tasklets)
       .flatMap((tasklet) => Object.keys(tasklet)),
   );

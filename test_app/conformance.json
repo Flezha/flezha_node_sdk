@@ -84,6 +84,7 @@
       "bench_checkpoint"
     ],
     "cell_timers": ["session_timeout"],
+    "inner_operator": ["session_gateway", "loop_gateway"],
     "correction_window": ["candle"],
     "keyed_channels": ["partition_relay"],
     "steps": [

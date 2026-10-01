@@ -228,7 +228,9 @@ export class Runner {
     const registry = await loadRegistry(this.specifiers);
     this.registry = registry;
     for (const registered of registry.all()) {
-      native.declareClass(Buffer.from(JSON.stringify(toHostClassDecl(registered.spec))));
+      native.declareClass(
+        Buffer.from(JSON.stringify(toHostClassDecl(registered.spec, registered.embedded))),
+      );
     }
     return registry;
   }
