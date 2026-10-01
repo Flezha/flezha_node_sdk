@@ -10,7 +10,7 @@ import { createRunner } from '@flezha/sdk';
  *
  * Registering a factory starts nothing: it offers the controller operators of
  * that type, which are started from it later. `registerFactory` is the same
- * call for both kinds, the stream that tracks prices and the bounded operator
+ * call for both kinds, the stream that tracks prices and the steps operator
  * that places one order. An operator is registered by module specifier, which
  * resolves against the working directory, so start the runner from this
  * folder.

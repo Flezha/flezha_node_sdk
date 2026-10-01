@@ -4,7 +4,7 @@
  * The addon is `flz_core_ffi` built with its `napi` feature — the same binary
  * the Java SDK loads under its `jni` feature, with a second veneer over the
  * same C entry points. Nothing here re-expresses dispatch, ordering, overflow,
- * the retry ladder, durability or the bounded driver; every function below is
+ * the retry ladder, durability or the steps driver; every function below is
  * one call into the core.
  */
 

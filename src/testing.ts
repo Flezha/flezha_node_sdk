@@ -13,7 +13,7 @@
 
 import { isDeepStrictEqual } from 'node:util';
 
-import { defineUnbounded, type ChannelSpec, type ClassSpec, type TaskNode } from './authoring.js';
+import { defineOperator, type ChannelSpec, type ClassSpec, type TaskNode } from './authoring.js';
 import { decodeValue } from './codec.js';
 import { Invocation, type CoreBridge } from './ctx.js';
 import { invocation } from './determinism.js';
@@ -116,7 +116,7 @@ export class TaskletTestHarness<TIn, TOut, TState, TChange> {
     // declaration gains later reaches the harness for free. The sink names the
     // MessagePack codec, so the emits the harness reads back are each value
     // exactly as the handler emitted it.
-    this.spec = defineUnbounded({
+    this.spec = defineOperator({
       factoryId: `harness_${tasklet.name}`,
       channels: (c) =>
         c

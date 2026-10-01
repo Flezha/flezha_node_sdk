@@ -10,9 +10,8 @@ import {
   ACTIVATION_SCHEMA_VERSION,
   FlezhaError,
   decodeValue,
-  defineUnbounded,
+  defineOperator,
   defineTasklet,
-  defineBounded,
   encodeValue,
   loadNative,
 } from '../dist/esm/index.js';
@@ -72,7 +71,7 @@ const Counter = defineTasklet({
   },
 });
 
-const Spec = defineUnbounded({
+const Spec = defineOperator({
   factoryId: 'counters',
   channels: (c) => {
     c.input('in')
@@ -109,7 +108,7 @@ test('a work batch answers one effect per item, in order', async () => {
 });
 
 test('an emit on a response channel leaves as the plugin output a sink’s would', async () => {
-  const spec = defineUnbounded({
+  const spec = defineOperator({
     factoryId: 'answering',
     channels: (c) =>
       c
@@ -136,7 +135,7 @@ test('a throwing handler is a retryable verdict and stops the batch', async () =
       ctx.emit(input);
     },
   });
-  const spec = defineUnbounded({
+  const spec = defineOperator({
     factoryId: 'throwing_op',
     channels: (c) => c.input('in').into(Throwing).sink(),
   });
@@ -160,7 +159,7 @@ test('a rejected promise is answered the same way a throw is', async () => {
       throw Object.assign(new Error('gave up'), { nonRetryable: true });
     },
   });
-  const spec = defineUnbounded({
+  const spec = defineOperator({
     factoryId: 'rejecting_op',
     channels: (c) => c.input('in').into(Rejecting).sink(),
   });
@@ -225,7 +224,7 @@ test('the JSON handover carries a bigint and a byte array without narrowing', as
     },
     run: () => undefined,
   });
-  const spec = defineUnbounded({
+  const spec = defineOperator({
     factoryId: 'wide_op',
     channels: (c) => c.input('in').into(Wide).sink(),
   });
@@ -289,7 +288,7 @@ test('a prepare crossing answers one key per payload, in order', async () => {
 
 test('a prepare crossing answers the keyed consumer behind an unkeyed one', async () => {
   const Watch = defineTasklet({ name: 'watch', run: (input, ctx) => ctx.emit(input) });
-  const spec = defineUnbounded({
+  const spec = defineOperator({
     factoryId: 'split_keyed',
     channels: (c) => {
       const entry = c.input('in');
@@ -317,7 +316,7 @@ test('one payload failing its prepare does not fail the others', async () => {
     },
     run: (input, ctx) => ctx.emit(input),
   });
-  const spec = defineUnbounded({
+  const spec = defineOperator({
     factoryId: 'windowed_op',
     channels: (c) =>
       c
@@ -391,9 +390,9 @@ test('a module specifier is imported and its operators registered', async () => 
   const module = join(dir, 'handlers.mjs');
   writeFileSync(
     module,
-    `import { defineUnbounded, defineTasklet } from '${new URL('../dist/esm/index.js', import.meta.url).pathname}';\n` +
+    `import { defineOperator, defineTasklet } from '${new URL('../dist/esm/index.js', import.meta.url).pathname}';\n` +
       `const Echo = defineTasklet({ name: 'echo', run: (i) => i });\n` +
-      `export default defineUnbounded({ factoryId: 'from_specifier', channels: (c) => c.input('in').into(Echo).sink() });\n`,
+      `export default defineOperator({ factoryId: 'from_specifier', channels: (c) => c.input('in').into(Echo).sink() });\n`,
   );
   const registry = await loadRegistry([module]);
   assert.ok(registry.get('from_specifier'), "the module's operator was registered");
@@ -410,14 +409,14 @@ for (const [build, load, file, bind, exporting] of [
     'esm',
     loadRegistry,
     'handlers.mjs',
-    (sdk) => `import { defineUnbounded, defineTasklet } from '${sdk}';`,
+    (sdk) => `import { defineOperator, defineTasklet } from '${sdk}';`,
     'export default',
   ],
   [
     'cjs',
     createRequire(import.meta.url)('../dist/cjs/runner.js').loadRegistry,
     'handlers.cjs',
-    (sdk) => `const { defineUnbounded, defineTasklet } = require('${sdk}');`,
+    (sdk) => `const { defineOperator, defineTasklet } = require('${sdk}');`,
     'module.exports =',
   ],
 ]) {
@@ -427,7 +426,7 @@ for (const [build, load, file, bind, exporting] of [
       module,
       `${bind(new URL(`../dist/${build}/index.js`, import.meta.url).pathname)}\n` +
         `const Echo = defineTasklet({ name: 'echo', run: (i) => i });\n` +
-        `${exporting} defineUnbounded({ factoryId: 'by_relative_path', channels: (c) => c.input('in').into(Echo).sink() });\n`,
+        `${exporting} defineOperator({ factoryId: 'by_relative_path', channels: (c) => c.input('in').into(Echo).sink() });\n`,
     );
     const registry = await load([`./${relative(process.cwd(), module)}`]);
     assert.ok(registry.get('by_relative_path'), "the module's operator was registered");
@@ -451,10 +450,10 @@ test('a refusal raised while a handler module is imported keeps its own name', a
   const module = join(dir, 'handlers.mjs');
   writeFileSync(
     module,
-    `import { defineUnbounded, defineTasklet } from '${new URL('../dist/esm/index.js', import.meta.url).pathname}';\n` +
+    `import { defineOperator, defineTasklet } from '${new URL('../dist/esm/index.js', import.meta.url).pathname}';\n` +
       `const A = defineTasklet({ name: 'twin', run: (i) => i });\n` +
       `const B = defineTasklet({ name: 'twin', run: (i) => i });\n` +
-      `export default defineUnbounded({ factoryId: 'module_scope', channels: (c) => {\n` +
+      `export default defineOperator({ factoryId: 'module_scope', channels: (c) => {\n` +
       `  const s = c.input('in'); s.into(A); s.into(B);\n` +
       `} });\n`,
   );
@@ -518,7 +517,7 @@ const StampEmitter = defineTasklet({
 
 // One keyed plugin channel: the topology every SDK can express, and where the
 // per-emit ordinal has to be right.
-const StampSpec = defineUnbounded({
+const StampSpec = defineOperator({
   factoryId: 'stamps',
   channels: (c) => {
     c.input('in')
@@ -538,7 +537,7 @@ const PlainEmitter = defineTasklet({
   },
 });
 
-const MixedSpec = defineUnbounded({
+const MixedSpec = defineOperator({
   factoryId: 'stamps_mixed',
   channels: (c) => {
     c.input('in')
@@ -613,7 +612,7 @@ test('user metadata survives beside the stamps and cannot spoof one', async () =
       ctx.emit('v', { metadata: { user: 'meta' } });
     },
   });
-  const spec = defineUnbounded({
+  const spec = defineOperator({
     factoryId: 'stamps_user',
     channels: (c) => {
       c.input('in')
@@ -643,16 +642,16 @@ test('user metadata survives beside the stamps and cannot spoof one', async () =
   assert.equal(spoofed.effects[0].verdict, 'retryable');
 });
 
-// --- the structured-bounded emit arm ---------------------------------------
+// --- the structured-steps emit arm ---------------------------------------
 //
-// One released value is ONE edge output on a bounded class, untransformed and
+// One released value is ONE edge output on a steps class, untransformed and
 // unkeyed, naming the producing channel and its first consumer: the driver
-// fans it out from the journaled handoff. On an unbounded class the same topology
+// fans it out from the journaled handoff. On a flow class the same topology
 // releases one output per consumer, transformed and keyed. The plugin output
 // rides alongside either way.
 
-const BoundedProducer = defineTasklet({
-  name: 'bounded_producer',
+const StepsProducer = defineTasklet({
+  name: 'steps_producer',
   run: (input, ctx) => {
     ctx.emit(input);
   },
@@ -678,10 +677,10 @@ async function ran(spec, overrides) {
   return { effects, handed: [...DELIVERED] };
 }
 
-const boundedGraph = (c) => {
-  const edge = c.input('in').into(BoundedProducer).named('handoff');
-  edge.map((value) => value + 1).into(record('bounded_b'));
-  edge.into(record('bounded_c'));
+const stepsGraph = (c) => {
+  const edge = c.input('in').into(StepsProducer).named('handoff');
+  edge.map((value) => value + 1).into(record('steps_b'));
+  edge.into(record('steps_c'));
   edge.sink();
 };
 
@@ -692,16 +691,16 @@ const boundedGraph = (c) => {
 const payloadOf = (output) =>
   output.target === 'plugin' ? jsonOf(output.payload) : decodeValue(output.payload);
 
-const BoundedSpec = defineBounded({ factoryId: 'bounded_emit', channels: boundedGraph });
-const UnboundedTwinSpec = defineUnbounded({
-  factoryId: 'bounded_emit_stream',
-  channels: boundedGraph,
+const StepsSpec = defineOperator({ factoryId: 'steps_emit', steps: {}, channels: stepsGraph });
+const FlowTwinSpec = defineOperator({
+  factoryId: 'steps_emit_stream',
+  channels: stepsGraph,
 });
 
-test('a structured bounded releases one untransformed edge output per emit', async () => {
+test('a structured steps releases one untransformed edge output per emit', async () => {
   const result = await answer(
-    activationFor('bounded_emit')({ items: [inputItem(10)] }),
-    depsFor(BoundedSpec),
+    activationFor('steps_emit')({ items: [inputItem(10)] }),
+    depsFor(StepsSpec),
   );
   assert.equal(result.outcome, 'work');
   const outputs = result.effects[0].outputs;
@@ -716,10 +715,29 @@ test('a structured bounded releases one untransformed edge output per emit', asy
   assert.equal(outputs[0].eventTime, undefined);
 });
 
+const CarrySpec = defineOperator({
+  factoryId: 'steps_carry',
+  steps: { each: 'chained' },
+  channels: (c) => {
+    c.input('in').into(StepsProducer).named('carry');
+  },
+});
+
+test("a steps terminal nothing consumes hands its value to the core as the pass's carry", async () => {
+  const result = await answer(
+    activationFor('steps_carry')({ items: [inputItem(3)] }),
+    depsFor(CarrySpec),
+  );
+  assert.deepEqual(
+    result.effects[0].outputs.map((o) => [o.target, o.channel, o.consumer, payloadOf(o)]),
+    [['edge', 1, 0, 3]],
+  );
+});
+
 test("an edge payload is the encoder's own bytes, with nothing layered on top", async () => {
   const result = await answer(
-    activationFor('bounded_emit_stream')({ items: [inputItem(10)] }),
-    depsFor(UnboundedTwinSpec),
+    activationFor('steps_emit_stream')({ items: [inputItem(10)] }),
+    depsFor(FlowTwinSpec),
   );
   const outputs = result.effects[0].outputs;
   for (const output of outputs.filter((o) => o.target === 'edge')) {
@@ -733,7 +751,7 @@ test("an edge payload is the encoder's own bytes, with nothing layered on top", 
   assert.deepEqual(outputs[1].payload, encodeValue(10));
 });
 
-test('every timer call inside a bounded tasklet reaches the item effect as a timer op', async () => {
+test('every timer call inside a steps tasklet reaches the item effect as a timer op', async () => {
   const calls = {
     timerAfter: [(ctx) => ctx.timerAfter(1_000), 'processing_time', 2_000n, true],
     timerAtEventTime: [(ctx) => ctx.timerAtEventTime(5_000n), 'event_time', 5_000n, true],
@@ -752,8 +770,9 @@ test('every timer call inside a bounded tasklet reaches the item effect as a tim
       },
       onTimer: () => {},
     });
-    const spec = defineBounded({
-      factoryId: `bounded_timer_${call}`,
+    const spec = defineOperator({
+      factoryId: `steps_timer_${call}`,
+      steps: {},
       channels: (c) => c.input('in').into(Arms),
     });
     const { effects } = await answer(
@@ -772,8 +791,9 @@ test('a timer call inside a compensate hook fails naming runtime.timers_unavaila
       ctx.timerAfter(1_000);
     },
   });
-  const spec = defineBounded({
-    factoryId: 'bounded_timer_compensate',
+  const spec = defineOperator({
+    factoryId: 'steps_timer_compensate',
+    steps: {},
     channels: (c) => c.input('in').into(Undo),
   });
   const result = await answer(
@@ -784,10 +804,10 @@ test('a timer call inside a compensate hook fails naming runtime.timers_unavaila
   assert.match(result.error, /runtime\.timers_unavailable: /);
 });
 
-test('the same graph on an unbounded class releases one output per consumer', async () => {
+test('the same graph on a flow class releases one output per consumer', async () => {
   const result = await answer(
-    activationFor('bounded_emit_stream')({ items: [inputItem(10)] }),
-    depsFor(UnboundedTwinSpec),
+    activationFor('steps_emit_stream')({ items: [inputItem(10)] }),
+    depsFor(FlowTwinSpec),
   );
   const outputs = result.effects[0].outputs;
   assert.deepEqual(
@@ -801,7 +821,7 @@ test('the same graph on an unbounded class releases one output per consumer', as
 });
 
 // The other end of the same two arms: what the CONSUMER is handed. A stream
-// producer already applied the edge, so delivery applies nothing; a bounded operator
+// producer already applied the edge, so delivery applies nothing; a steps operator
 // stage released the value raw, so delivery is the one application.
 
 /** Hand `payload` to `tasklet` on the `handoff` channel and answer what it saw. */
@@ -814,25 +834,25 @@ async function delivered(spec, tasklet, payload) {
   return handed;
 }
 
-test('an unbounded inter-task edge applies its map exactly once', async () => {
+test('a flow inter-task edge applies its map exactly once', async () => {
   const produced = await answer(
-    activationFor('bounded_emit_stream')({ items: [inputItem(10)] }),
-    depsFor(UnboundedTwinSpec),
+    activationFor('steps_emit_stream')({ items: [inputItem(10)] }),
+    depsFor(FlowTwinSpec),
   );
   const mapped = produced.effects[0].outputs[0];
-  assert.deepEqual(await delivered(UnboundedTwinSpec, 1, mapped.payload), [11]);
+  assert.deepEqual(await delivered(FlowTwinSpec, 1, mapped.payload), [11]);
 });
 
-test('a bounded consumer applies its own edge exactly once, at delivery', async () => {
+test('a steps consumer applies its own edge exactly once, at delivery', async () => {
   const stage = await answer(
-    activationFor('bounded_emit')({ items: [inputItem(10)] }),
-    depsFor(BoundedSpec),
+    activationFor('steps_emit')({ items: [inputItem(10)] }),
+    depsFor(StepsSpec),
   );
   const released = stage.effects[0].outputs[0].payload;
   // One released value reaches BOTH children — the driver's fan-out — and each
   // evaluates its own edge here.
-  assert.deepEqual(await delivered(BoundedSpec, 1, released), [11]);
-  assert.deepEqual(await delivered(BoundedSpec, 2, released), [10]);
+  assert.deepEqual(await delivered(StepsSpec, 1, released), [11]);
+  assert.deepEqual(await delivered(StepsSpec, 2, released), [10]);
 });
 
 // `ctx.complete` rides the item's effect on either kind: which kind runs the
@@ -851,12 +871,16 @@ const Completing = defineTasklet({
 
 const completingGraph = (c) => c.input('in').into(Completing).sink('out');
 
-for (const [kind, define] of [
-  ['bounded', defineBounded],
-  ['unbounded', defineUnbounded],
+for (const [run, settings] of [
+  ['steps', { steps: {} }],
+  ['flow', {}],
 ]) {
-  test(`a ${kind} tasklet's complete rides its effect, the last call winning`, async () => {
-    const spec = define({ factoryId: `complete_${kind}`, channels: completingGraph });
+  test(`a ${run} tasklet's complete rides its effect, the last call winning`, async () => {
+    const spec = defineOperator({
+      factoryId: `complete_${run}`,
+      ...settings,
+      channels: completingGraph,
+    });
     const { effects } = await answer(
       activationFor(spec.factoryId)({ items: [inputItem('bye'), inputItem('stay')] }),
       depsFor(spec),
@@ -874,7 +898,7 @@ for (const [kind, define] of [
 // item is reported unreadable (the entrance's failure, not the handler's), so
 // the core parks it under the entry channel, and the handler is never handed it.
 test('plain text into an entry naming no codec is unreadable and never reaches the handler', async () => {
-  const spec = defineUnbounded({
+  const spec = defineOperator({
     factoryId: 'json_entry',
     channels: (c) => {
       c.input('in').into(record('json_entry_tasklet'));
@@ -893,7 +917,7 @@ test('plain text into an entry naming no codec is unreadable and never reaches t
 });
 
 test('bytes that are not UTF-8 into a text entry are unreadable', async () => {
-  const spec = defineUnbounded({
+  const spec = defineOperator({
     factoryId: 'text_entry',
     channels: (c) => {
       c.input('in', { codec: 'text' }).into(record('text_entry_tasklet'));
@@ -912,7 +936,7 @@ test('bytes that are not UTF-8 into a text entry are unreadable', async () => {
 // entrance's; a handler throwing on a value that did decode stays a handler
 // failure, which is what the retry ladder is for.
 test('an entry edge transform that throws is unreadable, a handler that throws is not', async () => {
-  const spec = defineUnbounded({
+  const spec = defineOperator({
     factoryId: 'entry_edge',
     channels: (c) => {
       c.input('in', { codec: 'text' })
@@ -978,10 +1002,10 @@ test('every merged source is keyed on its mapped value at the crossing', async (
 });
 
 test('a tasklet merged with an entry releases its mapped value to the merged node', async () => {
-  const spec = defineUnbounded({
+  const spec = defineOperator({
     factoryId: 'merged_hop',
     channels: (c) => {
-      const produced = c.input('raw').into(BoundedProducer);
+      const produced = c.input('raw').into(StepsProducer);
       c.merge()
         .from(produced, (value) => ({ produced: value }))
         .from(c.input('direct'), (value) => ({ direct: value }))
@@ -1001,7 +1025,7 @@ test('a tasklet merged with an entry releases its mapped value to the merged nod
 // input, the crossing answers every value's key, and a producer releases one
 // frame per value.
 
-const FanSpec = defineUnbounded({
+const FanSpec = defineOperator({
   factoryId: 'fan',
   channels: (c) => {
     c.input('lines', { codec: 'text' })
@@ -1041,7 +1065,7 @@ test('a cell handed a fanned payload runs only the values keyed to it', async ()
 test('a fan into a static consumer runs each value on the cells it names, and [] on none', async () => {
   const keys = ['a', 'b'];
   const cellsFor = (trade) => keys.filter((key) => trade.startsWith(`${key}:`));
-  const spec = defineUnbounded({
+  const spec = defineOperator({
     factoryId: 'static_fan',
     channels: (c) => {
       c.input('trades', { codec: 'text' })
@@ -1057,10 +1081,10 @@ test('a fan into a static consumer runs each value on the cells it names, and []
 
 test('a producer releases one frame per fanned value, and an array from map is one value', async () => {
   const released = async (factoryId, reshape) => {
-    const spec = defineUnbounded({
+    const spec = defineOperator({
       factoryId,
       channels: (c) =>
-        reshape(c.input('in').into(BoundedProducer)).into(record(`${factoryId}_record`)),
+        reshape(c.input('in').into(StepsProducer)).into(record(`${factoryId}_record`)),
     });
     const { effects } = await ran(spec, { cellKey: undefined, items: [inputItem(10)] });
     return effects[0].outputs.map((output) => decodeValue(output.payload));
@@ -1076,18 +1100,18 @@ test('a producer releases one frame per fanned value, and an array from map is o
 
 // --- registering a factory --------------------------------------------------
 
-test('a module exporting short forms registers each, of the kind its function names', async () => {
+test('a module exporting short forms registers each, with the run it declares', async () => {
   const dir = tempDir('flezha-short-');
   const module = join(dir, 'short.mjs');
   writeFileSync(
     module,
-    `import { defineUnbounded, defineBounded } from '${new URL('../dist/esm/index.js', import.meta.url).pathname}';\n` +
-      `export const upcase = defineUnbounded({ factoryId: 'short_form', sink: 'out', run: (i) => i });\n` +
-      `export const place = defineBounded({ factoryId: 'short_bounded', sink: 'placed', input: 'order', run: (i) => i });\n`,
+    `import { defineOperator } from '${new URL('../dist/esm/index.js', import.meta.url).pathname}';\n` +
+      `export const upcase = defineOperator({ factoryId: 'short_form', sink: 'out', run: (i) => i });\n` +
+      `export const place = defineOperator({ factoryId: 'short_steps', steps: {}, sink: 'placed', input: 'order', run: (i) => i });\n`,
   );
   const registry = await loadRegistry([module]);
-  assert.equal(registry.get('short_form')?.spec.kind, 'unbounded');
-  assert.equal(registry.get('short_bounded')?.spec.kind, 'bounded');
+  assert.equal(registry.get('short_form')?.spec.run, undefined);
+  assert.deepEqual(registry.get('short_steps')?.spec.run, { steps: {} });
 });
 
 test('registerFactory rejects at the line that names a module which cannot load', async () => {
@@ -1114,8 +1138,8 @@ test('unregisterFactory undoes a pre-run registration and names an unknown one',
   const module = join(dir, 'one.mjs');
   writeFileSync(
     module,
-    `import { defineUnbounded } from '${new URL('../dist/esm/index.js', import.meta.url).pathname}';\n` +
-      `export const one = defineUnbounded({ factoryId: 'unregister_me', sink: 'out', run: (i) => i });\n`,
+    `import { defineOperator } from '${new URL('../dist/esm/index.js', import.meta.url).pathname}';\n` +
+      `export const one = defineOperator({ factoryId: 'unregister_me', sink: 'out', run: (i) => i });\n`,
   );
   const runner = createRunner('unregister_ns');
   await runner.registerFactory(module);
@@ -1131,8 +1155,8 @@ test('a post-start registerFactory declares against the core and the workers', a
   const module = join(dir, 'late.mjs');
   writeFileSync(
     module,
-    `import { defineUnbounded } from '${new URL('../dist/esm/index.js', import.meta.url).pathname}';\n` +
-      `export const late = defineUnbounded({ factoryId: 'late_form', sink: 'out', run: (i) => i });\n`,
+    `import { defineOperator } from '${new URL('../dist/esm/index.js', import.meta.url).pathname}';\n` +
+      `export const late = defineOperator({ factoryId: 'late_form', sink: 'out', run: (i) => i });\n`,
   );
 
   // A started runner is one that holds a core and a registry. Standing those in

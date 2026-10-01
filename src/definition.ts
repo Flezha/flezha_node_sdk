@@ -11,8 +11,8 @@ import { assertRepresentable } from './codec.js';
 import type { ClassSpec } from './authoring.js';
 import { flezhaError } from './errors.js';
 import type {
-  BoundedDefinition,
   ChannelBuilder,
+  ClassSettings,
   CodecOptions,
   OperatorDefinition,
   ShortFormDefinition,
@@ -35,12 +35,12 @@ export function defineTasklet<TIn, TOut = never, TState = void, TChange = never>
   definition: TaskletDefinition<TIn, TOut, TState, TChange>,
 ): Tasklet<TIn, TOut, TState, TChange> {
   const tasklet = definition.name || '<tasklet>';
-  const operatorFields = written(definition, ['kind', ...SHORT_FORM_KEYS]);
+  const operatorFields = written(definition, [...SHORT_FORM_KEYS, ...RUN_BRANCHES, 'durable']);
   if (operatorFields) {
     throw flezhaError('topology.operator_field_on_tasklet', {
       tasklet,
       fields: operatorFields,
-      instead: '`defineUnbounded` or `defineBounded`',
+      instead: '`defineOperator`',
     });
   }
   if (!definition.name || !definition.name.trim()) {
@@ -165,60 +165,32 @@ function unknownFields(definition: object, known: ReadonlySet<string>): string {
     .join(', ');
 }
 
-/**
- * A bounded operator definition's own options, which an unbounded definition carries none
- * of in either form. Keyed by the type, so an option the bounded operator definition
- * gains is listed here or does not compile. `syncDurability` is not among
- * them: the core refuses it on an unbounded operator by its own name.
- */
-const BOUNDED_SETTINGS = Object.keys({
-  loopMode: true,
-  rollbackMode: true,
-  maxDurationMs: true,
-} satisfies Record<
-  Exclude<keyof BoundedDefinition, keyof OperatorDefinition | 'syncDurability'>,
-  true
->) as (keyof BoundedDefinition)[];
+/** The branches `run` takes, each written as the definition's own key. */
+const RUN_BRANCHES = ['flow', 'steps'] as const;
 
 /**
- * The full form's class-level settings: a definition's options and the builder
- * calls that set one on the class. The short form keeps each at its default;
- * a bounded operator's loop mode is the one setting it may write.
+ * The retired kind words. The run is written as its branch key, so a kind
+ * written where the run is is a run outside its choice.
  */
-const CLASS_SETTINGS = [
-  'persistent',
-  'sleepWhenIdle',
-  ...BOUNDED_SETTINGS.filter((key) => key !== 'loopMode'),
-  'syncDurability',
-  'effectivelyOnce',
-  'checkpointAck',
-  'checkpointEvery',
-  'outputsAtCheckpoint',
-  'correctionWindow',
-  'beyondWindowPolicy',
-  'compactAfterBytes',
-] satisfies readonly (keyof BoundedDefinition | keyof ChannelBuilder)[];
+const KIND_LITERALS = ['bounded', 'unbounded'] as const;
 
 /**
- * Every field either form reads, or refuses under a reason of its own. The
- * operator's own are keyed by the type, so a field the definition gains is
- * listed here or does not compile; anything else, a retired setting among
- * them, is refused by name.
+ * Every field either form reads. The operator's own are keyed by the type, so
+ * a field the definition gains is listed here or does not compile; anything
+ * else, a retired setting among them, is refused by name.
  */
 const DEFINITION_FIELDS = new Set<string>([
   ...Object.keys({
     factoryId: true,
-    persistent: true,
-    sleepWhenIdle: true,
     channels: true,
-    syncDurability: true,
-  } satisfies Record<keyof OperatorDefinition | 'syncDurability', true>),
-  ...BOUNDED_SETTINGS,
-  ...CLASS_SETTINGS,
+    description: true,
+    maxDurationMs: true,
+    durable: true,
+  } satisfies Record<keyof ClassSettings | 'factoryId' | 'channels', true>),
+  ...RUN_BRANCHES,
   ...SHORT_FORM_KEYS,
   ...TASKLET_FIELDS,
   'run',
-  'kind',
   'name',
 ]);
 
@@ -229,13 +201,45 @@ function written(definition: object, keys: readonly string[]): string {
 }
 
 /**
- * A definition as `defineUnbounded` and `defineBounded` read it: the full
- * form's fields with `channels` optional, which a short form also is, since
- * it carries `run` in place of `channels` and writes no class-level setting
- * but a bounded operator's loop mode.
+ * A definition as `defineOperator` reads it: the full form's fields with
+ * `channels` optional, which a short form also is, since it carries `run` in
+ * place of `channels`.
  */
 export type EitherForm<D extends OperatorDefinition> = Omit<D, 'channels'> &
   Partial<Pick<D, 'channels'>>;
+
+/** A member name as the tree's JSON spells it: `sleepAfter` is `sleep_after`. */
+function snakeCase(name: string): string {
+  return name.replace(/[A-Z]/g, (letter) => `_${letter.toLowerCase()}`);
+}
+
+/** A settings tree as its JSON, every member spelled as the core reads it. */
+function treeJson(tree: unknown): unknown {
+  if (tree === null || typeof tree !== 'object' || Array.isArray(tree)) return tree;
+  return Object.fromEntries(
+    Object.entries(tree).map(([name, member]) => [snakeCase(name), treeJson(member)]),
+  );
+}
+
+/**
+ * The class settings a definition writes, the tree as the host declaration
+ * carries it. Both branches written are both passed on: the core refuses a
+ * run naming two.
+ */
+export function settingsOf(
+  definition: EitherForm<OperatorDefinition>,
+): Pick<ClassSpec, 'description' | 'maxDurationMs' | 'run' | 'durable'> {
+  const branches = RUN_BRANCHES.filter((branch) => definition[branch] !== undefined);
+  return {
+    description: definition.description,
+    maxDurationMs: definition.maxDurationMs,
+    run:
+      branches.length === 0
+        ? undefined
+        : Object.fromEntries(branches.map((branch) => [branch, treeJson(definition[branch])])),
+    durable: treeJson(definition.durable),
+  };
+}
 
 /** A short form's one builder call: its entry, with the codec it may name. */
 interface EntryBuilder {
@@ -256,17 +260,20 @@ interface EntryBuilder {
  */
 export function channelsOf(
   definition: EitherForm<OperatorDefinition>,
-  kind: ClassSpec['kind'],
 ): (builder: ChannelBuilder & EntryBuilder) => void {
   if (typeof definition.factoryId !== 'string' || !definition.factoryId.trim()) {
     throw flezhaError('topology.missing_factory_id', { operator: '<operator>' });
   }
   const factoryId = definition.factoryId;
-  const foreign = kind === 'unbounded' ? written(definition, BOUNDED_SETTINGS) : '';
-  if (foreign) {
-    throw flezhaError('topology.bounded_setting_on_unbounded', {
-      factory_id: factoryId,
-      settings: foreign,
+  const kind = KIND_LITERALS.find(
+    (word) => (definition as Record<string, unknown>)[word] !== undefined,
+  );
+  if (kind) {
+    throw flezhaError('topology.invalid_setting', {
+      declaration: `operator '${factoryId}'`,
+      setting: 'run',
+      value: kind,
+      expected: RUN_BRANCHES.join(' | '),
     });
   }
   const unknown = unknownFields(definition, DEFINITION_FIELDS);
@@ -297,16 +304,13 @@ export function channelsOf(
     }
     return channels as (builder: ChannelBuilder) => void;
   }
-  return shortFormBody(definition as ShortForm & Pick<BoundedDefinition, 'loopMode'>);
+  return shortFormBody(definition as ShortForm);
 }
 
 /** The channels body a §5 short form stands for, once its operator fields are judged. */
-function shortFormBody(
-  definition: ShortForm & Pick<BoundedDefinition, 'loopMode'>,
-): (builder: ChannelBuilder & EntryBuilder) => void {
-  // The kind is the declaring function's name, the tasklet is named after the
-  // factory id, and every class-level setting keeps its default.
-  const fields = written(definition, ['kind', 'name', ...CLASS_SETTINGS]);
+function shortFormBody(definition: ShortForm): (builder: ChannelBuilder & EntryBuilder) => void {
+  // The tasklet is named after the factory id.
+  const fields = written(definition, ['name']);
   if (fields) {
     throw flezhaError('topology.setting_on_short_form', {
       factory_id: definition.factoryId,

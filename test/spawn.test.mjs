@@ -38,7 +38,7 @@ test('a spawn returns its handle at once, under the activation and input offset 
   await handled(
     bridge,
     (input, ctx) => {
-      handle = ctx.spawnBounded('worker', { order: input });
+      handle = ctx.spawnSteps('worker', { order: input });
     },
     { consumedOffset: 4n },
   );
@@ -62,9 +62,9 @@ test('a spawn returns its handle at once, under the activation and input offset 
 test('a spawn payload is what a text or json entry reads: UTF-8 for a string, JSON otherwise', async () => {
   const bridge = spawnBridge();
   await handled(bridge, (input, ctx) => {
-    ctx.spawnBounded('worker', `ticket-${input}`);
-    ctx.spawnBounded('worker', { symbol: 'AAPL', quantity: 10 });
-    ctx.spawnBounded('worker', Buffer.from([0xff, 0x00, 0x01]));
+    ctx.spawnSteps('worker', `ticket-${input}`);
+    ctx.spawnSteps('worker', { symbol: 'AAPL', quantity: 10 });
+    ctx.spawnSteps('worker', Buffer.from([0xff, 0x00, 0x01]));
   });
   const [text, json, bytes] = bridge.requests.map((request) => Buffer.from(request.payload));
   assert.equal(text.toString('utf8'), 'ticket-p', 'a string travels as its UTF-8 bytes');
@@ -79,8 +79,8 @@ test('a spawn resolves to the id it resolved to, generated or given', async () =
   }));
   const seen = [];
   await handled(bridge, async (input, ctx) => {
-    seen.push(await ctx.spawnBounded('worker', input).wait());
-    seen.push(ctx.spawnBounded('worker', input, { id: 'w1' }).tryResult());
+    seen.push(await ctx.spawnSteps('worker', input).wait());
+    seen.push(ctx.spawnSteps('worker', input, { id: 'w1' }).tryResult());
   });
   assert.deepEqual(seen, [
     { id: 'worker-k7m2qzxw4pd3fn2a', outcome: 'spawned' },
@@ -101,7 +101,7 @@ test('the error policy is sent, and a running id is thrown by both reads', async
   );
   const failures = [];
   await handled(bridge, async (input, ctx) => {
-    const handle = ctx.spawnBounded('worker', input, { id: 'w1', ifRunning: 'error' });
+    const handle = ctx.spawnSteps('worker', input, { id: 'w1', ifRunning: 'error' });
     failures.push(
       await handle.wait().catch((error) => error),
       caught(() => handle.tryResult()),
@@ -120,7 +120,7 @@ test('ifRunning without an id throws a TypeError naming both, and sends nothing'
   const bridge = spawnBridge();
   let thrown;
   await handled(bridge, (input, ctx) => {
-    thrown = caught(() => ctx.spawnBounded('worker', input, { ifRunning: 'deliver' }));
+    thrown = caught(() => ctx.spawnSteps('worker', input, { ifRunning: 'deliver' }));
   });
   assert.ok(thrown instanceof TypeError, String(thrown));
   assert.match(thrown.message, /ifRunning without an id/);
@@ -131,7 +131,7 @@ test('each failure the core answers is thrown as the one error, carrying its cod
   for (const code of [
     'operator.already_running',
     'operator.factory_unknown',
-    'operator.factory_not_bounded',
+    'operator.factory_not_steps',
     'quota.exceeded',
     'spawn.timeout',
     'spawn.unavailable',
@@ -140,7 +140,7 @@ test('each failure the core answers is thrown as the one error, carrying its cod
     let failure;
     await handled(bridge, async (input, ctx) => {
       failure = await ctx
-        .spawnBounded('worker', input)
+        .spawnSteps('worker', input)
         .wait()
         .catch((error) => error);
     });
@@ -157,7 +157,7 @@ test('a failure nobody reads faults nothing and leaves no promise to reject', as
   try {
     const bridge = spawnBridge(() => failed('quota.exceeded', 'the quota is reached'));
     const effect = await handled(bridge, (input, ctx) => {
-      ctx.spawnBounded('worker', input);
+      ctx.spawnSteps('worker', input);
       ctx.emit(input);
     });
     assert.equal(effect.outputs.length, 1, 'the emit still ships');
@@ -176,8 +176,8 @@ test('a replayed spawn is skipped by the core, answering the id it gave or none'
     bridge,
     (input, ctx) => {
       seen.push(
-        ctx.spawnBounded('worker', input).tryResult(),
-        ctx.spawnBounded('worker', input, { id: 'w1' }).tryResult(),
+        ctx.spawnSteps('worker', input).tryResult(),
+        ctx.spawnSteps('worker', input, { id: 'w1' }).tryResult(),
       );
     },
     { replay: true },
@@ -197,7 +197,7 @@ test('the non-waiting read answers null until the answer arrives, and every read
   const bridge = spawnBridge(() => (arrived ? { id: 'w1', outcome: 'spawned' } : null));
   const seen = [];
   await handled(bridge, async (input, ctx) => {
-    const handle = ctx.spawnBounded('worker', input, { id: 'w1' });
+    const handle = ctx.spawnSteps('worker', input, { id: 'w1' });
     seen.push(handle.tryResult());
     arrived = true;
     seen.push(handle.tryResult(), await handle.wait());

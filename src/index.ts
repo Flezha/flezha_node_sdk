@@ -3,13 +3,13 @@
  *
  * The runner kernel is `flz_core`, reached through its C ABI: it owns
  * transport, ordering, per-cell exclusivity, durability, retries, timers,
- * credit, routing and the bounded driver. This package supplies threads and
+ * credit, routing and the steps driver. This package supplies threads and
  * user code, and nothing else.
  */
 
 export { Admin } from './admin.js';
 export type { StartOptions, StartOutcome, StartResult } from './admin.js';
-export { defineUnbounded, defineBounded } from './authoring.js';
+export { defineOperator } from './authoring.js';
 export { defineTasklet } from './definition.js';
 export type { CallOptions, CallTarget, Response } from './call.js';
 export type { ChannelSpec, ClassSpec, Link, TaskNode } from './authoring.js';
@@ -33,28 +33,36 @@ export { DELAY_WARN_MS } from './loop-watch.js';
 export { FlezhaError } from './errors.js';
 export type { ErrorClass, ErrorFields } from './errors.js';
 export type {
+  Ack,
   BeyondWindowPolicy,
   ChannelBuilder,
+  ClassSettings,
   ChannelCodec,
   CodecOptions,
   Ctx,
+  Durable,
+  Each,
   EmitOptions,
+  Exactly,
+  FlowSettings,
   IfRunning,
-  LoopMode,
   Merge,
+  OnFailure,
   OperatorDefinition,
+  OperatorSettings,
   OverflowPolicy,
   Tasklet,
   TaskletDefinition,
-  RollbackMode,
   RoutedDocument,
+  RunSettings,
   ShortFormDefinition,
+  SleepAfter,
   SpawnOptions,
   SpawnOutcome,
   SpawnResult,
   StaticCells,
+  StepsSettings,
   Stream,
   TimerFiring,
   TimerKind,
-  BoundedDefinition,
 } from './types.js';

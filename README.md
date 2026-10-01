@@ -2,7 +2,7 @@
 
 A poll host over `flz_core`, the runner kernel the Rust and Java SDKs also
 drive. The kernel owns transport, ordering, per-cell exclusivity, durability,
-retries, timers, credit, routing and bounded runs. This package supplies
+retries, timers, credit, routing and steps runs. This package supplies
 threads and user code, and nothing else.
 
 **Support tier:**
@@ -60,7 +60,7 @@ nothing. That is why the refusal at load is explicit about what is missing.
 ## Writing an operator
 
 ```ts
-import { createRunner, defineUnbounded, defineTasklet, type Ctx } from '@flezha/sdk';
+import { createRunner, defineOperator, defineTasklet, type Ctx } from '@flezha/sdk';
 
 interface Trade {
   symbol: string;
@@ -88,7 +88,7 @@ const Ohlc = defineTasklet({
   },
 });
 
-export default defineUnbounded({
+export default defineOperator({
   factoryId: 'candles',
   channels: (c) => {
     c.input<Trade>('trades')
@@ -114,6 +114,33 @@ of its own. State is mutated only through declared changes: declared state is
 rebuilt from its recorded changes on restart, so assigning to a field of
 `ctx.state` throws rather than being silently lost. A mismatched `.into(...)` is
 a compile error.
+
+## Class settings
+
+Every operator is declared with `defineOperator`, in the full form above or as
+the short form, one tasklet's fields and its `run` body with a `sink`. Both
+forms take the class settings:
+
+```ts
+export default defineOperator({
+  factoryId: 'orders',
+  steps: { each: 'per_input', onFailure: 'keep_progress' },
+  durable: { local: { sleepAfter: 10_000 } },
+  maxDurationMs: 600_000,
+  channels: (c) => c.input('order', { codec: 'text' }).into(Place).sink('placed'),
+});
+```
+
+An operator runs as a flow unless it writes `steps`; `flow` and `steps` are
+written as the branch itself, since a short form's `run` is its body. A flow
+may take `exactly: 'effectively_once'`, or
+`{ effectively_once: { ack, correctionMs, beyondWindow } }` with `ack` either
+`'per_input'` or `{ checkpoint: { every, maxDelayMs, outputs } }`. `durable` is
+`false`, `'local'` (the default) or `'remote'`; unless `sleepAfter` names an
+interval or `false`, a kept flow instance never sleeps and a kept steps instance
+sleeps after six idle hours. The core
+reads the tree when the class registers: a setting under a parent that does not
+carry it is refused as `topology.unknown_field`, naming both.
 
 ## Answering and calling
 

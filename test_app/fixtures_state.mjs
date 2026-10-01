@@ -2,9 +2,9 @@
 // shares, and the counter and resume twins — the same partition as
 // test/apps/python_runner/fixtures_state.py and the reference's state.rs.
 
-import { decodeValue, defineUnbounded, defineTasklet } from '@flezha/sdk';
+import { decodeValue, defineOperator, defineTasklet } from '@flezha/sdk';
 
-import { prefix } from './fixture_support.mjs';
+import { fixtureDurable, prefix } from './fixture_support.mjs';
 
 /** The reference parses `i64` and reads an unparsable input as 0. */
 const asInt = (input) => (/^-?\d+$/.test(String(input)) ? Number(input) : 0);
@@ -60,7 +60,7 @@ const BenchCheckpoint = keyedUpsertTasklet('bench_checkpoint_tasklet', upsert);
 // The same keyed upsert under both durability postures, so the round-trip
 // bench can isolate the cost of per-Cell persistence.
 const keyedUpsert = (factoryId, options = {}) =>
-  defineUnbounded({
+  defineOperator({
     factoryId,
     ...options,
     channels: (c) => {
@@ -74,7 +74,7 @@ const keyedUpsert = (factoryId, options = {}) =>
 
 // Per-cell persistence off: this is the heap-only posture the bench isolates
 // against the durable one.
-export const benchKeyedNoPersist = keyedUpsert('bench_keyed_nopersist', { persistent: false });
+export const benchKeyedNoPersist = keyedUpsert('bench_keyed_nopersist', { durable: false });
 export const benchKeyed = keyedUpsert('bench_keyed');
 
 // The effectively-once reference: a keyed upsert under the tier. A 300 ms
@@ -82,10 +82,10 @@ export const benchKeyed = keyedUpsert('bench_keyed');
 // Declared DropNothing: a durable-input-log operator that shed at its mailbox
 // would hold the min-watermark on the shed offset forever while the log behind
 // it kept growing.
-export const tierStore = defineUnbounded({
+export const tierStore = defineOperator({
   factoryId: 'tier_store',
+  flow: { exactly: 'effectively_once' },
   channels: (c) => {
-    c.effectivelyOnce();
     c.input('input', { codec: 'text' })
       .onFull('drop_nothing')
       .retryBackoffMs(300)
@@ -120,17 +120,17 @@ const TierRelay = counting('tier_relay', (input, ctx) => {
 
 const TierTally = counting('tier_tally', (input, ctx) => {
   const [key, value] = splitKeyed(input);
-  if (value === 'hold' && process.env.FLEZHA_BOUNDED_E2E_RELEASE === undefined) {
+  if (value === 'hold' && process.env.FLEZHA_STEPS_E2E_RELEASE === undefined) {
     throw new Error('held until released');
   }
   ctx.change({ delta: 1 });
   ctx.emit(`${key}=${ctx.state.value}`, { key });
 });
 
-export const tierChain = defineUnbounded({
+export const tierChain = defineOperator({
   factoryId: 'tier_chain',
+  flow: { exactly: 'effectively_once' },
   channels: (c) => {
-    c.effectivelyOnce();
     c.input('input', { codec: 'text' })
       .onFull('drop_nothing')
       .into(TierRelay)
@@ -142,23 +142,27 @@ export const tierChain = defineUnbounded({
   },
 });
 
-export const checkpointStore = defineUnbounded({
+export const checkpointStore = defineOperator({
   factoryId: 'checkpoint_store',
+  flow: { exactly: { effectively_once: { ack: 'checkpoint' } } },
   channels: (c) => {
-    c.effectivelyOnce().checkpointAck();
     c.input('input', { codec: 'text' }).into(CheckpointStore).keyed().sink('sink');
   },
 });
 
-// The same tasklet declared `outputsAtCheckpoint`: the interval's outputs
+// The same tasklet declared `outputs: 'at_checkpoint'`: the interval's outputs
 // are held with its changes and ship inside its checkpoint record.
-// `checkpointEvery` is deliberately absent so the test drives the close itself
+// `every` is deliberately absent so the test drives the close itself
 // — with `commit:` for the batch case, and with the delay alone for the
 // quiet-Cell case.
-export const checkpointBatchedStore = defineUnbounded({
+export const checkpointBatchedStore = defineOperator({
   factoryId: 'checkpoint_batched_store',
+  flow: {
+    exactly: {
+      effectively_once: { ack: { checkpoint: { outputs: 'at_checkpoint', maxDelayMs: 1_500 } } },
+    },
+  },
   channels: (c) => {
-    c.effectivelyOnce().checkpointAck().outputsAtCheckpoint(1_500);
     c.input('input', { codec: 'text' }).into(CheckpointStore).keyed().sink('sink');
   },
 });
@@ -170,13 +174,28 @@ const envInt = (key, fallback) => Number(process.env[key]) || fallback;
 // Cell. `FLEZHA_BENCH_CHECKPOINT_OUTPUTS=at_checkpoint` (with
 // `FLEZHA_BENCH_CHECKPOINT_DELAY_MS`) additionally holds the interval's outputs
 // until it closes.
-export const benchCheckpoint = defineUnbounded({
+const benchHolds = process.env.FLEZHA_BENCH_CHECKPOINT_OUTPUTS === 'at_checkpoint';
+
+export const benchCheckpoint = defineOperator({
   factoryId: 'bench_checkpoint',
+  flow: {
+    exactly: {
+      effectively_once: {
+        ack: {
+          checkpoint: {
+            every: envInt('FLEZHA_BENCH_CHECKPOINT_EVERY', 500),
+            ...(benchHolds
+              ? {
+                  outputs: 'at_checkpoint',
+                  maxDelayMs: envInt('FLEZHA_BENCH_CHECKPOINT_DELAY_MS', 50),
+                }
+              : {}),
+          },
+        },
+      },
+    },
+  },
   channels: (c) => {
-    c.effectivelyOnce().checkpointEvery(envInt('FLEZHA_BENCH_CHECKPOINT_EVERY', 500));
-    if (process.env.FLEZHA_BENCH_CHECKPOINT_OUTPUTS === 'at_checkpoint') {
-      c.outputsAtCheckpoint(envInt('FLEZHA_BENCH_CHECKPOINT_DELAY_MS', 50));
-    }
     c.input('input', { codec: 'text' })
       .onFull('drop_nothing')
       .into(BenchCheckpoint)
@@ -200,7 +219,7 @@ const StoreInput = defineTasklet({
   },
 });
 
-export const storeInput = defineUnbounded({
+export const storeInput = defineOperator({
   factoryId: 'store_input',
   channels: (c) => {
     c.input('input', { codec: 'text' }).into(StoreInput).sink('sink');
@@ -225,7 +244,7 @@ const Counter = defineTasklet({
   },
 });
 
-export const statefulCounter = defineUnbounded({
+export const statefulCounter = defineOperator({
   factoryId: 'stateful_counter',
   channels: (c) => {
     c.input('input', { codec: 'text' }).into(CounterEntry).named('ticks').into(Counter);
@@ -234,9 +253,9 @@ export const statefulCounter = defineUnbounded({
 
 // The same topology with per-Cell persistence off, under the reference's
 // node names: the toggle is a class property, not a different computation.
-export const persistenceOffCounter = defineUnbounded({
+export const persistenceOffCounter = defineOperator({
   factoryId: 'persistence_off_counter',
-  persistent: false,
+  durable: false,
   channels: (c) => {
     c.input('input', { codec: 'text' })
       .into(CounterEntry, 'persistence_off_entry_tasklet')
@@ -247,7 +266,7 @@ export const persistenceOffCounter = defineUnbounded({
 
 // -- sleeping_counter -------------------------------------------------------
 //
-// An unbounded operator that sleeps when idle: `key:delta` inputs fold into one running
+// A flow operator that sleeps when idle: `key:delta` inputs fold into one running
 // total per key, and every input emits `key=total` on the `totals` sink. The
 // sleep e2e reads the total after a wake to prove the Cell came back with the
 // state it slept with.
@@ -265,9 +284,9 @@ const SleepingCounter = defineTasklet({
   },
 });
 
-export const sleepingCounter = defineUnbounded({
+export const sleepingCounter = defineOperator({
   factoryId: 'sleeping_counter',
-  sleepWhenIdle: true,
+  durable: fixtureDurable(),
   channels: (c) => {
     c.input('input', { codec: 'text' }).keyBy(prefix).into(SleepingCounter).sink('totals');
   },
@@ -299,7 +318,7 @@ const Tick = defineTasklet({
   },
 });
 
-export const coalescingCounter = defineUnbounded({
+export const coalescingCounter = defineOperator({
   factoryId: 'coalescing_counter',
   channels: (c) => {
     c.input('input', { codec: 'text' }).into(TickEntry).named('ticks').into(Tick);
@@ -324,7 +343,7 @@ const ResumeProbe = defineTasklet({
   },
 });
 
-export const resumeProbe = defineUnbounded({
+export const resumeProbe = defineOperator({
   factoryId: 'resume_probe',
   channels: (c) => {
     c.input('input', { codec: 'text' }).into(ResumeProbe).sink('total');
@@ -384,7 +403,7 @@ const EvolvingCartV2 = defineTasklet({
 });
 
 const evolvingCart = (factoryId, tasklet) =>
-  defineUnbounded({
+  defineOperator({
     factoryId,
     channels: (c) => {
       c.input('input', { codec: 'text' }).into(tasklet).sink('total');

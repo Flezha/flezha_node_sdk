@@ -10,7 +10,7 @@ import { fileURLToPath } from 'node:url';
 
 import {
   ACTIVATION_SCHEMA_VERSION,
-  defineUnbounded,
+  defineOperator,
   defineTasklet,
   FlezhaError,
   loadNative,
@@ -127,16 +127,13 @@ test('a core refusal is the one error, carrying the code and the engine detail',
   }
 });
 
-// The checkpoint options the core will accept together. Asserted here rather
-// than on the builder's fields because the core is what refuses AND what
-// implies: the builder writes each raw flag, and the acknowledgement
-// granularity a declaration registers under is derived from any of them.
-const checkpointClass = (factoryId, declare) =>
-  defineUnbounded({
+// The checkpoint acknowledgements the core accepts. Asserted by registering,
+// because the core is what reads the tree and refuses a malformed one.
+const checkpointClass = (factoryId, ack) =>
+  defineOperator({
     factoryId,
+    flow: { exactly: { effectively_once: { ack } } },
     channels: (c) => {
-      c.effectivelyOnce();
-      declare(c);
       c.input('input')
         .into(defineTasklet({ name: `${factoryId}_tasklet`, run: (input, ctx) => ctx.emit(input) }))
         .keyed()
@@ -147,29 +144,26 @@ const checkpointClass = (factoryId, declare) =>
 const declaresTo = (native, spec) =>
   native.declareClass(Buffer.from(JSON.stringify(toHostClassDecl(spec))));
 
-test('holding outputs at the checkpoint acknowledges at the checkpoint', () => {
+test('holding outputs at the checkpoint registers with its delay', () => {
   native.contextNew(ACTIVATION_SCHEMA_VERSION);
   try {
-    const spec = checkpointClass('outputs_only', (c) => c.outputsAtCheckpoint(1500));
-    const decl = toHostClassDecl(spec);
-    assert.equal(decl.checkpoint_ack, false, 'the flag is raw: nothing amends it');
-    assert.equal(decl.checkpoint_outputs, 'at_checkpoint');
-    assert.equal(decl.checkpoint_max_delay_ms, 1500);
-    // Registering is the assertion: the core implies the checkpoint
-    // acknowledgement from the outputs flag, and refuses the pair otherwise.
+    const spec = checkpointClass('outputs_only', {
+      checkpoint: { outputs: 'at_checkpoint', maxDelayMs: 1500 },
+    });
+    assert.deepEqual(toHostClassDecl(spec).run.flow.exactly.effectively_once.ack, {
+      checkpoint: { outputs: 'at_checkpoint', max_delay_ms: 1500 },
+    });
     declaresTo(native, spec);
   } finally {
     native.contextFree();
   }
 });
 
-test('the bare checkpoint opt-in registers with no cadence', () => {
+test('the bare checkpoint acknowledgement registers with no cadence', () => {
   native.contextNew(ACTIVATION_SCHEMA_VERSION);
   try {
-    const spec = checkpointClass('ack_only', (c) => c.checkpointAck());
-    const decl = toHostClassDecl(spec);
-    assert.equal(decl.checkpoint_ack, true);
-    assert.equal(decl.checkpoint_every, undefined, 'the bare opt-in declares no cadence');
+    const spec = checkpointClass('ack_only', 'checkpoint');
+    assert.equal(toHostClassDecl(spec).run.flow.exactly.effectively_once.ack, 'checkpoint');
     declaresTo(native, spec);
   } finally {
     native.contextFree();

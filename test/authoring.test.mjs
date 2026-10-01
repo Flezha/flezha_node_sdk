@@ -13,9 +13,8 @@ import test from 'node:test';
 import {
   ACTIVATION_SCHEMA_VERSION,
   FlezhaError,
-  defineUnbounded,
+  defineOperator,
   defineTasklet,
-  defineBounded,
   encodeValue,
   loadNative,
   Registry,
@@ -48,7 +47,7 @@ const derivedChannels = (spec) =>
 test('a graph builds and its topology reaches the declaration', () => {
   const first = echo('first');
   const second = echo('second');
-  const spec = defineUnbounded({
+  const spec = defineOperator({
     factoryId: 'chain',
     channels: (c) => {
       c.input('in').into(first).into(second).sink();
@@ -91,7 +90,7 @@ test('keyBy declares a dynamic consumer and the key reaches the channel', () => 
       ctx.emit(input);
     },
   });
-  const spec = defineUnbounded({
+  const spec = defineOperator({
     factoryId: 'keyed',
     channels: (c) => {
       c.input('in')
@@ -114,7 +113,7 @@ test('keyBy declares a dynamic consumer and the key reaches the channel', () => 
 // advances. The refusal is the core's `topology.unservable_clock`; what is asserted here
 // is that this builder writes the fact it reads.
 test('a tasklet that folds no change declares it, and a logical clock over it is refused', () => {
-  const spec = defineUnbounded({
+  const spec = defineOperator({
     factoryId: 'unservable',
     channels: (c) =>
       c
@@ -130,7 +129,7 @@ test('a tasklet that folds no change declares it, and a logical clock over it is
 test('a refusal reaches the author under the core’s own codes', () => {
   const target = echo('target');
   const refused = refusal(() =>
-    defineUnbounded({
+    defineOperator({
       factoryId: 'edge_already_wired',
       channels: (c) => {
         const edge = c.input('in');
@@ -149,7 +148,7 @@ test('a refusal reaches the author under the core’s own codes', () => {
 // The one refusal this builder raises under a core code reads the way the core's do.
 test('a node identity collision is refused under the core’s code, in the message too', () => {
   const refused = refusal(() =>
-    defineUnbounded({
+    defineOperator({
       factoryId: 'collision',
       channels: (c) => {
         const entry = c.input('in');
@@ -166,7 +165,7 @@ test('a node identity collision is refused under the core’s code, in the messa
 test('a named edge names the channel, not the consuming node', () => {
   const first = echo('first');
   const second = echo('second');
-  const spec = defineUnbounded({
+  const spec = defineOperator({
     factoryId: 'named_edge',
     channels: (c) => {
       c.input('in').into(first).named('hop').into(second).sink();
@@ -186,7 +185,7 @@ test('a named edge names the channel, not the consuming node', () => {
 
 test('a second mention under its own node name is a second node', () => {
   const step = echo('step');
-  const spec = defineUnbounded({
+  const spec = defineOperator({
     factoryId: 'twice_over',
     channels: (c) => {
       c.input('in').into(step).into(step, 'step_again').sink();
@@ -203,7 +202,7 @@ test('two tasklets claiming one node identity are refused', () => {
   const refused = refusal(() => {
     const first = echo('same');
     const second = echo('same');
-    return defineUnbounded({
+    return defineOperator({
       factoryId: 'collide',
       channels: (c) => {
         c.input('in').branch([(edge) => edge.into(first), (edge) => edge.into(second)]);
@@ -213,32 +212,36 @@ test('two tasklets claiming one node identity are refused', () => {
   assert.equal(refused.code, 'topology.node_identity_collision');
 });
 
-// KI-122: three options, one implication. Each writes its own raw flag and the
-// core derives the acknowledgement granularity from any of them, so no order
-// of calls can clear another's.
-test('the checkpoint options compose in any order, and none clears another', () => {
-  const spec = defineUnbounded({
+test('the checkpoint acknowledgement reaches the declaration as the tree the core reads', () => {
+  const spec = defineOperator({
     factoryId: 'compose',
+    flow: {
+      exactly: {
+        effectively_once: {
+          ack: { checkpoint: { every: 4, outputs: 'at_checkpoint', maxDelayMs: 250 } },
+        },
+      },
+    },
     channels: (c) => {
-      c.effectivelyOnce();
-      c.outputsAtCheckpoint(250);
-      c.checkpointAck();
-      c.checkpointEvery(4);
       c.input('in').into(echo('p')).keyed().sink();
     },
   });
   assert.equal(validate(spec).ack_granularity, 'checkpoint');
-  const decl = toHostClassDecl(spec);
-  assert.equal(decl.checkpoint_ack, true);
-  assert.equal(decl.checkpoint_every, 4);
-  assert.equal(decl.checkpoint_outputs, 'at_checkpoint');
-  assert.equal(decl.checkpoint_max_delay_ms, 250);
+  assert.deepEqual(toHostClassDecl(spec).run, {
+    flow: {
+      exactly: {
+        effectively_once: {
+          ack: { checkpoint: { every: 4, outputs: 'at_checkpoint', max_delay_ms: 250 } },
+        },
+      },
+    },
+  });
 });
 
 test('two tasklets each terminate on their own sink, named by their node', () => {
   const a = echo('a');
   const b = echo('b');
-  const spec = defineUnbounded({
+  const spec = defineOperator({
     factoryId: 'one_sink_twice',
     channels: (c) => {
       c.input('in').branch([(edge) => edge.into(a).sink(), (edge) => edge.into(b).sink()]);
@@ -255,13 +258,13 @@ test('two tasklets each terminate on their own sink, named by their node', () =>
 });
 
 test('the sink names the channel, and the no-argument form leaves it derived', () => {
-  const named = defineUnbounded({
+  const named = defineOperator({
     factoryId: 'sink_named',
     channels: (c) => {
       c.input('in').into(echo('producer')).sink('items_output');
     },
   });
-  const derived = defineUnbounded({
+  const derived = defineOperator({
     factoryId: 'sink_derived',
     channels: (c) => {
       c.input('in').into(echo('producer')).sink();
@@ -285,7 +288,7 @@ test('the sink names the channel, and the no-argument form leaves it derived', (
 });
 
 test('a channel named by both named() and sink() is refused naming both', () => {
-  const spec = defineUnbounded({
+  const spec = defineOperator({
     factoryId: 'named_twice',
     channels: (c) => {
       c.input('in').into(echo('producer')).named('a').sink('b');
@@ -301,7 +304,7 @@ test('a channel named by both named() and sink() is refused naming both', () => 
 });
 
 test('a channel option with nothing wired after it still reaches the channel', () => {
-  const renamed = defineUnbounded({
+  const renamed = defineOperator({
     factoryId: 'trailing_named',
     channels: (c) => {
       c.input('in').into(echo('producer')).named('renamed');
@@ -312,7 +315,7 @@ test('a channel option with nothing wired after it still reaches the channel', (
     ['in', 'renamed'],
   );
   const keyed = refusal(() =>
-    defineUnbounded({
+    defineOperator({
       factoryId: 'trailing_keyed',
       channels: (c) => {
         c.input('in').into(echo('producer')).keyed();
@@ -323,7 +326,7 @@ test('a channel option with nothing wired after it still reaches the channel', (
 });
 
 test('two channels naming one sink is refused as a duplicate sink name', () => {
-  const spec = defineUnbounded({
+  const spec = defineOperator({
     factoryId: 'one_sink_two_channels',
     channels: (c) => {
       c.input('in').branch([
@@ -338,19 +341,18 @@ test('two channels naming one sink is refused as a duplicate sink name', () => {
   );
 });
 
-test('a bounded declares its lifecycle knobs beside its tasklets', () => {
-  const spec = defineBounded({
+test('a steps class declares its run and its wall-clock stop beside its tasklets', () => {
+  const spec = defineOperator({
     factoryId: 'saga',
-    loopMode: 'chained',
-    rollbackMode: 'keep_progress',
+    steps: { each: 'chained', onFailure: 'keep_progress' },
     maxDurationMs: 60_000,
     channels: (c) => c.input('in').into(echo('p')),
   });
   validate(spec);
   const decl = toHostClassDecl(spec);
-  assert.equal(decl.bounded.loop_mode, 'chained');
-  assert.equal(decl.bounded.rollback_mode, 'keep_progress');
-  assert.equal(decl.bounded.max_duration_ms, 60_000);
+  assert.deepEqual(decl.run, { steps: { each: 'chained', on_failure: 'keep_progress' } });
+  assert.equal(decl.max_duration_ms, 60_000);
+  assert.equal(decl.durable, undefined, 'an unwritten durability is the core default');
   assert.deepEqual(
     decl.tasklets.map((p) => p.name),
     ['p'],
@@ -410,7 +412,7 @@ test('a sink names the channel a forwarded frame carries', () => {
   // The channel name is what a forwarded frame carries and what selects the
   // receiving operator's entry channel, so the name an author writes on the
   // sink has to be the one that rides the wire.
-  const spec = defineUnbounded({
+  const spec = defineOperator({
     factoryId: 'named_sink',
     channels: (c) => {
       c.input('in').into(echo('relay')).sink('input');
@@ -427,7 +429,7 @@ test('a sink names the channel a forwarded frame carries', () => {
 // NODE, never from the sink it terminates on — the sink's name is the plugin's,
 // and several channels may name one sink.
 test('an unnamed edge terminating on a sink takes the producing node’s name', () => {
-  const spec = defineUnbounded({
+  const spec = defineOperator({
     factoryId: 'unnamed_sink',
     channels: (c) => {
       c.input('in').into(echo('plain')).sink();
@@ -458,7 +460,7 @@ test('an unnamed edge terminating on a sink takes the producing node’s name', 
 
 test('a held handle wired twice is one channel with two consumers', () => {
   const producer = echo('producer');
-  const spec = defineUnbounded({
+  const spec = defineOperator({
     factoryId: 'fan_out',
     channels: (c) => {
       const edge = c.input('in').into(producer);
@@ -480,7 +482,7 @@ test('branch(...) and two into(...) statements derive the identical topology', (
   const graph = (factoryId, wire) =>
     JSON.stringify(
       derivedChannels(
-        defineUnbounded({
+        defineOperator({
           factoryId,
           channels: (c) => wire(c.input('in').into(echo('producer'))),
         }),
@@ -498,7 +500,7 @@ test('branch(...) and two into(...) statements derive the identical topology', (
 });
 
 test('sink(...) returns the handle, so a consumer wires behind it', () => {
-  const spec = defineUnbounded({
+  const spec = defineOperator({
     factoryId: 'hybrid',
     channels: (c) => {
       c.input('in').into(echo('producer')).sink('hybrid_indicator').into(echo('consumer'));
@@ -522,13 +524,13 @@ test('sink(...) returns the handle, so a consumer wires behind it', () => {
 });
 
 test('response() records its link and ends the channel as a sink would, keeping the name', () => {
-  const terminal = defineUnbounded({
+  const terminal = defineOperator({
     factoryId: 'answers',
     channels: (c) => {
       c.input('in').into(echo('producer')).response();
     },
   });
-  const hybrid = defineUnbounded({
+  const hybrid = defineOperator({
     factoryId: 'answers_and_feeds',
     channels: (c) => {
       c.input('in').into(echo('producer')).response().into(echo('consumer'));
@@ -555,7 +557,7 @@ test('response() records its link and ends the channel as a sink would, keeping 
 
 test('a sink beside a response on one channel is refused as ending twice', () => {
   const error = refusal(() =>
-    defineUnbounded({
+    defineOperator({
       factoryId: 'ends_twice',
       channels: (c) => {
         c.input('in').into(echo('producer')).sink('out').response();
@@ -567,7 +569,7 @@ test('a sink beside a response on one channel is refused as ending twice', () =>
 });
 
 test('keyed() reaches the channel of a handle that also declares a sink', () => {
-  const spec = defineUnbounded({
+  const spec = defineOperator({
     factoryId: 'keyed_hybrid',
     channels: (c) => {
       c.input('in').into(echo('producer')).keyed().sink('mid').into(echo('consumer'));
@@ -578,7 +580,7 @@ test('keyed() reaches the channel of a handle that also declares a sink', () => 
 });
 
 test('a transform declared before one into(...) reaches that consumer only', () => {
-  const spec = defineUnbounded({
+  const spec = defineOperator({
     factoryId: 'per_edge_transform',
     channels: (c) => {
       const edge = c.input('in').into(echo('producer'));
@@ -604,7 +606,7 @@ test('a transform declared before one into(...) reaches that consumer only', () 
 
 test('a bare re-declared edge is a no-op, not a second edge', () => {
   const target = echo('target');
-  const spec = defineUnbounded({
+  const spec = defineOperator({
     factoryId: 'edge_redeclared_bare',
     channels: (c) => {
       const edge = c.input('in');
@@ -619,106 +621,82 @@ test('a bare re-declared edge is a no-op, not a second edge', () => {
   );
 });
 
-test('an unbounded-only builder call on a bounded operator reaches the core and is refused by its name', () => {
-  for (const [name, call] of [
-    ['topology.effectively_once_on_bounded', (c) => c.effectivelyOnce()],
-    ['topology.checkpoint_on_bounded', (c) => c.checkpointEvery(500)],
-    ['topology.correction_window_on_bounded', (c) => c.correctionWindow(60_000)],
-  ]) {
-    const error = refusal(() =>
-      defineBounded({
-        factoryId: 'w',
-        channels: (c) => {
-          call(c);
-          c.input('in').into(echo('p'));
-        },
-      }),
-    );
-    assert.deepEqual(codesOf(error), [name], error.message);
-    assert.ok(error.message.includes(name), error.message);
-  }
-});
+const forms = {
+  full: { channels: (c) => c.input('in').into(echo('p')) },
+  short: { sink: 'out', run: (input, ctx) => ctx.emit(input) },
+};
 
-test('synchronous durability is the definition field, declared by a bounded operator, refused on an unbounded one', () => {
-  const channels = (c) => {
-    assert.equal(c.syncDurability, undefined, 'the builder carries no syncDurability call');
-    c.input('in').into(echo('p'));
-  };
-  const bounded = defineBounded({ factoryId: 'sd', syncDurability: true, channels });
-  validate(bounded);
-  assert.equal(toHostClassDecl(bounded).sync_durability, true);
-
-  const error = refusal(() =>
-    defineUnbounded({ factoryId: 'sd_unbounded', syncDurability: true, channels }),
-  );
-  assert.deepEqual(codesOf(error), ['topology.sync_durability_on_unbounded'], error.message);
-});
-
-test('sleeping is a class setting of both kinds, defaulting to persistence on a bounded only', () => {
-  const channels = (c) => c.input('in').into(echo('p'));
-  const sleeps = (spec) => toHostClassDecl(spec).sleep_when_idle;
-  assert.equal(sleeps(defineBounded({ factoryId: 'w', channels })), true);
-  assert.equal(sleeps(defineBounded({ factoryId: 'w', persistent: false, channels })), false);
-  assert.equal(sleeps(defineUnbounded({ factoryId: 's', channels })), false);
-  assert.equal(sleeps(defineUnbounded({ factoryId: 's', sleepWhenIdle: true, channels })), true);
-
-  for (const define of [defineUnbounded, defineBounded]) {
-    const error = refusal(() =>
-      define({ factoryId: 'nap', persistent: false, sleepWhenIdle: true, channels }),
-    );
-    assert.deepEqual(codesOf(error), ['topology.sleep_without_persistence'], error.message);
-  }
-});
-
-test('a bounded setting on an unbounded operator is refused in either form, naming it', () => {
-  const forms = {
-    full: { channels: (c) => c.input('in').into(echo('p')) },
-    short: { sink: 'out', run: (input, ctx) => ctx.emit(input) },
-  };
-  for (const [field, value] of [
-    ['loopMode', 'per_input'],
-    ['rollbackMode', 'keep_progress'],
-    ['maxDurationMs', 60_000],
+test('a setting under a parent that does not carry it is refused naming both, in either form', () => {
+  for (const [settings, field, parent] of [
+    [{ flow: { each: 'per_input' } }, 'each', 'flow'],
+    [{ steps: { correctionMs: 5_000 } }, 'correction_ms', 'steps'],
+    [{ flow: { exactly: { at_least_once: { ack: 'checkpoint' } } } }, 'ack', 'at_least_once'],
+    [{ durable: { false: { sleepAfter: 1_000 } } }, 'sleep_after', 'false'],
   ]) {
     for (const [form, body] of Object.entries(forms)) {
-      assert.throws(
-        () => defineUnbounded({ factoryId: 'streamed', [field]: value, ...body }),
-        (error) =>
-          coded('topology.bounded_setting_on_unbounded')(error) &&
-          error.details.factory_id === 'streamed' &&
-          error.details.settings === `\`${field}\``,
-        `${field} on a ${form}-form stream`,
+      const error = refusal(() => defineOperator({ factoryId: 'misplaced', ...settings, ...body }));
+      assert.deepEqual(codesOf(error), ['topology.unknown_field'], `${field} on a ${form} form`);
+      assert.ok(
+        error.message.includes(field) && error.message.includes(`'${parent}'`),
+        error.message,
       );
     }
   }
 });
 
+test('the durability reaches the declaration as the tree, its members as the core spells them', () => {
+  const channels = (c) => c.input('in').into(echo('p'));
+  const durable = (settings) =>
+    toHostClassDecl(defineOperator({ factoryId: 'kept', ...settings, channels })).durable;
+  assert.equal(durable({}), undefined);
+  assert.equal(durable({ durable: false }), false);
+  assert.equal(durable({ steps: {}, durable: 'remote' }), 'remote');
+  assert.deepEqual(durable({ durable: { local: { sleepAfter: false } } }), {
+    local: { sleep_after: false },
+  });
+  validate(
+    defineOperator({ factoryId: 'awake', durable: { local: { sleepAfter: 2_000 } }, channels }),
+  );
+});
+
+test('a remote flow class reaches the core and is refused by its name', () => {
+  const error = refusal(() =>
+    defineOperator({ factoryId: 'remote', durable: 'remote', ...forms.full }),
+  );
+  assert.deepEqual(codesOf(error), ['topology.remote_on_flow'], error.message);
+});
+
+test('a class that names both runs, or a kind word where its run is written, is refused as its run', () => {
+  for (const [settings, value] of [
+    [{ flow: {}, steps: {} }, '{"flow":{},"steps":{}}'],
+    [{ bounded: {} }, 'bounded'],
+  ]) {
+    const error = refusal(() => defineOperator({ factoryId: 'runs', ...settings, ...forms.full }));
+    assert.deepEqual(codesOf(error), ['topology.invalid_setting'], error.message);
+    assert.ok(error.message.includes(value), error.message);
+  }
+});
+
 test('the retired wake field is refused in either form, naming it', () => {
-  const forms = {
-    full: { channels: (c) => c.input('in').into(echo('p')) },
-    short: { sink: 'out', run: (input, ctx) => ctx.emit(input) },
-  };
   for (const [form, body] of Object.entries(forms)) {
-    const error = refusal(() => defineBounded({ factoryId: 'w', wakeAfterMs: 5_000, ...body }));
+    const error = refusal(() =>
+      defineOperator({ factoryId: 'w', steps: {}, wakeAfterMs: 5_000, ...body }),
+    );
     assert.equal(error.code, 'topology.unknown_field', form);
     assert.deepEqual(error.details, { declaration: "operator 'w'", fields: '`wakeAfterMs`' });
   }
 });
 
-test('an unknown loop mode or rollback mode is refused at definition, naming the value', () => {
-  const channels = (c) => c.input('in').into(echo('p'));
-  for (const [field, value, form] of [
-    ['loopMode', 'forever', { channels }],
-    ['rollbackMode', 'sometimes', { channels }],
-    ['loopMode', 'forever', { sink: 'out', run: (input, ctx) => ctx.emit(input) }],
+test('a loop shape or failure mode outside its choice is refused at registration, naming the value', () => {
+  for (const [steps, value] of [
+    [{ each: 'forever' }, 'forever'],
+    [{ onFailure: 'sometimes' }, 'sometimes'],
   ]) {
-    assert.throws(
-      () => defineBounded({ factoryId: 'moded', [field]: value, ...form }),
-      (error) =>
-        coded('topology.invalid_mode')(error) &&
-        error.details.knob === field &&
-        error.details.value === value,
-    );
+    for (const body of Object.values(forms)) {
+      const error = refusal(() => defineOperator({ factoryId: 'moded', steps, ...body }));
+      assert.deepEqual(codesOf(error), ['topology.invalid_setting'], error.message);
+      assert.ok(error.message.includes(value), error.message);
+    }
   }
 });
 
@@ -731,7 +709,7 @@ test('an unknown loop mode or rollback mode is refused at definition, naming the
 const CODEC_CASES = member('test/fixtures/channel_codecs.txt');
 
 const codecSpec = (input = [], sink = []) =>
-  defineUnbounded({
+  defineOperator({
     factoryId: 'codecs',
     channels: (c) => {
       c.input('in', ...input)
@@ -831,7 +809,7 @@ test('an unknown codec name is refused naming the operator, the channel and the 
 
 test('a codec and a callable together are refused', () => {
   const unnamed = () =>
-    defineUnbounded({
+    defineOperator({
       factoryId: 'codecs',
       channels: (c) => {
         c.input('in')
@@ -878,7 +856,7 @@ test('two sources merge into one node, each edge applying its own mapping', () =
 });
 
 test('a tasklet output and an entry are both merge sources', () => {
-  const spec = defineUnbounded({
+  const spec = defineOperator({
     factoryId: 'merged_hop',
     channels: (c) => {
       const parsed = c.input('raw').into(echo('parse'));
@@ -900,7 +878,7 @@ test('a tasklet output and an entry are both merge sources', () => {
 test('a merge is refused by the core’s codes', () => {
   const target = echo('target');
   const refused = (channels) =>
-    codesOf(refusal(() => defineUnbounded({ factoryId: 'merge_refused', channels })));
+    codesOf(refusal(() => defineOperator({ factoryId: 'merge_refused', channels })));
 
   assert.deepEqual(
     refused((c) => c.merge().from(c.input('in'), identity).into(target)),
@@ -936,7 +914,7 @@ test('a merge is refused by the core’s codes', () => {
 });
 
 test('the router is a merge into the route_latest node, and a named one is its own node', () => {
-  const spec = defineUnbounded({
+  const spec = defineOperator({
     factoryId: 'routers',
     channels: (c) => {
       const trades = c.input('trades');
@@ -959,7 +937,7 @@ test('the router is a merge into the route_latest node, and a named one is its o
 });
 
 test('the router hands each key each document once, on that key’s own traffic', async () => {
-  const spec = defineUnbounded({
+  const spec = defineOperator({
     factoryId: 'routed',
     channels: (c) => {
       c.routeLatest(c.input('config'), c.input('trades'), (trade) => trade.symbol).into(
@@ -1010,9 +988,9 @@ const upper = (input, ctx) => ctx.emit(input.toUpperCase());
 const declared = (spec) => ({ decl: toHostClassDecl(spec), derived: validate(spec) });
 
 // Each twin is the full form: a `channels` body still declares one.
-test('an unbounded short form is its hand-written twin', () => {
-  const short = defineUnbounded({ factoryId: 'upcase', sink: 'out', codec: 'text', run: upper });
-  const twin = defineUnbounded({
+test('a flow short form is its hand-written twin', () => {
+  const short = defineOperator({ factoryId: 'upcase', sink: 'out', codec: 'text', run: upper });
+  const twin = defineOperator({
     factoryId: 'upcase',
     channels: (c) => {
       c.input('input', { codec: 'text' })
@@ -1021,20 +999,22 @@ test('an unbounded short form is its hand-written twin', () => {
     },
   });
 
-  assert.equal(short.kind, 'unbounded');
+  assert.equal(short.run, undefined);
   assert.deepEqual(declared(short), declared(twin));
 });
 
-test('a bounded short form is its hand-written once bounded', () => {
-  const short = defineBounded({
+test('a steps short form is its hand-written steps twin', () => {
+  const short = defineOperator({
     factoryId: 'place',
+    steps: {},
     sink: 'placed',
     input: 'order',
     codec: 'text',
     run: upper,
   });
-  const twin = defineBounded({
+  const twin = defineOperator({
     factoryId: 'place',
+    steps: {},
     channels: (c) => {
       c.input('order', { codec: 'text' })
         .into(defineTasklet({ name: 'place', run: upper }))
@@ -1042,22 +1022,25 @@ test('a bounded short form is its hand-written once bounded', () => {
     },
   });
 
-  assert.equal(short.kind, 'bounded');
-  assert.equal(short.bounded.loopMode, 'once');
+  assert.deepEqual(short.run, { steps: {} });
   assert.deepEqual(declared(short), declared(twin));
 });
 
-test('a bounded short form declares its loop mode as the full form does', () => {
-  const short = defineBounded({
+test('a short form takes the class settings the full form takes', () => {
+  const short = defineOperator({
     factoryId: 'chat',
+    steps: { each: 'per_input' },
+    durable: { local: { sleepAfter: 2_000 } },
+    maxDurationMs: 60_000,
     sink: 'replies',
     codec: 'text',
-    loopMode: 'per_input',
     run: upper,
   });
-  const twin = defineBounded({
+  const twin = defineOperator({
     factoryId: 'chat',
-    loopMode: 'per_input',
+    steps: { each: 'per_input' },
+    durable: { local: { sleepAfter: 2_000 } },
+    maxDurationMs: 60_000,
     channels: (c) => {
       c.input('input', { codec: 'text' })
         .into(defineTasklet({ name: 'chat', run: upper }))
@@ -1065,14 +1048,16 @@ test('a bounded short form declares its loop mode as the full form does', () => 
     },
   });
 
-  assert.equal(short.bounded.loopMode, 'per_input');
-  assert.equal(toHostClassDecl(short).bounded.loop_mode, 'per_input');
+  assert.deepEqual(toHostClassDecl(short).run, { steps: { each: 'per_input' } });
   assert.deepEqual(declared(short), declared(twin));
 });
 
-test('the unbounded operator is declared with defineUnbounded, and no defineOperator is exported', () => {
-  assert.equal(sdk.defineUnbounded, defineUnbounded);
-  assert.equal('defineOperator' in sdk, false);
+test('every operator is declared with defineOperator, the one operator export', () => {
+  assert.equal(sdk.defineOperator, defineOperator);
+  assert.deepEqual(
+    Object.keys(sdk).filter((name) => /^define.*Operator|Operator$/.test(name)),
+    ['LocalOperator', 'defineOperator'],
+  );
 });
 
 test('a short form with no sink wires its entry into the tasklet and no plugin channel', async () => {
@@ -1120,11 +1105,12 @@ test('every tasklet field a short form carries reaches its generated tasklet', (
     run: upper,
   };
 
-  for (const [define, fields] of [
-    [defineBounded, keyed],
-    [defineUnbounded, dynamic],
+  for (const [settings, fields] of [
+    [{ steps: {} }, keyed],
+    [{}, dynamic],
   ]) {
-    const node = define({ factoryId: 'fielded', sink: 'out', ...fields }).tasklets[0];
+    const node = defineOperator({ factoryId: 'fielded', sink: 'out', ...settings, ...fields })
+      .tasklets[0];
     assert.equal(node.name, 'fielded');
     for (const [field, value] of Object.entries(fields)) {
       assert.equal(node.tasklet.definition[field], value, `${field} reached the tasklet`);
@@ -1132,29 +1118,34 @@ test('every tasklet field a short form carries reaches its generated tasklet', (
   }
 });
 
-test('a field a short form does not carry is refused under the operator, naming it', () => {
-  for (const [define, field, value] of [
-    [defineUnbounded, 'persistent', false],
-    [defineUnbounded, 'effectivelyOnce', true],
-    [defineUnbounded, 'correctionWindow', 5_000],
-    [defineBounded, 'rollbackMode', 'keep_progress'],
-    [defineBounded, 'syncDurability', true],
-    [defineBounded, 'maxDurationMs', 60_000],
-    [defineUnbounded, 'name', 'other'],
-    [defineBounded, 'name', 'other'],
-    [defineUnbounded, 'kind', 'unbounded'],
-    [defineBounded, 'kind', 'bounded'],
-  ]) {
+test('a short form names its tasklet after its factory id, and a name is refused', () => {
+  for (const settings of [{}, { steps: {} }]) {
     const error = refusal(() =>
-      define({ factoryId: 'short', sink: 'out', run: upper, [field]: value }),
+      defineOperator({ factoryId: 'short', sink: 'out', run: upper, name: 'other', ...settings }),
     );
     assert.equal(error.code, 'topology.setting_on_short_form', error.message);
-    assert.deepEqual(error.details, { factory_id: 'short', fields: `\`${field}\`` });
+    assert.deepEqual(error.details, { factory_id: 'short', fields: '`name`' });
+  }
+});
+
+test('a retired class setting is refused under the operator, naming it', () => {
+  for (const field of ['persistent', 'effectivelyOnce', 'correctionWindow']) {
+    for (const body of [
+      { sink: 'out', run: upper },
+      { channels: (c) => c.input('in').into(echo('p')) },
+    ]) {
+      const error = refusal(() => defineOperator({ factoryId: 'retired', [field]: true, ...body }));
+      assert.equal(error.code, 'topology.unknown_field', error.message);
+      assert.deepEqual(error.details, {
+        declaration: "operator 'retired'",
+        fields: `\`${field}\``,
+      });
+    }
   }
 });
 
 test('a short-form key or a tasklet field beside a channels body is refused, naming it', () => {
-  for (const define of [defineUnbounded, defineBounded]) {
+  for (const settings of [{}, { steps: {} }]) {
     for (const [key, value] of [
       ['sink', 'out'],
       ['input', 'prices'],
@@ -1164,7 +1155,12 @@ test('a short-form key or a tasklet field beside a channels body is refused, nam
       ['cells', { keys: ['a'] }],
     ]) {
       const error = refusal(() =>
-        define({ factoryId: 'full', [key]: value, channels: (c) => c.input('in').into(echo('p')) }),
+        defineOperator({
+          factoryId: 'full',
+          ...settings,
+          [key]: value,
+          channels: (c) => c.input('in').into(echo('p')),
+        }),
       );
       assert.equal(error.code, 'topology.short_form_field_on_full_form', error.message);
       assert.deepEqual(error.details, { factory_id: 'full', fields: `\`${key}\`` });
@@ -1173,9 +1169,15 @@ test('a short-form key or a tasklet field beside a channels body is refused, nam
 });
 
 test('a run body beside a channels body is refused as topology.short_form_with_topology', () => {
-  for (const define of [defineUnbounded, defineBounded]) {
+  for (const settings of [{}, { steps: {} }]) {
     const error = refusal(() =>
-      define({ factoryId: 'both', sink: 'out', run: upper, channels: () => {} }),
+      defineOperator({
+        factoryId: 'both',
+        ...settings,
+        sink: 'out',
+        run: upper,
+        channels: () => {},
+      }),
     );
     assert.equal(error.code, 'topology.short_form_with_topology');
     assert.ok(error.message.includes('topology.short_form_with_topology'), error.message);
@@ -1184,8 +1186,8 @@ test('a run body beside a channels body is refused as topology.short_form_with_t
 });
 
 test('a definition with neither body is refused, naming both', () => {
-  for (const define of [defineUnbounded, defineBounded]) {
-    const error = refusal(() => define({ factoryId: 'bodiless' }));
+  for (const settings of [{}, { steps: {} }]) {
+    const error = refusal(() => defineOperator({ factoryId: 'bodiless', ...settings }));
     assert.equal(error.code, 'topology.missing_body');
     assert.equal(error.details.declaration, "operator 'bodiless'");
     assert.ok(
@@ -1197,14 +1199,15 @@ test('a definition with neither body is refused, naming both', () => {
 
 test('a definition with no factory id is refused, naming it', () => {
   for (const factoryId of [undefined, '', '  ']) {
-    const error = refusal(() => defineUnbounded({ factoryId, sink: 'out', run: upper }));
+    const error = refusal(() => defineOperator({ factoryId, sink: 'out', run: upper }));
     assert.equal(error.code, 'topology.missing_factory_id');
   }
 });
 
-test('an operator field on a tasklet is refused, naming it and defineUnbounded', () => {
+test('an operator field on a tasklet is refused, naming it and defineOperator', () => {
   for (const [field, value] of [
-    ['kind', 'unbounded'],
+    ['steps', {}],
+    ['durable', false],
     ['sink', 'out'],
     ['input', 'prices'],
     ['codec', 'text'],
@@ -1212,15 +1215,18 @@ test('an operator field on a tasklet is refused, naming it and defineUnbounded',
     const error = refusal(() => defineTasklet({ name: 'upcase', [field]: value, run: upper }));
     assert.equal(error.code, 'topology.operator_field_on_tasklet');
     assert.equal(error.details.fields, `\`${field}\``);
-    assert.ok(error.message.includes('`defineUnbounded`'), error.message);
+    assert.ok(error.message.includes('`defineOperator`'), error.message);
   }
 });
 
-test('a short form under a factory id already held is refused across kinds', () => {
+test('a short form under a factory id already held is refused across runs', () => {
   const registry = new Registry();
-  registry.add(defineUnbounded({ factoryId: 'twice', sink: 'out', run: upper }));
+  registry.add(defineOperator({ factoryId: 'twice', sink: 'out', run: upper }));
   assert.throws(
-    () => registry.add(defineBounded({ factoryId: 'twice', sink: 'twin_sink', run: upper })),
+    () =>
+      registry.add(
+        defineOperator({ factoryId: 'twice', steps: {}, sink: 'twin_sink', run: upper }),
+      ),
     (error) =>
       error.message.startsWith('topology.duplicate_factory_id') &&
       error.details.factory_id === 'twice',

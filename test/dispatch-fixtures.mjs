@@ -2,7 +2,7 @@
 // depends on, the activation the core hands out, and a declaration's refusal.
 import assert from 'node:assert/strict';
 
-import { FlezhaError, defineUnbounded, defineTasklet, validate } from '../dist/esm/index.js';
+import { FlezhaError, defineOperator, defineTasklet, validate } from '../dist/esm/index.js';
 import { Registry, answer } from '../dist/esm/dispatch.js';
 
 /**
@@ -56,7 +56,7 @@ export function spawnBridge(
  * token 7 with `bridge` for its spawns; answers that input's effect.
  */
 export async function handleOnce(bridge, body, item = {}) {
-  const spec = defineUnbounded({
+  const spec = defineOperator({
     factoryId: 'once',
     channels: (c) =>
       c

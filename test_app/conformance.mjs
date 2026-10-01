@@ -21,9 +21,8 @@ import { fileURLToPath } from 'node:url';
 import {
   ACTIVATION_SCHEMA_VERSION,
   FlezhaError,
-  defineUnbounded,
+  defineOperator,
   defineTasklet,
-  defineBounded,
   loadNative,
   Registry,
   validate,
@@ -32,7 +31,7 @@ import {
 import { ascendTo } from '../test/contract.mjs';
 import { manifest } from '../test/test-app.mjs';
 import { hybridChannel } from './fixtures.mjs';
-import { tierCommitBlockBounded } from './fixtures_bounded.mjs';
+import { tierCommitBlockSteps } from './fixtures_steps.mjs';
 import { render } from './fixtures_call.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -46,12 +45,12 @@ const SURFACES = manifest().topology_surfaces;
 
 /**
  * The two rows the fixture cites rather than re-spells. They are this app's own
- * reference twins: `commit_block_chain` is `tier_commit_block_bounded`'s
+ * reference twins: `commit_block_chain` is `tier_commit_block_steps`'s
  * topology, which is why the fixture names no steps for either.
  */
 const CITED = {
   hybrid_channel: hybridChannel,
-  commit_block_chain: tierCommitBlockBounded,
+  commit_block_chain: tierCommitBlockSteps,
 };
 
 /** The four-column refusal table, as data. */
@@ -133,60 +132,37 @@ function callStep(stream, verb, arg, wireBack) {
 }
 
 /**
- * The facts a row states before its graph is built: which class kind to
- * declare, whether it journals, whether it declares synchronous durability,
- * whether it sleeps when idle, and each tasklet's mailbox capacity, all five
- * declaration options here, not fluent calls.
+ * What a row states before its graph is built: the class settings its
+ * `class.run(<tree>)` and `class.durable(<tree>)` write, and each tasklet's
+ * mailbox capacity, which are definition fields here, not fluent calls.
  */
 function preScan(steps) {
   const mailbox = new Map();
-  let bounded = false;
-  let persistent = false;
-  let syncDurability = false;
-  let sleepWhenIdle;
+  const settings = {};
   for (const step of steps) {
     const [head, rest] = splitHead(step);
     if (rest === undefined) continue;
     const [verb, arg] = call(rest);
-    if (head === 'class') {
-      if (verb === 'bounded') bounded = true;
-      if (verb === 'persistent') persistent = true;
-      if (verb === 'sync_durability') syncDurability = true;
-      if (verb === 'sleep_when_idle') sleepWhenIdle = true;
-    } else if (verb === 'mailbox') {
-      mailbox.set(head, Number(arg));
-    }
+    if (head === 'class') Object.assign(settings, classSetting(verb, arg));
+    else if (verb === 'mailbox') mailbox.set(head, Number(arg));
   }
-  return { mailbox, bounded, persistent, syncDurability, sleepWhenIdle };
+  return { mailbox, settings };
 }
 
-/** `class.<flag>[(value)]` on the builder the declaration receives. */
-function classFlag(builder, rest) {
-  const [flag, value] = call(rest);
-  switch (flag) {
-    // Declaration options, read by `preScan`.
-    case 'persistent':
-    case 'bounded':
-    case 'sync_durability':
-    case 'sleep_when_idle':
-      return;
-    case 'effectively_once':
-      builder.effectivelyOnce();
-      return;
-    case 'checkpoint_ack':
-      builder.checkpointAck();
-      return;
-    case 'checkpoint_every':
-      builder.checkpointEvery(Number(value));
-      return;
-    case 'correction_window':
-      builder.correctionWindow(Number(value));
-      return;
-    case 'outputs_at_checkpoint':
-      builder.outputsAtCheckpoint(Number(value));
-      return;
+/**
+ * One `class.<setting>(<tree>)` as a definition writes it. The run is written
+ * as its branch key, so `"steps"` is `steps: {}` and `{"flow": {...}}` is
+ * `flow: {...}`, a misplaced member and all.
+ */
+function classSetting(verb, arg) {
+  const tree = JSON.parse(arg);
+  switch (verb) {
+    case 'run':
+      return typeof tree === 'string' ? { [tree]: {} } : tree;
+    case 'durable':
+      return { durable: tree };
     default:
-      throw new Error(`the fixture spells a class flag this interpreter does not map: ${flag}`);
+      throw new Error(`the fixture spells a class setting this interpreter does not map: ${verb}`);
   }
 }
 
@@ -196,7 +172,7 @@ function specOf(row) {
     .split(';')
     .map((step) => step.trim())
     .filter(Boolean);
-  const { mailbox, bounded, persistent, syncDurability, sleepWhenIdle } = preScan(steps);
+  const { mailbox, settings } = preScan(steps);
   const tasklets = new Map();
   const taskletFor = (role) => {
     if (!tasklets.has(role)) tasklets.set(role, palette(role, mailbox.get(role)));
@@ -291,21 +267,15 @@ function specOf(row) {
         }
         throw new Error(`the fixture spells a step this interpreter does not map: ${step}`);
       }
-      if (head === 'class') {
-        classFlag(c, rest);
-        continue;
-      }
-      // The mailbox capacity was read by `preScan` and is already on the
-      // tasklet this row wires.
-      if (call(rest)[0] === 'mailbox') continue;
+      // The class settings and the mailbox capacity were read by `preScan`.
+      if (head === 'class' || call(rest)[0] === 'mailbox') continue;
       chain(head, rest);
     }
   };
 
-  // Either kind is declared with what the row wrote, so a setting the kind
-  // does not carry reaches the core, which refuses it by name.
-  const define = bounded ? defineBounded : defineUnbounded;
-  return define({ factoryId: row.topology, persistent, syncDurability, sleepWhenIdle, channels });
+  // The tree goes as the row wrote it, so a misplaced setting reaches the
+  // core, which refuses it by name.
+  return defineOperator({ factoryId: row.topology, ...settings, channels });
 }
 
 /** The class a topology id declares — the cited twins by name, the rest by steps. */
@@ -320,9 +290,8 @@ export function specForTopology(topology) {
 /**
  * Whether a row needs a surface this builder does not carry.
  *
- * `detached` and `raw_flags` are in no builder's list: a fluent handle cannot
- * name a node nothing wired, and `outputsAtCheckpoint(ms)` cannot write the
- * flag without its delay. The fixture header states both.
+ * `detached` is in no builder's list: a fluent handle cannot name a node
+ * nothing wired. The fixture header states it.
  */
 function skipped(row) {
   return row.needs !== '-' && !SURFACES.includes(row.needs);
@@ -341,9 +310,8 @@ function derivedOf(declaration) {
 }
 
 // ---------------------------------------------------------------------------
-// The §5 short form. Node refuses a malformed declaration where `defineUnbounded`
-// or `defineBounded` runs and a duplicate factory id where the registry takes
-// the second spec, so every row this SDK can write boots for real.
+// The §5 short form. Node refuses a malformed declaration where `defineOperator`
+// runs and a duplicate factory id where the registry takes the second spec, so every row this SDK can write boots for real.
 
 /** The `shorthand(<id>|-, <sink>|-, <input>|-)[.noout|.topology]` steps of a row. */
 function shorthandSteps(row) {
@@ -373,12 +341,12 @@ function shorthandSteps(row) {
 
 /**
  * Declare one short form exactly as an author writes it: the row's first as a
- * stream, any later one as a bounded operator, so a collision crosses kinds.
+ * flow, any later one in steps, so a collision crosses runs.
  */
 function declareShorthand(declaration, index) {
-  const define = index === 0 ? defineUnbounded : defineBounded;
-  return define({
+  return defineOperator({
     factoryId: declaration.factoryId,
+    ...(index === 0 ? {} : { steps: {} }),
     sink: declaration.sink,
     input: declaration.input,
     run: declaration.noout ? () => {} : (input, ctx) => ctx.emit(input),

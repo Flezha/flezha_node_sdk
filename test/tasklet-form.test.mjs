@@ -7,9 +7,8 @@ import test, { after } from 'node:test';
 import {
   ACTIVATION_SCHEMA_VERSION,
   decodeValue,
-  defineBounded,
   defineTasklet,
-  defineUnbounded,
+  defineOperator,
   encodeValue,
   loadNative,
   toHostClassDecl,
@@ -34,8 +33,12 @@ after(() => native.contextFree());
 const utf8 = (bytes) => Buffer.from(bytes).toString('utf8');
 
 /** One operator wiring `tasklet` from `in` to the sink `out`. */
-const piped = (factoryId, tasklet, define = defineUnbounded) =>
-  define({ factoryId, channels: (c) => c.input('in').into(tasklet).sink('out') });
+const piped = (factoryId, tasklet, settings = {}) =>
+  defineOperator({
+    factoryId,
+    ...settings,
+    channels: (c) => c.input('in').into(tasklet).sink('out'),
+  });
 
 /** The effects `spec` answers for `items`, as its first tasklet's single cell. */
 async function effectsOf(spec, items, overrides = {}) {
@@ -89,7 +92,7 @@ const Returning = defineTasklet({
 });
 
 test('a value run, onTimer or compensate returns is ignored under the dispatcher', async () => {
-  const spec = piped('returning_op', Returning, defineBounded);
+  const spec = piped('returning_op', Returning, { steps: {} });
   const [input, timer] = await effectsOf(spec, [
     inputItem('hello'),
     { kind: 'timer', timerKind: 'processing_time', scheduledAt: 5n, now: 5n },
@@ -109,7 +112,7 @@ test('a value run returns is ignored under the harness', async () => {
 // --- the tasklet's settings are fields of its definition --------------------
 
 const keyedInto = (tasklet) =>
-  defineUnbounded({
+  defineOperator({
     factoryId: `keyed_${tasklet.name}`,
     channels: (c) =>
       c
@@ -269,7 +272,7 @@ test('a retired hook a definition inherits is refused as well', () => {
 
 test('a retired field on a short form is refused, naming it', () => {
   const error = refusal(() =>
-    defineUnbounded({ factoryId: 'old_short', sink: 'out', dynamicCells: {}, ...emitting }),
+    defineOperator({ factoryId: 'old_short', sink: 'out', dynamicCells: {}, ...emitting }),
   );
   assert.equal(error.code, 'topology.unknown_field');
   assert.ok(error.details.fields.includes('`dynamicCells`'), error.message);
@@ -287,7 +290,7 @@ const Customers = defineTasklet({
 });
 
 test('keyBy alone makes a tasklet dynamic, with a cell per key', async () => {
-  const spec = defineUnbounded({
+  const spec = defineOperator({
     factoryId: 'orders',
     channels: (c) =>
       c
@@ -315,7 +318,7 @@ test('keyBy alone makes a tasklet dynamic, with a cell per key', async () => {
 });
 
 test('a keyed merge makes its tasklet dynamic', () => {
-  const spec = defineUnbounded({
+  const spec = defineOperator({
     factoryId: 'detector',
     channels: (c) =>
       c
@@ -329,7 +332,7 @@ test('a keyed merge makes its tasklet dynamic', () => {
 });
 
 test('one definition takes its mode from each wiring', () => {
-  const keyed = defineUnbounded({
+  const keyed = defineOperator({
     factoryId: 'keyed_orders',
     channels: (c) =>
       c
@@ -337,7 +340,7 @@ test('one definition takes its mode from each wiring', () => {
         .keyBy((order) => order.customer)
         .into(Customers),
   });
-  const single = defineUnbounded({
+  const single = defineOperator({
     factoryId: 'all_orders',
     channels: (c) => c.input('orders').into(Customers),
   });
@@ -363,9 +366,10 @@ test('a static key set fed by keyBy is refused as topology.key_by_on_unkeyable_t
 
 // --- the short form is a tasklet's fields --------------------------------------
 
-test("a bounded short form's emitted value reaches its sink", async () => {
-  const spec = defineBounded({
+test("a steps short form's emitted value reaches its sink", async () => {
+  const spec = defineOperator({
     factoryId: 'place',
+    steps: {},
     sink: 'placed',
     input: 'order',
     codec: 'text',
@@ -380,7 +384,7 @@ test("a bounded short form's emitted value reaches its sink", async () => {
 
 test('a short form emits only through its context', async () => {
   const shortForm = (factoryId, run) =>
-    defineUnbounded({ factoryId, sink: 'out', codec: 'text', run });
+    defineOperator({ factoryId, sink: 'out', codec: 'text', run });
   const hello = [{ ...inputItem(''), payload: Buffer.from('hello') }];
   const [emitted] = await effectsOf(
     shortForm('upcase', (line, ctx) => ctx.emit(line.toUpperCase())),
@@ -405,8 +409,8 @@ test('a short form grown into its full form declares the same record and keeps i
     },
     run: (line, ctx) => ctx.change(line),
   };
-  const short = defineUnbounded({ factoryId: 'counter', input: 'ticks', codec: 'text', ...fields });
-  const full = defineUnbounded({
+  const short = defineOperator({ factoryId: 'counter', input: 'ticks', codec: 'text', ...fields });
+  const full = defineOperator({
     factoryId: 'counter',
     channels: (c) =>
       c.input('ticks', { codec: 'text' }).into(defineTasklet({ name: 'counter', ...fields })),
@@ -436,7 +440,12 @@ test('a short form grown into its full form declares the same record and keeps i
 // The tasklet's declared name is where its state is filed: a short form's is
 // its factory id, verbatim.
 test("a tasklet's durable identity is its declared name", () => {
-  const short = defineBounded({ factoryId: 'order_executor', sink: 'out', ...emitting });
+  const short = defineOperator({
+    factoryId: 'order_executor',
+    steps: {},
+    sink: 'out',
+    ...emitting,
+  });
   assert.deepEqual(
     declared(short).map((node) => node.name),
     ['order_executor'],
@@ -471,13 +480,13 @@ class InheritedHook {
 }
 
 test('a short form keeps a hook it inherits, as it keeps its own', () => {
-  const { definition } = defineUnbounded(new InheritedHook()).tasklets[0].tasklet;
+  const { definition } = defineOperator(new InheritedHook()).tasklets[0].tasklet;
   assert.equal(typeof definition.initState, 'function', 'initState reached the tasklet');
   assert.deepEqual(definition.initState(), { n: 1 });
 });
 
 test('a short form keeps a run it inherits', async () => {
-  const { tasklet } = defineUnbounded(new InheritedShortForm()).tasklets[0];
+  const { tasklet } = defineOperator(new InheritedShortForm()).tasklets[0];
   assert.deepEqual((await TaskletTestHarness.of(tasklet).input('v')).emits, [
     { value: 'v', state: { n: 1 } },
   ]);

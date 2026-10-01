@@ -11,8 +11,8 @@ const UNITS_PER_PERCENT = 10;
  * nothing because there is nothing to bring back. That is why it writes no
  * `initState`, beside `TrackPrices`, which keeps the window.
  *
- * It does two things per input, both through the context: it starts a bounded
- * operator and it emits.
+ * It does two things per input, both through the context: it starts an
+ * operator that runs in steps and it emits.
  */
 export const BuyAboveAverage = defineTasklet({
   name: 'buy_above_average',
@@ -24,7 +24,7 @@ export const BuyAboveAverage = defineTasklet({
     const quantity = Math.round(percent * UNITS_PER_PERCENT); // a stronger move buys more
 
     const order = { symbol: move.symbol, quantity };
-    ctx.spawnBounded('order_executor', order); // one bounded operator per order
+    ctx.spawnSteps('order_executor', order); // one steps operator per order
 
     ctx.emit(
       `${move.symbol} ${move.price.toFixed(4)} is ${percent.toFixed(2)}% above its average ` +

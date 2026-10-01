@@ -8,9 +8,8 @@ import test from 'node:test';
 
 import {
   ACTIVATION_SCHEMA_VERSION,
-  defineUnbounded,
+  defineOperator,
   defineTasklet,
-  defineBounded,
   loadNative,
   toHostClassDecl,
   validate,
@@ -32,8 +31,8 @@ function pinned(section) {
     .map((line) => line.slice(section.length + 1));
 }
 
-/** Every stream-side option the Node surface has a spelling for, on a class `define` declares. */
-function fullyDeclaredUnbounded(define = defineUnbounded) {
+/** Every flow option the Node surface has a spelling for. */
+function fullyDeclaredFlow() {
   const dynamic = defineTasklet({
     name: 'full_dynamic',
     idleTtlSeconds: 30,
@@ -54,16 +53,21 @@ function fullyDeclaredUnbounded(define = defineUnbounded) {
       ctx.emit(input);
     },
   });
-  return define({
+  return defineOperator({
     factoryId: 'node_decl_full',
-    persistent: true,
-    sleepWhenIdle: true,
+    description: 'every flow option',
+    flow: {
+      exactly: {
+        effectively_once: {
+          ack: { checkpoint: { every: 500, outputs: 'at_checkpoint', maxDelayMs: 50 } },
+          correctionMs: 600_000,
+          beyondWindow: 'drop',
+        },
+      },
+    },
+    durable: { local: { sleepAfter: 2_000 } },
+    maxDurationMs: 120_000,
     channels: (c) => {
-      c.effectivelyOnce();
-      c.checkpointEvery(500);
-      c.outputsAtCheckpoint(50);
-      c.correctionWindow(600_000);
-      c.beyondWindowPolicy('drop');
       c.compactAfterBytes(1_048_576);
       c.input('in')
         .retryMax(3)
@@ -83,31 +87,14 @@ function fullyDeclaredStatic() {
     cells: { keys: ['a', 'b'], cellsFor: () => ['a'] },
     run: (input, ctx) => ctx.emit(input),
   });
-  return defineUnbounded({
+  return defineOperator({
     factoryId: 'node_decl_static',
     channels: (c) => c.input('in').into(statik).sink(),
   });
 }
 
-function fullyDeclaredBounded() {
-  return defineBounded({
-    factoryId: 'node_decl_bounded',
-    loopMode: 'per_input',
-    rollbackMode: 'keep_progress',
-    maxDurationMs: 120_000,
-    syncDurability: true,
-    channels: (c) => c.input('in').into(defineTasklet({ name: 'step', run: () => {} })),
-  });
-}
-
 test('every class key the fixture pins has a Node spelling', () => {
-  // The kind splits the class keys the way cell mode splits the tasklet
-  // ones: only a bounded class carries `bounded`.
-  const emitted = new Set(
-    [fullyDeclaredUnbounded(), fullyDeclaredBounded()]
-      .map(toHostClassDecl)
-      .flatMap((decl) => Object.keys(decl)),
-  );
+  const emitted = new Set(Object.keys(toHostClassDecl(fullyDeclaredFlow())));
   const missing = pinned('class').filter((key) => !emitted.has(key));
   assert.deepEqual(
     missing,
@@ -117,7 +104,7 @@ test('every class key the fixture pins has a Node spelling', () => {
 });
 
 test('every channel key the fixture pins has a Node spelling', () => {
-  const decl = toHostClassDecl(fullyDeclaredUnbounded());
+  const decl = toHostClassDecl(fullyDeclaredFlow());
   const emitted = new Set(decl.channels.flatMap((channel) => Object.keys(channel)));
   const missing = pinned('channel').filter((key) => !emitted.has(key));
   assert.deepEqual(missing, [], `channel keys with no Node spelling: ${missing.join(', ')}`);
@@ -128,7 +115,7 @@ test('every tasklet key the fixture pins has a Node spelling', () => {
   // `idle_ttl_ms` and `max_cells`, a static one `cell_keys`, and neither
   // carries the other's.
   const emitted = new Set(
-    [fullyDeclaredUnbounded(), fullyDeclaredStatic()]
+    [fullyDeclaredFlow(), fullyDeclaredStatic()]
       .map(toHostClassDecl)
       .flatMap((decl) => decl.tasklets)
       .flatMap((tasklet) => Object.keys(tasklet)),
@@ -137,23 +124,16 @@ test('every tasklet key the fixture pins has a Node spelling', () => {
   assert.deepEqual(missing, [], `tasklet keys with no Node spelling: ${missing.join(', ')}`);
 });
 
-test('every bounded key the fixture pins has a Node spelling', () => {
-  const decl = toHostClassDecl(fullyDeclaredBounded());
-  const missing = pinned('bounded').filter((key) => !(key in decl.bounded));
-  assert.deepEqual(missing, [], `bounded keys with no Node spelling: ${missing.join(', ')}`);
-});
-
 test('the builder invents no key the core never learned', () => {
   // `deny_unknown_fields` on the core's side makes an invented key a parse
   // error naming it; catching it here names it at the source instead.
-  const stream = toHostClassDecl(fullyDeclaredUnbounded());
-  const bounded = toHostClassDecl(fullyDeclaredBounded());
+  const stream = toHostClassDecl(fullyDeclaredFlow());
   const check = (section, keys) => {
     const allowed = new Set(pinned(section));
     const extra = [...keys].filter((key) => !allowed.has(key));
     assert.deepEqual(extra, [], `${section} keys the core never learned: ${extra.join(', ')}`);
   };
-  check('class', new Set([...Object.keys(stream), ...Object.keys(bounded)]));
+  check('class', new Set(Object.keys(stream)));
   check('channel', new Set(stream.channels.flatMap((c) => Object.keys(c))));
   check(
     'tasklet',
@@ -163,19 +143,6 @@ test('the builder invents no key the core never learned', () => {
         .flatMap((p) => Object.keys(p)),
     ),
   );
-  check('bounded', new Set(Object.keys(bounded.bounded)));
-});
-
-// --- the unbounded-only keys on a bounded class -------------------------------
-//
-// One builder serves both kinds and neither drops what it recorded:
-// `flz_core::host::register::refuse_bounded_facts` is what refuses a tier,
-// checkpoint or correction key on a bounded class, by name.
-
-test('a bounded class declares every key its builder recorded, as an unbounded one does', () => {
-  const { bounded, ...declared } = toHostClassDecl(fullyDeclaredUnbounded(defineBounded));
-  assert.ok(bounded, 'a bounded class carries its bounded section');
-  assert.deepEqual(declared, toHostClassDecl(fullyDeclaredUnbounded()));
 });
 
 // --- the cross-language topology golden ------------------------------------
@@ -223,7 +190,7 @@ function hybridChannel() {
     run: (input, ctx) => ctx.emit(input),
   });
   const consumer = defineTasklet({ name: 'hybrid_consumer_tasklet', run: () => {} });
-  return defineUnbounded({
+  return defineOperator({
     factoryId: 'hybrid_channel',
     channels: (c) => {
       c.input('input').into(producer).sink('hybrid_indicator', bytes).into(consumer);
@@ -237,19 +204,20 @@ function commitBlockChain() {
     run: (input, ctx) => ctx.emit(input, { key: 'job' }),
   });
   const blockB = defineTasklet({ name: 'block_b', run: () => {} });
-  return defineBounded({
+  return defineOperator({
     factoryId: 'commit_block_chain',
+    steps: {},
     channels: (c) => {
       c.input('in').into(commitA).keyed().sink('mid', bytes).into(blockB);
     },
   });
 }
 
-test('the hybrid unbounded topology is the reference, channel for channel', () => {
+test('the hybrid flow topology is the reference, channel for channel', () => {
   assert.deepEqual(topologyLines('hybrid_channel', hybridChannel()), goldenLines('hybrid_channel'));
 });
 
-test('the structured bounded topology is the reference, channel for channel', () => {
+test('the structured steps topology is the reference, channel for channel', () => {
   assert.deepEqual(
     topologyLines('commit_block_chain', commitBlockChain()),
     goldenLines('commit_block_chain'),
@@ -261,7 +229,7 @@ test('the structured bounded topology is the reference, channel for channel', ()
 test('a merge source serialises as the core’s merge link, keyed after its mapping', () => {
   const merged = (name) => defineTasklet({ name, run: (i, ctx) => ctx.emit(i) });
   const decl = toHostClassDecl(
-    defineUnbounded({
+    defineOperator({
       factoryId: 'node_decl_merge',
       channels: (c) => {
         for (const [first, second, into] of [

@@ -8,9 +8,9 @@
 
 import { BroadcastChannel } from 'node:worker_threads';
 
-import { defineUnbounded, defineTasklet, defineBounded } from '@flezha/sdk';
+import { defineOperator, defineTasklet } from '@flezha/sdk';
 
-import { prefix } from './fixture_support.mjs';
+import { fixtureDurable, prefix } from './fixture_support.mjs';
 
 // The persisted-state family is registered from its own module.
 export * from './fixtures_state.mjs';
@@ -22,7 +22,7 @@ const DoNothing = defineTasklet({
   run: (input, ctx) => ctx.emit(input),
 });
 
-export const doNothing = defineUnbounded({
+export const doNothing = defineOperator({
   factoryId: 'do_nothing',
   channels: (c) => {
     c.input('input', { codec: 'text' }).into(DoNothing).sink('echo');
@@ -32,10 +32,49 @@ export const doNothing = defineUnbounded({
 // Echo with a declared DropNothing on its entry mailbox. `do_nothing` is the
 // merge-blocking bench factory and must not change; this keeps the round-trip
 // bench's back-pressure posture independent of it.
-export const benchEcho = defineUnbounded({
+export const benchEcho = defineOperator({
   factoryId: 'bench_echo',
   channels: (c) => {
     c.input('input', { codec: 'text' }).onFull('drop_nothing').into(DoNothing).sink('echo');
+  },
+});
+
+// -- complete_flow / chained_steps -----------------------------------------
+
+// A flow class that echoes each input on `complete_flow_out` and ends its
+// instance on `bye`, the echo of `bye` included.
+const CompleteFlow = defineTasklet({
+  name: 'complete_flow_tasklet',
+  run: (input, ctx) => {
+    if (input === 'bye') ctx.complete(input);
+    ctx.emit(input);
+  },
+});
+
+export const completeFlow = defineOperator({
+  factoryId: 'complete_flow',
+  channels: (c) => {
+    c.input('input', { codec: 'text' }).into(CompleteFlow).sink('complete_flow_out');
+  },
+});
+
+// A durable chained loop: each pass prints `chained_pass <n>` and hands the
+// next pass `n - 1` on its own channel; the pass at zero hands nothing, and
+// the empty batch ends the instance.
+const ChainedCountdown = defineTasklet({
+  name: 'chained_countdown',
+  run: (input, ctx) => {
+    console.log(`chained_pass ${input}`);
+    const n = Number.parseInt(input, 10);
+    if (n > 0) ctx.emit(String(n - 1));
+  },
+});
+
+export const chainedSteps = defineOperator({
+  factoryId: 'chained_steps',
+  steps: { each: 'chained' },
+  channels: (c) => {
+    c.input('in', { codec: 'text' }).into(ChainedCountdown).named('carry');
   },
 });
 
@@ -51,7 +90,7 @@ const CompareFilter = defineTasklet({
   },
 });
 
-export const compareFilter = defineUnbounded({
+export const compareFilter = defineOperator({
   factoryId: 'compare_filter',
   channels: (c) => {
     c.input('input', { codec: 'text' }).into(CompareFilter).sink('sink');
@@ -85,7 +124,7 @@ const passThrough = (name) => defineTasklet({ name, run: (input, ctx) => ctx.emi
 const StaticEntry = staticEntry('static_entry_tasklet');
 const StaticDownstream = passThrough('static_downstream_tasklet');
 
-export const staticCell = defineUnbounded({
+export const staticCell = defineOperator({
   factoryId: 'static_cell',
   channels: (c) => {
     c.input('input', { codec: 'text' })
@@ -101,7 +140,7 @@ const MacroStaticDownstream = passThrough('macro_static_downstream_tasklet');
 
 // The reference pipeline sugar leaves the hop unnamed and lets the sink name
 // the producing channel.
-export const sugarStaticCell = defineUnbounded({
+export const sugarStaticCell = defineOperator({
   factoryId: 'sugar_static_cell',
   channels: (c) => {
     c.input('input', { codec: 'text' })
@@ -114,7 +153,7 @@ export const sugarStaticCell = defineUnbounded({
 const MixedMacroEntry = passThrough('mixed_macro_entry_tasklet');
 const MixedHandDownstream = passThrough('mixed_hand_downstream');
 
-export const mixedOperator = defineUnbounded({
+export const mixedOperator = defineOperator({
   factoryId: 'mixed_operator',
   channels: (c) => {
     c.input('input', { codec: 'text' })
@@ -128,17 +167,16 @@ export const mixedOperator = defineUnbounded({
 // -- the §5 short forms -----------------------------------------------------
 //
 // One operator declaration each, carrying its tasklet's `run` body in place
-// of a `channels` body; the function's name is its kind. No tasklet is
-// declared beside them.
+// of a `channels` body. No tasklet is declared beside them.
 
-export const sugarDoNothing = defineUnbounded({
+export const sugarDoNothing = defineOperator({
   factoryId: 'sugar_do_nothing',
   sink: 'sugar_do_nothing_echo',
   codec: 'text',
   run: (input, ctx) => ctx.emit(input),
 });
 
-export const sugarStoreInput = defineUnbounded({
+export const sugarStoreInput = defineOperator({
   factoryId: 'sugar_store_input',
   sink: 'sugar_store_sink',
   codec: 'text',
@@ -152,7 +190,7 @@ export const sugarStoreInput = defineUnbounded({
   },
 });
 
-export const sugarNamedInput = defineUnbounded({
+export const sugarNamedInput = defineOperator({
   factoryId: 'sugar_named_input',
   sink: 'sugar_named_input_sink',
   input: 'prices',
@@ -160,9 +198,11 @@ export const sugarNamedInput = defineUnbounded({
   run: (input, ctx) => ctx.emit(input),
 });
 
-export const sugarBounded = defineBounded({
-  factoryId: 'sugar_bounded',
-  sink: 'sugar_bounded_placed',
+export const sugarSteps = defineOperator({
+  factoryId: 'sugar_steps',
+  steps: {},
+  durable: fixtureDurable(),
+  sink: 'sugar_steps_placed',
   input: 'order',
   codec: 'text',
   run: (input, ctx) => ctx.emit(input),
@@ -170,16 +210,17 @@ export const sugarBounded = defineBounded({
 
 // The one class-level setting a short form writes: one pass per message, so
 // the instance runs on after the first.
-export const sugarBoundedPerInput = defineBounded({
-  factoryId: 'sugar_bounded_per_input',
-  sink: 'sugar_bounded_per_input_out',
+export const sugarStepsPerInput = defineOperator({
+  factoryId: 'sugar_steps_per_input',
+  steps: { each: 'per_input' },
+  durable: fixtureDurable(),
+  sink: 'sugar_steps_per_input_out',
   codec: 'text',
-  loopMode: 'per_input',
   run: (input, ctx) => ctx.emit(input),
 });
 
 // No sink: the entry feeds a tasklet that only keeps state.
-export const sugarStateOnly = defineUnbounded({
+export const sugarStateOnly = defineOperator({
   factoryId: 'sugar_state_only',
   input: 'ticks',
   codec: 'text',
@@ -221,7 +262,7 @@ const HybridConsumer = defineTasklet({
   },
 });
 
-export const hybridChannel = defineUnbounded({
+export const hybridChannel = defineOperator({
   factoryId: 'hybrid_channel',
   channels: (c) => {
     c.input('input', { codec: 'text' })
@@ -256,7 +297,7 @@ const MergeLabel = defineTasklet({
   run: (input, ctx) => ctx.emit(`${input.source}:${input.payload}`),
 });
 
-export const mergedInput = defineUnbounded({
+export const mergedInput = defineOperator({
   factoryId: 'merged_input',
   channels: (c) => {
     c.merge()
@@ -276,7 +317,7 @@ export const mergedInput = defineUnbounded({
 
 const TransformLabel = passThrough('transform_label_tasklet');
 
-export const transformChain = defineUnbounded({
+export const transformChain = defineOperator({
   factoryId: 'transform_chain',
   channels: (c) => {
     c.input('trades', { codec: 'text' })
@@ -306,7 +347,7 @@ const StressB = stress('stress_b', () => ['p0']);
 const StressC = stress('stress_c', () => ['p0']);
 const StressD = stress('stress_d', () => ['p0']);
 
-export const cellStress = defineUnbounded({
+export const cellStress = defineOperator({
   factoryId: 'cell_stress',
   channels: (c) => {
     c.input('input', { codec: 'text' })
@@ -334,7 +375,7 @@ const PoisonProbe = defineTasklet({
   },
 });
 
-export const poisonProbe = defineUnbounded({
+export const poisonProbe = defineOperator({
   factoryId: 'poison_probe',
   channels: (c) => {
     c.input('input', { codec: 'text' }).retryBackoffMs(25).into(PoisonProbe).sink('out');
@@ -363,7 +404,7 @@ const WedgeProbe = defineTasklet({
   },
 });
 
-export const wedgeProbe = defineUnbounded({
+export const wedgeProbe = defineOperator({
   factoryId: 'wedge_probe',
   channels: (c) => {
     c.input('input', { codec: 'text' }).into(WedgeProbe).sink('out');
@@ -397,10 +438,10 @@ const Candle = defineTasklet({
   },
 });
 
-export const candle = defineUnbounded({
+export const candle = defineOperator({
   factoryId: 'candle',
+  flow: { exactly: { effectively_once: { correctionMs: 600_000 } } },
   channels: (c) => {
-    c.effectivelyOnce().correctionWindow(600_000);
     c.input('input', { codec: 'text' }).into(Candle).keyed().sink('sink');
   },
 });
@@ -432,7 +473,7 @@ const SessionTimeout = defineTasklet({
   },
 });
 
-export const sessionTimeout = defineUnbounded({
+export const sessionTimeout = defineOperator({
   factoryId: 'session_timeout',
   channels: (c) => {
     c.input('input', { codec: 'text' }).into(SessionTimeout).sink('kafka');
@@ -456,7 +497,7 @@ const boundedMailboxTasklet = (name) =>
   });
 
 const boundedMailbox = (policy) =>
-  defineUnbounded({
+  defineOperator({
     factoryId: `bounded_mailbox_${policy}`,
     channels: (c) => {
       c.input(`${policy}_input`, { codec: 'text' })
@@ -490,7 +531,7 @@ const PartitionRelay = defineTasklet({
   },
 });
 
-export const partitionRelay = defineUnbounded({
+export const partitionRelay = defineOperator({
   factoryId: 'partition_relay',
   channels: (c) => {
     c.input('in', { codec: 'text' }).keyBy(prefix).into(PartitionRelay).keyed().sink('input');
@@ -513,7 +554,7 @@ const DynamicCell = defineTasklet({
   },
 });
 
-export const dynamicCell = defineUnbounded({
+export const dynamicCell = defineOperator({
   factoryId: 'dynamic_cell',
   channels: (c) => {
     c.input('input', { codec: 'text' })
@@ -531,10 +572,10 @@ export const dynamicCell = defineUnbounded({
 //
 // Operators an outside caller calls and whose graph answers it through
 // `response()`: from the first tasklet, from a downstream one, and from
-// whichever of two filtered paths the input took. `call_turn` is the bounded
-// one, in fixtures_bounded.mjs.
+// whichever of two filtered paths the input took. `call_turn` is the steps
+// one, in fixtures_steps.mjs.
 
-export const callEcho = defineUnbounded({
+export const callEcho = defineOperator({
   factoryId: 'call_echo',
   channels: (c) => {
     c.input('in', { codec: 'text' }).into(passThrough('call_echo')).response();
@@ -546,7 +587,7 @@ const CallAnswer = defineTasklet({
   run: (input, ctx) => ctx.emit(`re:${input}`),
 });
 
-export const callDownstream = defineUnbounded({
+export const callDownstream = defineOperator({
   factoryId: 'call_downstream',
   channels: (c) => {
     c.input('in', { codec: 'text' }).into(passThrough('call_parse')).into(CallAnswer).response();
@@ -563,7 +604,7 @@ const CallRefuse = defineTasklet({
   run: (input, ctx) => ctx.emit(`refused:${input}`),
 });
 
-export const callSplit = defineUnbounded({
+export const callSplit = defineOperator({
   factoryId: 'call_split',
   channels: (c) => {
     const admitted = c.input('in', { codec: 'text' }).into(passThrough('call_admit'));
@@ -581,8 +622,8 @@ export const callSplit = defineUnbounded({
 // -- parts ------------------------------------------------------------------
 //
 // For an input `n` the tasklet sends the parts `1` .. `n` and then emits
-// `done:<n>` on its sink `answer`, in an unbounded operator and in a
-// `per_input` bounded one. `retry:<n>` sends its parts and then fails
+// `done:<n>` on its sink `answer`, in a flow operator and in a
+// `per_input` steps one. `retry:<n>` sends its parts and then fails
 // retryably the first time this process sees it, so the retry's parts number
 // from 0 again under the next attempt.
 
@@ -601,7 +642,7 @@ const sendParts = (input, ctx) => {
   ctx.emit(`done:${count}`);
 };
 
-export const partEcho = defineUnbounded({
+export const partEcho = defineOperator({
   factoryId: 'part_echo',
   channels: (c) => {
     c.input('in', { codec: 'text' })
@@ -611,9 +652,10 @@ export const partEcho = defineUnbounded({
   },
 });
 
-export const partEchoBounded = defineBounded({
-  factoryId: 'part_echo_bounded',
-  loopMode: 'per_input',
+export const partEchoSteps = defineOperator({
+  factoryId: 'part_echo_steps',
+  steps: { each: 'per_input' },
+  durable: fixtureDurable(),
   maxDurationMs: 600_000,
   channels: (c) => {
     c.input('in', { codec: 'text' })

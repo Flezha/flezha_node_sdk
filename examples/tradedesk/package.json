@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "The toy trader the Part 2 guides build: a price stream and a bounded order workflow.",
+  "description": "The toy trader the Part 2 guides build: a price stream and a steps order workflow.",
   "scripts": {
     "start": "node runner.mjs"
   },

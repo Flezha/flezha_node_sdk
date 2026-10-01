@@ -19,8 +19,10 @@ export interface CodecOptions {
 }
 export type TimerKind = 'event_time' | 'processing_time';
 export type BeyondWindowPolicy = 'process_as_arrival' | 'drop';
-export type LoopMode = 'once' | 'per_input' | 'chained';
-export type RollbackMode = 'all_or_nothing' | 'keep_progress';
+/** How a steps run loops: one pass, one pass per input, or each pass seeding the next. */
+export type Each = 'once' | 'per_input' | 'chained';
+/** What a failed steps pass undoes. */
+export type OnFailure = 'undo_all' | 'keep_progress';
 export type IfRunning = 'deliver' | 'error';
 
 /** How a spawn reached an instance. */
@@ -106,24 +108,22 @@ export interface Ctx<TOut = never, TState = void, TChange = never> {
   checkpoint(): void;
 
   /**
-   * End the bounded instance this tasklet runs in, with `result` as the
+   * End the instance this tasklet runs in, with `result` as the
    * result its completion reports, encoded as a sink naming no codec encodes a
    * value: bytes as they are, a string as UTF-8 and anything else as JSON;
    * `undefined` or `null` carries no result. The rest of the iteration still
    * runs and commits; once that commit is durable the instance ends instead of
-   * waiting for its next input. In a `once` bounded operator it sets the result the pass ends
+   * waiting for its next input; a flow instance first lets every Cell go
+   * idle. In a `once` steps operator it sets the result the pass ends
    * with. A second call in one item replaces the first; calls from several
    * cells in one iteration end the instance once, with the result of the
    * tasklet latest in the chain and, within it, the cell whose key sorts
    * last.
-   *
-   * An unbounded operator never completes: an unbounded tasklet calling this fails its input,
-   * without a retry, with an error beginning `CompleteOutsideBounded`.
    */
   complete(result?: unknown): void;
 
   /**
-   * Ask the controller for a bounded instance of `factoryId` with `payload` as
+   * Ask the controller for a steps instance of `factoryId` with `payload` as
    * its first input, or as one more input of the running instance an `id` names
    * under `ifRunning: 'deliver'`. Returns the handle at once: a failure comes out
    * of its reads, never out of this call. `ifRunning` without an `id` throws a
@@ -142,7 +142,7 @@ export interface Ctx<TOut = never, TState = void, TChange = never> {
    * string as UTF-8, anything else as JSON, which a `text` or `json` entry
    * reads.
    */
-  spawnBounded(factoryId: string, payload: unknown, options?: SpawnOptions): SpawnHandle;
+  spawnSteps(factoryId: string, payload: unknown, options?: SpawnOptions): SpawnHandle;
 }
 
 /** Static cell mode: a fixed key set, plus the fan-out an input belongs to. */
@@ -316,23 +316,6 @@ export interface RoutedDocument<D> {
 }
 
 export interface ChannelBuilder {
-  /** Effectively-once delivery tier. */
-  effectivelyOnce(): ChannelBuilder;
-  /**
-   * Acknowledge at the checkpoint rather than per input; the interval closes
-   * only on an explicit `ctx.checkpoint()`. Requires `effectivelyOnce()`.
-   */
-  checkpointAck(): ChannelBuilder;
-  /** Close a checkpoint interval every `n` inputs. Implies `checkpointAck()`. */
-  checkpointEvery(n: number): ChannelBuilder;
-  /**
-   * Hold outputs until the interval closes, with an optional deadline.
-   * Implies `checkpointAck()`.
-   */
-  outputsAtCheckpoint(maxDelayMs?: number): ChannelBuilder;
-  /** Late-input correction window, in milliseconds. Event-time classes. */
-  correctionWindow(ms: number): ChannelBuilder;
-  beyondWindowPolicy(policy: BeyondWindowPolicy): ChannelBuilder;
   compactAfterBytes(bytes: number): ChannelBuilder;
   /**
    * Declare a controller-fed entry channel carrying values of type `T`.
@@ -364,45 +347,96 @@ export interface ChannelBuilder {
   ): Stream<RoutedDocument<D>>;
 }
 
-export interface OperatorDefinition {
-  factoryId: string;
-  /** Whether change bytes are flushed to the per-cell WAL. Default true. */
-  persistent?: boolean;
-  /**
-   * Whether an idle instance is written out and dropped from memory until its
-   * next input. Default `persistent` for a bounded operator, false for an unbounded operator.
-   */
-  sleepWhenIdle?: boolean;
-  channels: (builder: ChannelBuilder) => void;
+/** When a flow acknowledges an input: one by one, or at the checkpoint. */
+export type Ack =
+  | 'per_input'
+  | 'checkpoint'
+  | {
+      checkpoint: {
+        /** Close an interval every `every` inputs; otherwise only `ctx.checkpoint()` closes one. */
+        every?: number;
+        /** The longest an output is held under `outputs: 'at_checkpoint'`. */
+        maxDelayMs?: number;
+        outputs?: 'as_produced' | 'at_checkpoint';
+      };
+    };
+
+/** A flow's duplicate rule. */
+export type Exactly =
+  | 'at_least_once'
+  | 'effectively_once'
+  | {
+      effectively_once: {
+        ack?: Ack;
+        /** Late-input correction window, in milliseconds. Event-time classes. */
+        correctionMs?: number;
+        beyondWindow?: BeyondWindowPolicy;
+      };
+    };
+
+export interface FlowSettings {
+  exactly?: Exactly;
+}
+
+export interface StepsSettings {
+  each?: Each;
+  onFailure?: OnFailure;
+}
+
+/** Milliseconds idle before an instance sleeps, or `false` to stay awake. */
+export type SleepAfter = number | false;
+
+/**
+ * Where an instance keeps its work: nowhere (`false`), on this node's disk
+ * (`local`, the default) or shipped to the durability backend (`remote`).
+ * Unless `sleepAfter` says otherwise a kept flow instance never sleeps and a
+ * kept steps instance sleeps after six idle hours.
+ */
+export type Durable =
+  | false
+  | 'local'
+  | 'remote'
+  | { local: { sleepAfter?: SleepAfter } }
+  | { remote: { sleepAfter?: SleepAfter } };
+
+/** The class settings every form takes but `run`, which `flow` or `steps` stands for. */
+export interface ClassSettings {
+  description?: string;
+  /** Wall-clock stop: the instance is cancelled this long after it starts. */
+  maxDurationMs?: number;
+  durable?: Durable;
 }
 
 /**
- * The §5 short form, taken by `defineUnbounded` and `defineBounded`: one
- * tasklet's fields and its `run` body in place of a `channels` body. It
- * generates an entry channel into a tasklet named `factoryId`, and that
- * tasklet's output into the `sink` plugin channel when one is written. Every
- * class-level setting stays at its default, but a bounded operator's `loopMode`, which
- * `defineBounded` also takes here; any other class-level setting is the full
- * form.
+ * How the class runs: as a flow (the default) or in steps, written as the
+ * branch itself, since a short form's `run` is its tasklet body.
  */
-export interface ShortFormDefinition<TIn, TOut, TState, TChange> extends Omit<
+export type RunSettings =
+  { flow?: FlowSettings; steps?: never } | { steps: StepsSettings; flow?: never };
+
+export type OperatorSettings = ClassSettings & RunSettings;
+
+export type OperatorDefinition = OperatorSettings & {
+  factoryId: string;
+  channels: (builder: ChannelBuilder) => void;
+};
+
+/**
+ * The §5 short form, taken by `defineOperator`: one tasklet's fields and its
+ * `run` body in place of a `channels` body, with the class settings the full
+ * form takes. It generates an entry channel into a tasklet named `factoryId`,
+ * and that tasklet's output into the `sink` plugin channel when one is written.
+ */
+export type ShortFormDefinition<TIn, TOut, TState, TChange> = Omit<
   TaskletDefinition<TIn, TOut, TState, TChange>,
   'name'
-> {
-  factoryId: string;
-  /** The plugin sink the tasklet's output reaches. Absent declares none. */
-  sink?: string;
-  /** The generated entry channel's name. Defaults to `input`. */
-  input?: string;
-  /** The generated entry channel's codec, as `c.input(name, { codec })` takes it. */
-  codec?: ChannelCodec;
-}
-
-/** The definition `defineUnbounded` takes, and a bounded operator's own options. */
-export interface BoundedDefinition extends OperatorDefinition {
-  loopMode?: LoopMode;
-  rollbackMode?: RollbackMode;
-  maxDurationMs?: number;
-  /** Synchronous remote durability. */
-  syncDurability?: boolean;
-}
+> &
+  OperatorSettings & {
+    factoryId: string;
+    /** The plugin sink the tasklet's output reaches. Absent declares none. */
+    sink?: string;
+    /** The generated entry channel's name. Defaults to `input`. */
+    input?: string;
+    /** The generated entry channel's codec, as `c.input(name, { codec })` takes it. */
+    codec?: ChannelCodec;
+  };

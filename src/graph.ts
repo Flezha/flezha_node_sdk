@@ -172,9 +172,9 @@ function taskletJson(spec: ClassSpec, node: TaskNode, keyed: Set<number>): Recor
     clock: clockOf(node),
     mailbox_capacity: def.mailboxCapacity ?? 1024,
     // A tasklet that folds no change has the empty Change type, so a logical
-    // clock over it would never advance; a class that journals nothing has it
+    // clock over it would never advance; a class that keeps nothing has it
     // for every tasklet.
-    change_is_nochange: !spec.persistent || def.applyChange === undefined,
+    change_is_nochange: spec.durable === false || def.applyChange === undefined,
     schema_version: def.schemaVersion ?? 1,
     min_readable_schema_version: def.minReadableSchemaVersion,
   });
@@ -189,30 +189,15 @@ export function toHostClassDecl(spec: ClassSpec): Record<string, unknown> {
   const keyed = keyedConsumers(spec);
   return compact({
     factory_id: spec.factoryId,
-    persistent: spec.persistent,
-    sleep_when_idle: spec.sleepWhenIdle,
+    description: spec.description,
+    max_duration_ms: spec.maxDurationMs,
+    run: spec.run,
+    durable: spec.durable,
     sdk_lang: SDK_LANG_NODE,
     sdk_version: SDK_VERSION,
     change_format_id: FORMAT_ID_MSGPACK,
-    // Every key for either kind: the core judges each kind's settings and
-    // refuses one the kind does not carry by name.
-    effectively_once: spec.effectivelyOnce,
-    checkpoint_ack: spec.checkpointAck,
-    checkpoint_every: spec.checkpointEvery,
-    checkpoint_outputs: spec.checkpointOutputs,
-    checkpoint_max_delay_ms: spec.checkpointMaxDelayMs,
-    correction_window_ms: spec.correctionWindowMs,
-    beyond_window_policy: spec.beyondWindowPolicy,
     compact_after_bytes: spec.compactAfterBytes,
-    sync_durability: spec.syncDurability,
     channels: spec.channels.map(channelJson),
     tasklets: spec.tasklets.map((node) => taskletJson(spec, node, keyed)),
-    bounded: spec.bounded
-      ? compact({
-          loop_mode: spec.bounded.loopMode,
-          rollback_mode: spec.bounded.rollbackMode,
-          max_duration_ms: spec.bounded.maxDurationMs,
-        })
-      : undefined,
   });
 }

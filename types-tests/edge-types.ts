@@ -12,7 +12,7 @@
  * at registration and covered by `test/authoring.test.mjs`.
  */
 
-import { defineUnbounded, defineTasklet, defineBounded, type Ctx } from '../src/index.js';
+import { defineOperator, defineTasklet, type Ctx } from '../src/index.js';
 
 interface Trade {
   symbol: string;
@@ -64,14 +64,14 @@ const Count = defineTasklet({
 
 // The topology this is all about: it compiles, and every refusal below is a
 // deviation from it.
-export const wellTyped = defineUnbounded({
+export const wellTyped = defineOperator({
   factoryId: 'well_typed',
   channels: (c) => {
     c.input<Trade>('trades').into(Ohlc).into(Publish).sink();
   },
 });
 
-export const refusals = defineUnbounded({
+export const refusals = defineOperator({
   factoryId: 'refusals',
   channels: (c) => {
     // A producer wired to a consumer whose declared input it does not satisfy.
@@ -174,7 +174,7 @@ const NoOutput = defineTasklet({
   },
 });
 
-export const moreRefusals = defineUnbounded({
+export const moreRefusals = defineOperator({
   factoryId: 'more_refusals',
   channels: (c) => {
     c.input<Trade>('j').branch([
@@ -186,16 +186,17 @@ export const moreRefusals = defineUnbounded({
 });
 
 // The §5 short form: one tasklet's fields and its `run` body in place of a
-// `channels` body, at the function whose name is its kind.
-export const shortForm = defineUnbounded({
+// `channels` body, with the class settings the full form takes.
+export const shortForm = defineOperator({
   factoryId: 'short_form',
   sink: 'out',
   codec: 'text',
   run: (line: string, ctx: Ctx<string>) => ctx.emit(line.toUpperCase()),
 });
 
-export const statefulShortForm = defineBounded({
+export const statefulShortForm = defineOperator({
   factoryId: 'stateful_short_form',
+  steps: {},
   initState: () => ({ seen: [] as string[] }),
   applyChange: (state, change: string) => {
     state.seen.push(change);
@@ -208,41 +209,50 @@ export const statefulShortForm = defineBounded({
 });
 
 // @ts-expect-error a short form carries its body in place of a topology body, never beside one
-defineUnbounded({ factoryId: 'both', run: quiet, channels: () => {} });
-
-// @ts-expect-error the kind is the function's own name, never a field
-defineBounded({ factoryId: 'kinded', kind: 'bounded', run: quiet });
+defineOperator({ factoryId: 'both', run: quiet, channels: () => {} });
 
 // @ts-expect-error a short form's tasklet is named after its `factoryId`
-defineUnbounded({ factoryId: 'named', name: 'other', run: quiet });
+defineOperator({ factoryId: 'named', name: 'other', run: quiet });
 
-// A bounded short form writes its loop mode, the one class-level setting it carries.
-export const loopedShortForm = defineBounded({
+// A short form takes the class settings the full form takes.
+export const loopedShortForm = defineOperator({
   factoryId: 'looped',
-  loopMode: 'per_input',
+  steps: { each: 'per_input', onFailure: 'keep_progress' },
+  durable: { local: { sleepAfter: 2_000 } },
   run: quiet,
 });
 
-// @ts-expect-error any other class-level setting is the full form
-defineBounded({ factoryId: 'rolled', rollbackMode: 'keep_progress', run: quiet });
+// @ts-expect-error a class runs as a flow or in steps, never both
+defineOperator({ factoryId: 'both_runs', flow: {}, steps: {}, run: quiet });
 
-// @ts-expect-error `forever` is not a loop mode
-defineBounded({ factoryId: 'forever', loopMode: 'forever', run: quiet });
+// @ts-expect-error `forever` is not a loop shape
+defineOperator({ factoryId: 'forever', steps: { each: 'forever' }, run: quiet });
 
-// @ts-expect-error a stream has no loop mode
-defineUnbounded({ factoryId: 'streamed', loopMode: 'per_input', run: quiet });
+// @ts-expect-error a flow has no loop shape: `each` belongs under `steps`
+defineOperator({ factoryId: 'streamed', flow: { each: 'per_input' }, run: quiet });
 
-// @ts-expect-error retry is the edge's `retryMax`, never a bounded setting
-defineBounded({ factoryId: 'retried', retryAttempts: 0, channels: () => {} });
+// @ts-expect-error the acknowledgement belongs under `effectively_once`
+defineOperator({ factoryId: 'acked', flow: { exactly: { at_least_once: { ack: 'checkpoint' } } }, run: quiet });
 
-export const syncDurable = defineBounded({
-  factoryId: 'sync_durable',
-  syncDurability: true,
+// @ts-expect-error an instance that keeps nothing has nothing to sleep with
+defineOperator({ factoryId: 'dreaming', durable: { false: { sleepAfter: 1_000 } }, run: quiet });
+
+export const remoteEffectivelyOnce = defineOperator({
+  factoryId: 'remote_eo',
+  flow: {
+    exactly: {
+      effectively_once: { ack: { checkpoint: { every: 500 } }, correctionMs: 60_000 },
+    },
+  },
+  durable: { remote: { sleepAfter: false } },
   channels: (c) => {
-    // @ts-expect-error synchronous durability is the definition's field, never a builder call
-    c.syncDurability();
+    // @ts-expect-error the tier is a class setting, never a builder call
+    c.effectivelyOnce();
   },
 });
+
+// @ts-expect-error retry is the edge's `retryMax`, never a class setting
+defineOperator({ factoryId: 'retried', steps: {}, retryAttempts: 0, channels: () => {} });
 
 // @ts-expect-error a tasklet carries no sink; the short form is an operator
 defineTasklet({ name: 'sinking', sink: 'out', run: quiet });
@@ -266,7 +276,7 @@ defineTasklet({ name: 'async_returning', run: async (trade: Trade) => trade });
 defineTasklet({ name: 'by_reference', run: upper });
 
 // @ts-expect-error a short form's `run` is a tasklet's
-defineUnbounded({ factoryId: 'returning_short', sink: 'out', run: upper });
+defineOperator({ factoryId: 'returning_short', sink: 'out', run: upper });
 
 // @ts-expect-error `onTimer` returns nothing either
 defineTasklet({ name: 'returning_timer', run: quiet, onTimer: (firing) => firing.scheduledAt });

@@ -1,7 +1,7 @@
 // A cell belongs to one operator.
 //
 // One registered class serves every operator of its factory on a runner, such
-// as each instance of a bounded operator or each partition of a stream, and
+// as each instance of a steps operator or each partition of a stream, and
 // each has cells of its own under the same tasklet and cell key. Every
 // dispatch path that reads or writes a cell's state is driven here with two
 // operators side by side. The harness keeps one cell of its own, so its
@@ -13,7 +13,7 @@ import {
   ACTIVATION_SCHEMA_VERSION,
   decodeValue,
   defineTasklet,
-  defineUnbounded,
+  defineOperator,
   encodeValue,
   loadNative,
 } from '../dist/esm/index.js';
@@ -38,7 +38,7 @@ const Kept = defineTasklet({
   compensate: (_outputs, ctx) => ctx.emit([...ctx.state.seen]),
 });
 
-const KeptOperator = defineUnbounded({
+const KeptOperator = defineOperator({
   factoryId: 'kept_operator',
   channels: (c) => c.input('input').into(Kept).sink('out', { codec: 'msgpack' }),
 });

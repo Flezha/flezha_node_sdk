@@ -1,4 +1,4 @@
-import { defineBounded } from '@flezha/sdk';
+import { defineOperator } from '@flezha/sdk';
 
 import { ConfirmFill } from './confirm_fill.mjs';
 import { PlaceOrder } from './place_order.mjs';
@@ -6,10 +6,10 @@ import { RecordOrder } from './record_order.mjs';
 import { ReserveFunds } from './reserve_funds.mjs';
 
 /**
- * The desk's bounded operator: one instance per order, which runs its steps
+ * The desk's steps operator: one instance per order, which runs its steps
  * once and then ends.
  *
- * A bounded operator declares its steps the way an unbounded operator declares
+ * A steps operator declares its steps the way a flow operator declares
  * its graph, on the same builder, and the controller schedules, restarts and
  * relocates it in the same way. What differs is the lifecycle: each step's
  * output is written down as it commits, so an instance that is interrupted
@@ -35,8 +35,9 @@ import { ReserveFunds } from './reserve_funds.mjs';
  * which `flz operator info` shows. Nothing names a channel either, so each one
  * carries the name of the step that produces it.
  */
-export default defineBounded({
+export default defineOperator({
   factoryId: 'order_executor',
+  steps: {},
   channels: (c) => {
     c.input('order')
       .into(ReserveFunds) // step one

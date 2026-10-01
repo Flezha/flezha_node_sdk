@@ -9,7 +9,7 @@
  * a rejected promise and an encoding failure all reach the same guard.
  */
 
-import { applyTransforms, isStructuredBounded } from './authoring.js';
+import { applyTransforms, runsInSteps } from './authoring.js';
 import type { ChannelSpec, ClassSpec, ConsumerEdge, TaskNode } from './authoring.js';
 import { decodeValue, encodeValue, fromStateJson, toStateJson } from './codec.js';
 import { Invocation, NO_ITEM, type CoreBridge } from './ctx.js';
@@ -268,14 +268,12 @@ async function runWork(
           // This node's own edge off the channel: a transform chain declared
           // before one `into` belongs to that consumer and to no other. It is
           // evaluated here only for a payload that reached us untransformed —
-          // an entry payload, whose producer is the wire, or a bounded operator
-          // stage's released value. An unbounded producer evaluated it as its
+          // an entry payload, whose producer is the wire, or a steps operator
+          // stage's released value. A flow producer evaluated it as its
           // activation completed, and evaluating it again would compose the
           // chain with itself.
           const untransformed =
-            channel === undefined ||
-            channel.kind === 'entry' ||
-            isStructuredBounded(registered.spec);
+            channel === undefined || channel.kind === 'entry' || runsInSteps(registered.spec);
           const edge = untransformed
             ? channel?.consumers.find((each) => each.tasklet === node.index)
             : undefined;

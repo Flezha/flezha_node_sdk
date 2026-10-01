@@ -1,17 +1,18 @@
-import { defineBounded } from '@flezha/sdk';
+import { defineOperator } from '@flezha/sdk';
 
 import { Deliver } from './deliver.mjs';
 import { Reply } from './reply.mjs';
 
 /**
- * One conversation: a bounded operator that runs one turn per message it is
+ * One conversation: an operator that runs in steps, one turn per message it is
  * sent, for as long as the session lasts. Every session is an instance of its
  * own, with its own state.
  */
-export default defineBounded({
+export default defineOperator({
   factoryId: 'agent',
-  loopMode: 'per_input', // one turn per message
-  rollbackMode: 'keep_progress', // a failed turn fails alone
+  // one turn per message; a failed turn fails alone
+  steps: { each: 'per_input', onFailure: 'keep_progress' },
+  durable: { local: { sleepAfter: 10_000 } }, // an idle session sleeps after 10 s
   channels: (c) => {
     c.input('turn', { codec: 'text' })
       .into(Reply)

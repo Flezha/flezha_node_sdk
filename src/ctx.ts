@@ -2,14 +2,14 @@
  * The invocation context: every deterministic effect a handler is allowed.
  *
  * The context accumulates one item's effects — recorded changes, outputs,
- * timer operations, the checkpoint flag, a request to end the bounded operator — and
+ * timer operations, the checkpoint flag, a request to end the steps operator — and
  * the dispatcher turns them into the `ItemEffect` the core folds. Nothing here
  * reaches the wire on its own; an emit is a value in a list until the
  * completion carries it.
  */
 
 import { encodeValue, plainPayload } from './codec.js';
-import { applyTransforms, isStructuredBounded, recordsEffects } from './authoring.js';
+import { applyTransforms, runsInSteps, recordsEffects } from './authoring.js';
 import type { ChannelSpec, ClassSpec, ConsumerEdge, TaskNode } from './authoring.js';
 import type {
   Native,
@@ -207,12 +207,12 @@ export class Invocation implements Ctx<unknown, unknown, unknown> {
         : flezhaError('runtime.no_output_channel', { tasklet: this.input.node.name });
     }
     for (const channel of targets) {
-      // A channel with no consumer releases nothing on the edge path: on a
-      // bounded operator that is the plugin-bound terminal, and seeding the next stage
-      // from it would hand the driver a terminal output.
-      if (isStructuredBounded(this.input.spec)) {
-        const edge = channel.consumers[0];
-        if (edge) this.outputs.push(this.boundedOutput(channel, edge, value));
+      // In steps a value rides the edge path to its first consumer, and an
+      // inter-tasklet terminal's value to the core as the pass's handoff (a
+      // chained loop's carry); a plugin-bound terminal releases nothing there.
+      if (runsInSteps(this.input.spec)) {
+        const consumer = channel.consumers[0]?.tasklet ?? this.handoffProducer(channel);
+        if (consumer !== undefined) this.outputs.push(this.stepsOutput(channel, consumer, value));
       } else {
         for (const edge of channel.consumers) {
           this.outputs.push(...this.edgeOutputs(channel, edge, value, options));
@@ -243,11 +243,16 @@ export class Invocation implements Ctx<unknown, unknown, unknown> {
     );
   }
 
-  private boundedOutput(channel: ChannelSpec, edge: ConsumerEdge, value: unknown): NativeOutput {
+  /** The producer of an inter-tasklet channel nothing consumes; the core reads no consumer there. */
+  private handoffProducer(channel: ChannelSpec): number | undefined {
+    return channel.kind === 'inter_task' && channel.sink === undefined ? channel.producer : undefined;
+  }
+
+  private stepsOutput(channel: ChannelSpec, consumer: number, value: unknown): NativeOutput {
     return {
       target: 'edge',
       channel: channel.index,
-      consumer: edge.tasklet,
+      consumer,
       pluginChannel: undefined,
       key: undefined,
       eventTime: undefined,
@@ -326,7 +331,7 @@ export class Invocation implements Ctx<unknown, unknown, unknown> {
   /**
    * Output identity for one plugin frame, appended after the user's metadata.
    * Written only when the class records no effects: under the tier, and for a
-   * durable bounded operator, the controller derives the identity from the durable
+   * durable steps operator, the controller derives the identity from the durable
    * effect record, and a second answer here would contradict it. The ordinal
    * advances on every plugin output, stamped or not, so hosts of one topology
    * agree on the sequence.
@@ -384,11 +389,11 @@ export class Invocation implements Ctx<unknown, unknown, unknown> {
         : plainPayload(result, `tasklet '${this.input.node.name}'`);
   }
 
-  spawnBounded(factoryId: string, payload: unknown, options: SpawnOptions = {}): SpawnHandle {
+  spawnSteps(factoryId: string, payload: unknown, options: SpawnOptions = {}): SpawnHandle {
     const { id, ifRunning } = options;
     if (ifRunning !== undefined && !id) {
       throw new TypeError(
-        `${this.input.node.name}: spawnBounded was given ifRunning without an id; a spawn ` +
+        `${this.input.node.name}: spawnSteps was given ifRunning without an id; a spawn ` +
           'without an id always starts a new instance, so pass an id or leave ifRunning out',
       );
     }

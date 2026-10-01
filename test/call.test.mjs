@@ -9,7 +9,7 @@ import {
   ACTIVATION_SCHEMA_VERSION,
   FlezhaError,
   defineTasklet,
-  defineUnbounded,
+  defineOperator,
   loadNative,
   toHostClassDecl,
   validate,
@@ -31,7 +31,7 @@ const b64 = (bytes) => Buffer.from(bytes).toString('base64');
 /** A caller whose `ask` channel calls with `codec`, the outcome fed back into `asker`. */
 function caller(codec) {
   const Asker = echo('asker');
-  return defineUnbounded({
+  return defineOperator({
     factoryId: 'caller',
     channels: (c) => {
       c.input('in', { codec: 'text' })
@@ -79,7 +79,7 @@ test('call closes its chain with the call link and declares <channel>.response',
 });
 
 test('a call to a named instance records its target and create true', () => {
-  const spec = defineUnbounded({
+  const spec = defineOperator({
     factoryId: 'named_call',
     channels: (c) => {
       const asked = c.input('in').into(echo('asker'));
@@ -102,7 +102,7 @@ test('a call to a named instance records its target and create true', () => {
 test('a call on an entry channel is refused as a sink on one is', () => {
   assert.throws(
     () =>
-      defineUnbounded({
+      defineOperator({
         factoryId: 'entry_call',
         channels: (c) => {
           c.input('in').call('pricing', { deadlineMs: 500 });

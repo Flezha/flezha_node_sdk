@@ -11,7 +11,7 @@ import type { ChannelCodec } from './types.js';
  * The operator a `call` reaches: an instance (or a partition group, whose
  * member the request's key chooses) by its id, or an instance of a factory —
  * after a `keyBy`, the one whose id is the request's key, started with the
- * request unless `create` is false; without one, a new bounded instance per
+ * request unless `create` is false; without one, a new steps instance per
  * call. `channel` names the callee's entry channel; its first when absent.
  */
 export type CallTarget =

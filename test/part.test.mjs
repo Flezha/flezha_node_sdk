@@ -8,9 +8,8 @@ import test from 'node:test';
 import {
   ACTIVATION_SCHEMA_VERSION,
   FlezhaError,
-  defineBounded,
   defineTasklet,
-  defineUnbounded,
+  defineOperator,
   loadNative,
 } from '../dist/esm/index.js';
 import { answer } from '../dist/esm/dispatch.js';
@@ -57,8 +56,8 @@ test("each item's parts carry the token, the item's index and the sink's encodin
   const seen = [];
   const bridge = partBridge();
   bridge.part = (token, item, payload) => seen.push(`${token}/${item}/${utf8(payload)}`);
-  const spec = defineUnbounded({
-    factoryId: 'part_unbounded',
+  const spec = defineOperator({
+    factoryId: 'part_flow',
     channels: (c) => c.input('in').into(Parts(seen)).sink('answer'),
   });
   const { effects } = await run(spec, [inputItem(2), inputItem(1)], bridge);
@@ -79,7 +78,7 @@ test("each item's parts carry the token, the item's index and the sink's encodin
 
 test('a timer handler sends a part under its own item', async () => {
   const bridge = partBridge();
-  const spec = defineUnbounded({
+  const spec = defineOperator({
     factoryId: 'part_timer',
     channels: (c) => c.input('in').into(Parts([])).sink('answer'),
   });
@@ -91,12 +90,12 @@ test('a timer handler sends a part under its own item', async () => {
   assert.deepEqual(bridge.parts, ['7/1/{"fired":5}']);
 });
 
-test('a per_input bounded stage sends its parts as an unbounded tasklet does', async () => {
+test('a per_input steps stage sends its parts as a flow tasklet does', async () => {
   const seen = [];
   const bridge = partBridge();
-  const spec = defineBounded({
-    factoryId: 'part_bounded',
-    loopMode: 'per_input',
+  const spec = defineOperator({
+    factoryId: 'part_steps',
+    steps: { each: 'per_input' },
     channels: (c) => c.input('in').into(Parts(seen)).sink('answer'),
   });
   const { effects } = await run(spec, [inputItem(2)], bridge);
@@ -109,7 +108,7 @@ test('a refused part fails the invocation as any throw does', async () => {
   const details = JSON.stringify({ tasklet: 'parts', operator: 'op-1', channel: 'answer' });
   const refusal = () =>
     FlezhaError.fromDocument(loadNative().errorDocument('part.no_sink', details));
-  const spec = defineUnbounded({
+  const spec = defineOperator({
     factoryId: 'part_refused',
     channels: (c) => c.input('in').into(Parts([])).sink('answer'),
   });

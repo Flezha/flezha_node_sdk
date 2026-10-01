@@ -17,24 +17,20 @@ import {
   type Response,
 } from './call.js';
 import { CHANNEL_CODECS, channelDecoder, channelEncoder, type Codec } from './codec.js';
-import { channelsOf, defineTasklet, type EitherForm } from './definition.js';
+import { channelsOf, defineTasklet, settingsOf, type EitherForm } from './definition.js';
 import { flezhaError } from './errors.js';
 import { latestRouter, type RouterInput } from './route-latest.js';
 import {
-  type BeyondWindowPolicy,
   type ChannelBuilder,
   type ChannelCodec,
   type CodecOptions,
-  type LoopMode,
   type Merge,
   type OperatorDefinition,
   type OverflowPolicy,
-  type RollbackMode,
   type Tasklet,
   type RoutedDocument,
   type ShortFormDefinition,
   type Stream,
-  type BoundedDefinition,
 } from './types.js';
 
 /** A tasklet as the graph holds it, with its position in the declaration. */
@@ -126,31 +122,20 @@ export interface ChannelSpec {
   callEnd?: Omit<ConsumerEdge, 'tasklet'>;
 }
 
-export interface BoundedSpec {
-  loopMode: LoopMode;
-  rollbackMode: RollbackMode;
-  maxDurationMs?: number;
-}
-
 /** Everything the graph knows about one declared class. */
 export interface ClassSpec {
   factoryId: string;
-  kind: 'unbounded' | 'bounded';
-  persistent: boolean;
-  sleepWhenIdle: boolean;
-  effectivelyOnce: boolean;
-  /** The author's explicit `checkpointAck()`; the core derives the granularity. */
-  checkpointAck: boolean;
-  checkpointEvery?: number;
-  checkpointOutputs: 'as_produced' | 'at_checkpoint';
-  checkpointMaxDelayMs?: number;
-  correctionWindowMs?: number;
-  beyondWindowPolicy: BeyondWindowPolicy;
+  description?: string;
+  maxDurationMs?: number;
+  /**
+   * The tree's `run` and `durable` as the host declaration writes them,
+   * absent when unwritten. The core reads and judges both.
+   */
+  run?: unknown;
+  durable?: unknown;
   compactAfterBytes?: number;
-  syncDurability: boolean;
   tasklets: TaskNode[];
   channels: ChannelSpec[];
-  bounded?: BoundedSpec;
 }
 
 /** One tasklet for every router, so two unnamed routers are one node. */
@@ -175,52 +160,11 @@ interface PendingEdge {
 class Builder implements ChannelBuilder {
   readonly tasklets: TaskNode[] = [];
   readonly channels: ChannelSpec[] = [];
-  effectivelyOnceFlag = false;
-  checkpointAckFlag = false;
-  checkpointEveryValue?: number;
-  checkpointOutputsValue: 'as_produced' | 'at_checkpoint' = 'as_produced';
-  checkpointMaxDelayMsValue?: number;
-  correctionWindowMsValue?: number;
-  beyondWindowPolicyValue: BeyondWindowPolicy = 'process_as_arrival';
   compactAfterBytesValue?: number;
   /** The next merge's group id, which ties its sources together across channels. */
   mergeGroups = 0;
 
   constructor(readonly factoryId: string) {}
-
-  effectivelyOnce(): ChannelBuilder {
-    this.effectivelyOnceFlag = true;
-    return this;
-  }
-
-  // Each of the three writes its own raw flag and nothing else: any checkpoint
-  // key implies the acknowledgement granularity, and the core is where that is
-  // stated.
-  checkpointAck(): ChannelBuilder {
-    this.checkpointAckFlag = true;
-    return this;
-  }
-
-  checkpointEvery(n: number): ChannelBuilder {
-    this.checkpointEveryValue = n;
-    return this;
-  }
-
-  outputsAtCheckpoint(maxDelayMs?: number): ChannelBuilder {
-    this.checkpointOutputsValue = 'at_checkpoint';
-    if (maxDelayMs !== undefined) this.checkpointMaxDelayMsValue = maxDelayMs;
-    return this;
-  }
-
-  correctionWindow(ms: number): ChannelBuilder {
-    this.correctionWindowMsValue = ms;
-    return this;
-  }
-
-  beyondWindowPolicy(policy: BeyondWindowPolicy): ChannelBuilder {
-    this.beyondWindowPolicyValue = policy;
-    return this;
-  }
 
   compactAfterBytes(bytes: number): ChannelBuilder {
     this.compactAfterBytesValue = bytes;
@@ -358,7 +302,7 @@ class Builder implements ChannelBuilder {
   }
 }
 
-/** Where an unbounded operator's values come from: an entry channel, or a tasklet. */
+/** Where a flow operator's values come from: an entry channel, or a tasklet. */
 type Source = { source: 'entry'; channel: ChannelSpec } | { source: 'tasklet'; node: TaskNode };
 
 class EdgeStream<T> implements Stream<T> {
@@ -644,82 +588,20 @@ function applyPending(channel: ChannelSpec, pending: PendingEdge): void {
 }
 
 /**
- * Define an unbounded operator from its channels graph, or, as the §5 short form,
- * from one tasklet's fields and `run` body.
+ * Define an operator from its channels graph, or, as the §5 short form, from
+ * one tasklet's fields and `run` body. Either form takes the class settings.
  */
-export function defineUnbounded(definition: OperatorDefinition): ClassSpec;
-export function defineUnbounded<TIn, TOut = never, TState = void, TChange = never>(
+export function defineOperator(definition: OperatorDefinition): ClassSpec;
+export function defineOperator<TIn, TOut = never, TState = void, TChange = never>(
   definition: ShortFormDefinition<TIn, TOut, TState, TChange>,
 ): ClassSpec;
-export function defineUnbounded(definition: EitherForm<OperatorDefinition>): ClassSpec {
-  return classSpec(definition, 'unbounded');
-}
-
-/**
- * The values each bounded mode takes, keyed by its type so a value the type
- * gains is listed here or does not compile. A `.mjs` author has no type
- * checker, so a misspelt mode is refused where it is written.
- */
-const BOUNDED_MODES: { [F in 'loopMode' | 'rollbackMode']: Record<BoundedSpec[F], true> } = {
-  loopMode: { once: true, per_input: true, chained: true },
-  rollbackMode: { all_or_nothing: true, keep_progress: true },
-};
-
-/**
- * Define a bounded operator from the tasklets its channels graph wires,
- * or, as the §5 short form, a bounded operator of one tasklet's fields and `run`
- * body, `once` unless it writes its `loopMode`.
- */
-export function defineBounded(definition: BoundedDefinition): ClassSpec;
-export function defineBounded<TIn, TOut = never, TState = void, TChange = never>(
-  definition: ShortFormDefinition<TIn, TOut, TState, TChange> & Pick<BoundedDefinition, 'loopMode'>,
-): ClassSpec;
-export function defineBounded(definition: EitherForm<BoundedDefinition>): ClassSpec {
-  const spec = classSpec(definition, 'bounded');
-  const bounded: BoundedSpec = {
-    loopMode: definition.loopMode ?? 'once',
-    rollbackMode: definition.rollbackMode ?? 'all_or_nothing',
-    maxDurationMs: definition.maxDurationMs,
-  };
-  for (const [field, modes] of Object.entries(BOUNDED_MODES)) {
-    const value = bounded[field as keyof typeof BOUNDED_MODES];
-    if (!Object.hasOwn(modes, value)) {
-      throw flezhaError('topology.invalid_mode', {
-        factory_id: spec.factoryId,
-        knob: field,
-        value: String(value),
-      });
-    }
-  }
-  return { ...spec, bounded };
-}
-
-/**
- * The class a definition of either kind declares: every field the builder
- * recorded and `syncDurability` as written, so a setting the kind does not
- * carry reaches the core and is refused there by name, never dropped here.
- */
-function classSpec(
-  definition: EitherForm<OperatorDefinition> & Pick<BoundedDefinition, 'syncDurability'>,
-  kind: ClassSpec['kind'],
-): ClassSpec {
+export function defineOperator(definition: EitherForm<OperatorDefinition>): ClassSpec {
   const builder = new Builder(definition.factoryId);
-  channelsOf(definition, kind)(builder);
-  const persistent = definition.persistent ?? true;
+  channelsOf(definition)(builder);
   return {
     factoryId: definition.factoryId,
-    kind,
-    persistent,
-    sleepWhenIdle: definition.sleepWhenIdle ?? (kind === 'bounded' && persistent),
-    effectivelyOnce: builder.effectivelyOnceFlag,
-    checkpointAck: builder.checkpointAckFlag,
-    checkpointEvery: builder.checkpointEveryValue,
-    checkpointOutputs: builder.checkpointOutputsValue,
-    checkpointMaxDelayMs: builder.checkpointMaxDelayMsValue,
-    correctionWindowMs: builder.correctionWindowMsValue,
-    beyondWindowPolicy: builder.beyondWindowPolicyValue,
+    ...settingsOf(definition),
     compactAfterBytes: builder.compactAfterBytesValue,
-    syncDurability: definition.syncDurability ?? false,
     tasklets: builder.tasklets,
     channels: builder.channels,
   };
@@ -769,23 +651,40 @@ export function applyTransforms(
   return values;
 }
 
+/** The branch a tree setting names: its bare name, or its one key. */
+function branchOf(tree: unknown): string | undefined {
+  if (tree === false) return 'false';
+  if (typeof tree === 'string') return tree;
+  if (tree !== null && typeof tree === 'object') {
+    const keys = Object.keys(tree);
+    if (keys.length === 1) return keys[0];
+  }
+  return undefined;
+}
+
 /**
- * Whether this class's producers release their values untransformed.
+ * Whether this class runs in steps, whose producers release their values
+ * untransformed.
  *
- * A bounded operator's stage releases ONE value per emit and the driver fans it out to
+ * A steps stage releases ONE value per emit and the driver fans it out to
  * every consumer itself, so each consumer edge — its transforms and its key —
  * belongs to the consumer. The producer and the consumer read this one
  * predicate, so they cannot disagree about which side applies the edge.
  */
-export function isStructuredBounded(spec: ClassSpec): boolean {
-  return spec.kind === 'bounded';
+export function runsInSteps(spec: ClassSpec): boolean {
+  return branchOf(spec.run) === 'steps';
 }
 
 /**
  * Whether each invocation's output rides one effect record the controller
- * stamps at flush: under the effectively-once tier, and for a durable
- * bounded operator, whose stage commit names the record.
+ * stamps at flush: under the effectively-once tier, and for a durable steps
+ * operator, whose stage commit names the record.
  */
 export function recordsEffects(spec: ClassSpec): boolean {
-  return spec.effectivelyOnce || (spec.kind === 'bounded' && spec.persistent);
+  const flow = branchOf(spec.run) === 'flow' ? (spec.run as { flow?: unknown }).flow : undefined;
+  const exactly = (flow as { exactly?: unknown } | undefined)?.exactly;
+  return (
+    branchOf(exactly) === 'effectively_once' ||
+    (runsInSteps(spec) && branchOf(spec.durable) !== 'false')
+  );
 }

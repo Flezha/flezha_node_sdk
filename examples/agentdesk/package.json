@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "The chat sessions the Part 3 guides build: one bounded operator per session, and an HTTP gateway in front.",
+  "description": "The chat sessions the Part 3 guides build: one steps operator per session, and an HTTP gateway in front.",
   "scripts": {
     "start": "node runner.mjs"
   },

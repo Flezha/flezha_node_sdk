@@ -153,7 +153,7 @@ export function channelEncoder(
 
 /**
  * Bytes as they are, a string as UTF-8 and anything else as JSON: what a sink
- * naming no codec sends, and what a bounded completion carries. `owner` is
+ * naming no codec sends, and what a steps completion carries. `owner` is
  * what a refusal names.
  */
 export function plainPayload(value: unknown, owner: string): Uint8Array {

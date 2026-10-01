@@ -10,7 +10,7 @@ import assert from 'node:assert/strict';
 import { dirname } from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
-import { LocalOperator, defineUnbounded, defineTasklet } from '../dist/esm/index.js';
+import { LocalOperator, defineOperator, defineTasklet } from '../dist/esm/index.js';
 
 import { read } from './contract.mjs';
 
@@ -43,7 +43,7 @@ const Tally = defineTasklet({
   },
 });
 
-const WordCount = defineUnbounded({
+const WordCount = defineOperator({
   factoryId: 'local_word_count_node',
   channels: (c) => {
     c.input('lines', { codec: 'text' })
@@ -154,7 +154,7 @@ const Defaults = defineTasklet({
   },
 });
 
-const DefaultCodecs = defineUnbounded({
+const DefaultCodecs = defineOperator({
   factoryId: 'local_default_codecs_node',
   channels: (c) => {
     c.input('in').into(Defaults).sink('out');
@@ -177,7 +177,7 @@ test('an undeclared entry reads JSON and an undeclared sink follows the value', 
 // Plain JavaScript runs no type checker, so a returning `run` still loads.
 test('a short form whose run returns a value runs it once, and nothing reaches its sink', async () => {
   let calls = 0;
-  const Returning = defineUnbounded({
+  const Returning = defineOperator({
     factoryId: 'local_returning_node',
     input: 'ticks',
     sink: 'out',
@@ -206,12 +206,12 @@ test('a spawn with no controller anywhere is unavailable, from either read', asy
     run: async (input, ctx) => {
       let tried;
       try {
-        ctx.spawnBounded('worker', input).tryResult();
+        ctx.spawnSteps('worker', input).tryResult();
       } catch (error) {
         tried = error;
       }
       const waited = await ctx
-        .spawnBounded('worker', input, { id: 'w1' })
+        .spawnSteps('worker', input, { id: 'w1' })
         .wait()
         .catch((error) => error);
       ctx.emit(`${tried?.name} ${tried?.code} ${waited.name} ${waited.code}`);
@@ -219,7 +219,7 @@ test('a spawn with no controller anywhere is unavailable, from either read', asy
   });
   const released = [];
   const run = LocalOperator.start(
-    defineUnbounded({
+    defineOperator({
       factoryId: 'local_spawner_node',
       channels: (c) => c.input('in', { codec: 'text' }).into(Spawner).sink('out'),
     }),
@@ -244,7 +244,7 @@ test('a local run drops every part and releases the output alone', async () => {
   });
   const released = [];
   const run = LocalOperator.start(
-    defineUnbounded({
+    defineOperator({
       factoryId: 'local_parts_node',
       channels: (c) => c.input('in', { codec: 'text' }).into(Parts).sink('answer'),
     }),
@@ -278,7 +278,7 @@ test('the core refuses a part whose channel ends in no sink', async () => {
     local_part_to_response_node: (c) => c.input('in', { codec: 'text' }).into(Refused).response(),
   };
   for (const [factoryId, channels] of Object.entries(graphs)) {
-    const run = LocalOperator.start(defineUnbounded({ factoryId, channels }));
+    const run = LocalOperator.start(defineOperator({ factoryId, channels }));
     try {
       await run.feed('in', 'p');
       await run.runUntilIdle(5_000);

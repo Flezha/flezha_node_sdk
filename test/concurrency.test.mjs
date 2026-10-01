@@ -14,7 +14,7 @@ import { Worker } from 'node:worker_threads';
 
 import {
   ACTIVATION_SCHEMA_VERSION,
-  defineUnbounded,
+  defineOperator,
   defineTasklet,
   loadNative,
 } from '../dist/esm/index.js';
@@ -44,7 +44,7 @@ const Accumulate = defineTasklet({
   },
 });
 
-const Spec = defineUnbounded({
+const Spec = defineOperator({
   factoryId: 'ordering',
   channels: (c) =>
     c
@@ -176,7 +176,7 @@ test('a spawn returns on the event loop, and its wait runs off it', async () => 
   bridge.spawnWait = (handle) => new Promise((resolve) => parked.push(() => resolve(read(handle))));
   const seen = {};
   const effect = handleOnce(bridge, (input, ctx) => {
-    seen.handle = ctx.spawnBounded('worker', input, { id: 'w1' });
+    seen.handle = ctx.spawnSteps('worker', input, { id: 'w1' });
     seen.before = seen.handle.tryResult();
     const waited = seen.handle.wait();
     seen.during = seen.handle.tryResult();

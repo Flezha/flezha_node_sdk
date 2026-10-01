@@ -1,4 +1,4 @@
-import { defineUnbounded } from '@flezha/sdk';
+import { defineOperator } from '@flezha/sdk';
 
 import { EchoTasklet } from './echo_tasklet.mjs';
 
@@ -15,7 +15,7 @@ import { EchoTasklet } from './echo_tasklet.mjs';
  * arrives as a string. The sink names no codec, and a sink sends a string as its
  * UTF-8 bytes, so the output is the text itself.
  */
-export default defineUnbounded({
+export default defineOperator({
   factoryId: 'echo',
   channels: (c) => {
     c.input('in', { codec: 'text' }).into(EchoTasklet).sink('out');

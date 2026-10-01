@@ -6,7 +6,9 @@
 
 import { setTimeout as sleep } from 'node:timers/promises';
 
-import { defineUnbounded, defineTasklet, defineBounded } from '@flezha/sdk';
+import { defineOperator, defineTasklet } from '@flezha/sdk';
+
+import { fixtureDurable } from './fixture_support.mjs';
 
 /** The deadline every fixture call carries, with UTF-8 requests and answers. */
 const CALL = { deadlineMs: 30_000, codec: 'text' };
@@ -41,9 +43,9 @@ const account = (name) =>
 /** An outcome line without its prefix. */
 const outcomeLog = (name) => step(name, (input, ctx) => ctx.emit(input.slice(OUTCOME.length)));
 
-const sessionKnobs = { loopMode: 'per_input', maxDurationMs: 600_000 };
+const sessionKnobs = { durable: fixtureDurable(), maxDurationMs: 600_000 };
 
-export const callPricing = defineUnbounded({
+export const callPricing = defineOperator({
   factoryId: 'call_pricing',
   channels: (c) => {
     c.input('in', { codec: 'text' })
@@ -56,7 +58,7 @@ export const callPricing = defineUnbounded({
   },
 });
 
-export const callOrders = defineUnbounded({
+export const callOrders = defineOperator({
   factoryId: 'call_orders',
   channels: (c) => {
     c.input('in', { codec: 'text' })
@@ -68,10 +70,10 @@ export const callOrders = defineUnbounded({
   },
 });
 
-export const callAgent = defineBounded({
+export const callAgent = defineOperator({
   factoryId: 'call_agent',
+  steps: { each: 'per_input', onFailure: 'keep_progress' },
   ...sessionKnobs,
-  rollbackMode: 'keep_progress',
   channels: (c) => {
     c.input('turn', { codec: 'text' })
       .into(
@@ -88,10 +90,10 @@ export const callAgent = defineBounded({
   },
 });
 
-export const callGateway = defineUnbounded({
+export const callGateway = defineOperator({
   factoryId: 'call_gateway',
+  flow: { exactly: 'effectively_once' },
   channels: (c) => {
-    c.effectivelyOnce();
     const GatewayAccount = account('gateway_account');
     const gateway = c
       .input('in', { codec: 'text' })
@@ -121,8 +123,9 @@ export const callGateway = defineUnbounded({
   },
 });
 
-export const callToolSession = defineBounded({
+export const callToolSession = defineOperator({
   factoryId: 'call_tool_session',
+  steps: { each: 'per_input' },
   ...sessionKnobs,
   channels: (c) => {
     const ToolTurn = account('tool_turn');
