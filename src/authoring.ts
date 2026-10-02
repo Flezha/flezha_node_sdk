@@ -41,18 +41,6 @@ export interface TaskNode {
   tasklet: Tasklet<unknown, unknown, unknown, unknown>;
   /** The one channel this node produces on, created on first wiring. */
   output?: ChannelSpec;
-  /**
-   * The steps class this node runs one stepped instance of per edge key,
-   * holding no cells of its own; absent for a tasklet.
-   */
-  embeds?: ClassSpec;
-  /** The embedded class's entry channel the edge feeds, when it declares several. */
-  input?: string;
-  /**
-   * How a value on an edge into this node is written: the embedded class's
-   * entry reads it, so its codec; absent for a tasklet, which reads the class codec.
-   */
-  encode?: (value: unknown) => Uint8Array;
 }
 
 /** One consumer of a channel, with the transforms and key of its own edge. */
@@ -123,11 +111,6 @@ export interface ChannelSpec {
    */
   decode?: (bytes: Uint8Array) => unknown;
   /**
-   * An entry channel's writer, its codec's, JSON when it names none: what a
-   * tasklet of a class embedding this one writes a value into it with.
-   */
-  entryEncode?: (value: unknown) => Uint8Array;
-  /**
    * The plugin sink's payload encoder: its own, its codec's, or the default
    * that sends bytes as they are, a string as UTF-8 and anything else as JSON.
    * It belongs to the sink frame alone: an inter-tasklet frame is decoded
@@ -153,35 +136,7 @@ export interface ClassSpec {
   compactAfterBytes?: number;
   tasklets: TaskNode[];
   channels: ChannelSpec[];
-  /** The graph's declaration, which a class embedding this one in flow runs to inline it. */
-  declaration?: (builder: ChannelBuilder) => void;
 }
-
-/** What `into` takes beside an operator class. */
-export interface EmbedOptions {
-  /** The node's name; the class's factory id by default. */
-  name?: string;
-  /** The class's entry channel the edge feeds, when it declares several. */
-  input?: string;
-  /** The most stepped instances a keyed edge into a steps class keeps at once. */
-  maxCells?: number;
-}
-
-/** A flow class whose declaration runs on the embedding builder. */
-interface Inline {
-  prefix: string;
-  feed: Stream<unknown>;
-  entries: string[];
-}
-
-/** Whether `target` is an operator class rather than a tasklet. */
-function isClassSpec(target: unknown): target is ClassSpec {
-  const spec = target as ClassSpec;
-  return typeof spec.factoryId === 'string' && Array.isArray(spec.channels);
-}
-
-/** The handler of a node that embeds a steps class, which the core never runs. */
-function embeddingBody(): void {}
 
 /** One tasklet for every router, so two unnamed routers are one node. */
 const LatestRouter = defineTasklet(latestRouter);
@@ -208,10 +163,6 @@ class Builder implements ChannelBuilder {
   compactAfterBytesValue?: number;
   /** The next merge's group id, which ties its sources together across channels. */
   mergeGroups = 0;
-  /** The flow classes being inlined, the innermost last. */
-  private readonly inlining: Inline[] = [];
-  /** One node per embedded steps class and name, so two unnamed mentions unify. */
-  private readonly embeddingTasks = new Map<string, Tasklet<unknown, unknown, unknown, unknown>>();
 
   constructor(readonly factoryId: string) {}
 
@@ -225,12 +176,6 @@ class Builder implements ChannelBuilder {
     decodeOrOptions?: ((bytes: Uint8Array) => T) | CodecOptions,
     options?: CodecOptions,
   ): Stream<T> {
-    // Inside a flow class being inlined, the entry is the edge that feeds it.
-    const inline = this.inlining.at(-1);
-    if (inline) {
-      inline.entries.push(name);
-      return inline.feed as Stream<T>;
-    }
     const channel: ChannelSpec = {
       index: this.channels.length,
       name,
@@ -246,7 +191,6 @@ class Builder implements ChannelBuilder {
       options,
     ]);
     channel.decode = decode ?? channelDecoder(codec, channel);
-    channel.entryEncode = channelEncoder(codec ?? 'json', channel);
     this.channels.push(channel);
     return new EdgeStream<T>(this, { source: 'entry', channel }, { transforms: [] });
   }
@@ -315,7 +259,7 @@ class Builder implements ChannelBuilder {
    * out and back in has one instance, not two.
    */
   nodeFor(tasklet: Tasklet<unknown, unknown, unknown, unknown>, name?: string): TaskNode {
-    const identity = this.prefixed(name ?? tasklet.name);
+    const identity = name ?? tasklet.name;
     const existing = this.tasklets.find(
       (node) => node.name === identity && node.tasklet === tasklet,
     );
@@ -330,78 +274,6 @@ class Builder implements ChannelBuilder {
     const node: TaskNode = { index: this.tasklets.length, name: identity, tasklet };
     this.tasklets.push(node);
     return node;
-  }
-
-  /**
-   * `feed` into an operator class: a steps class becomes a node that runs one
-   * stepped instance of it per key of the edge, its exit output continuing on
-   * the handle answered; a flow class is inlined.
-   */
-  embed(feed: EdgeStream<unknown>, operator: ClassSpec, options: EmbedOptions): Stream<unknown> {
-    if (!runsInSteps(operator)) return this.inline(feed, operator, options);
-    const cache = `${operator.factoryId}\0${options.name ?? ''}`;
-    let tasklet = this.embeddingTasks.get(cache);
-    if (!tasklet) {
-      tasklet = defineTasklet({
-        name: operator.factoryId,
-        run: embeddingBody,
-        maxCells: options.maxCells,
-      }) as Tasklet<unknown, unknown, unknown, unknown>;
-      this.embeddingTasks.set(cache, tasklet);
-    }
-    const node = this.nodeFor(tasklet, options.name);
-    node.embeds = operator;
-    node.input = options.input;
-    const entries = operator.channels.filter((channel) => channel.kind === 'entry');
-    node.encode = (entries.find((channel) => channel.name === options.input) ?? entries[0])?.entryEncode;
-    feed.close(node, { link: 'into', tasklet: node.index });
-    return this.outputOf(node);
-  }
-
-  /**
-   * Run a flow class's declaration on this builder: its entry is `feed` and
-   * every node it names carries its prefix. The handle answered is its
-   * exit's, the one node it added that nothing consumes (its last when every
-   * node feeds another or a sink).
-   */
-  private inline(feed: Stream<unknown>, operator: ClassSpec, options: EmbedOptions): Stream<unknown> {
-    const first = this.tasklets.length;
-    const inline: Inline = {
-      prefix: this.prefixed(options.name ?? operator.factoryId),
-      feed,
-      entries: [],
-    };
-    this.inlining.push(inline);
-    try {
-      operator.declaration?.(this);
-    } finally {
-      this.inlining.pop();
-    }
-    const entries = [...new Set(inline.entries)].sort();
-    const chosen =
-      options.input === undefined ? entries.length === 1 : entries.join() === options.input;
-    if (!chosen) {
-      throw flezhaError('topology.embedded_entry_ambiguous', {
-        inner: operator.factoryId,
-        channels: entries.join(', '),
-      });
-    }
-    const added = this.tasklets.slice(first);
-    const exits = added.filter((node) => node.output === undefined);
-    if (exits.length > 1) {
-      throw flezhaError('topology.embedded_exit_ambiguous', {
-        inner: operator.factoryId,
-        channels: exits.map((node) => node.name).sort().join(', '),
-      });
-    }
-    const exit = exits[0] ?? added.at(-1);
-    return exit ? this.outputOf(exit) : feed;
-  }
-
-  /** A node's identity inside the class being inlined: `<prefix>.<name>`. */
-  private prefixed(name: string): string {
-    const inline = this.inlining.at(-1);
-    return inline ? `${inline.prefix}.${name}` : name;
   }
 
   /**
@@ -570,17 +442,12 @@ class EdgeStream<T> implements Stream<T> {
   }
 
   into<TOut, TState, TChange>(
-    target: Tasklet<T, TOut, TState, TChange> | ClassSpec,
-    nodeNameOrOptions?: string | EmbedOptions,
+    tasklet: Tasklet<T, TOut, TState, TChange>,
+    nodeName?: string,
   ): Stream<TOut> {
-    if (isClassSpec(target)) {
-      const options =
-        typeof nodeNameOrOptions === 'string' ? { name: nodeNameOrOptions } : nodeNameOrOptions;
-      return this.builder.embed(this as EdgeStream<unknown>, target, options ?? {}) as Stream<TOut>;
-    }
     const node = this.builder.nodeFor(
-      target as unknown as Tasklet<unknown, unknown, unknown, unknown>,
-      nodeNameOrOptions as string | undefined,
+      tasklet as unknown as Tasklet<unknown, unknown, unknown, unknown>,
+      nodeName,
     );
     this.close(node, { link: 'into', tasklet: node.index });
     return this.builder.outputOf<TOut>(node);
@@ -730,15 +597,13 @@ export function defineOperator<TIn, TOut = never, TState = void, TChange = never
 ): ClassSpec;
 export function defineOperator(definition: EitherForm<OperatorDefinition>): ClassSpec {
   const builder = new Builder(definition.factoryId);
-  const declaration = channelsOf(definition);
-  declaration(builder);
+  channelsOf(definition)(builder);
   return {
     factoryId: definition.factoryId,
     ...settingsOf(definition),
     compactAfterBytes: builder.compactAfterBytesValue,
     tasklets: builder.tasklets,
     channels: builder.channels,
-    declaration: declaration as (builder: ChannelBuilder) => void,
   };
 }
 

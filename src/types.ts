@@ -6,7 +6,6 @@
  * mismatched edge is a compile error rather than a registration-time one.
  */
 
-import type { ClassSpec, EmbedOptions } from './authoring.js';
 import type { CallOptions, CallTarget, Response } from './call.js';
 import type { Codec } from './codec.js';
 import type { SpawnHandle } from './ctx.js';
@@ -246,17 +245,6 @@ export interface Stream<T> {
     tasklet: Tasklet<T, TOut, TState, TChange>,
     nodeName?: string,
   ): Stream<TOut>;
-  /**
-   * Wire this edge into an operator class. A class that runs in steps
-   * becomes a node, named by its factory id, that runs one stepped instance
-   * of it per key of this edge (one on an unkeyed edge) with its own state
-   * and journal; the handle answered carries its exit tasklet's output.
-   * `maxCells` caps the instances a keyed edge keeps at once. A class that
-   * runs in flow is inlined: its graph joins this one, fed by this edge, its
-   * nodes named `<factoryId>.<node>`, and the handle answered is its exit's.
-   * `input` names the class's entry channel when it declares several.
-   */
-  into<TOut = unknown>(operator: ClassSpec, options?: EmbedOptions | string): Stream<TOut>;
   /**
    * Fan out: each arm receives this same edge, so `branch` builds exactly the
    * topology the separate `into` statements would. At least two arms.

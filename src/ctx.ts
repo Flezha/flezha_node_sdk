@@ -284,9 +284,7 @@ export class Invocation implements Ctx<unknown, unknown, unknown> {
     value: unknown,
     options: EmitOptions | undefined,
   ): NativeOutput[] {
-    const consumer = this.input.spec.tasklets[edge.tasklet];
-    const extractor = consumer?.tasklet.definition.eventTime;
-    const encode = consumer?.encode ?? encodeValue;
+    const extractor = this.input.spec.tasklets[edge.tasklet]?.tasklet.definition.eventTime;
 
     // Producer-side, in declaration order: the core routes on `(edge, key)`
     // and never evaluates a host closure.
@@ -298,7 +296,7 @@ export class Invocation implements Ctx<unknown, unknown, unknown> {
       key: options?.key ?? edge.keyBy?.(transformed) ?? this.input.cellKey,
       eventTime: extractor ? BigInt(extractor(transformed)) : undefined,
       metadata: metaList(options?.metadata),
-      payload: encode(transformed),
+      payload: encodeValue(transformed),
     }));
   }
 

@@ -122,14 +122,6 @@ function checkSchema(node: TaskNode): void {
  * so the name this host addresses a channel by is the one the core registered.
  */
 export function validate(spec: ClassSpec, native: Native = loadNative()): DerivedDecl {
-  // The core judges an embedding against the class it names, so every steps
-  // class this one embeds is declared first: registered, never announced.
-  for (const node of spec.tasklets) {
-    if (node.embeds) {
-      validate(node.embeds, native);
-      native.declareClass(Buffer.from(JSON.stringify(toHostClassDecl(node.embeds, true))));
-    }
-  }
   for (const node of spec.tasklets) checkSchema(node);
   const answer = native.checkClass(Buffer.from(JSON.stringify(toHostClassDecl(spec))));
   const derived = JSON.parse(answer.toString('utf8')) as DerivedDecl;
@@ -185,8 +177,6 @@ function taskletJson(spec: ClassSpec, node: TaskNode, keyed: Set<number>): Recor
     change_is_nochange: spec.durable === false || def.applyChange === undefined,
     schema_version: def.schemaVersion ?? 1,
     min_readable_schema_version: def.minReadableSchemaVersion,
-    operator: node.embeds?.factoryId,
-    input: node.input,
   });
 }
 
@@ -195,7 +185,7 @@ function taskletJson(spec: ClassSpec, node: TaskNode, keyed: Set<number>): Recor
  * `test/fixtures/host_class_decl_keys.txt`, which this package's own test
  * reads: a key the core learns that Node cannot spell fails that test.
  */
-export function toHostClassDecl(spec: ClassSpec, embedded = false): Record<string, unknown> {
+export function toHostClassDecl(spec: ClassSpec): Record<string, unknown> {
   const keyed = keyedConsumers(spec);
   return compact({
     factory_id: spec.factoryId,
@@ -209,6 +199,5 @@ export function toHostClassDecl(spec: ClassSpec, embedded = false): Record<strin
     compact_after_bytes: spec.compactAfterBytes,
     channels: spec.channels.map(channelJson),
     tasklets: spec.tasklets.map((node) => taskletJson(spec, node, keyed)),
-    embedded: embedded || undefined,
   });
 }
