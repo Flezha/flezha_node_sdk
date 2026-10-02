@@ -25,13 +25,8 @@ await runner.run();
 //
 // const admin = runner.admin();
 // await admin.startOperator('echo', { id: 'my_echo' });
-// await admin.enablePlugin('writer', {
-//   id: 'writer',
-//   provider: 'operator_file_sink',
-//   operator_id: 'my_echo',
-//   opts: { path: 'echo-out.txt' },
-//   hooks: [['on_output', {}]],
-// });
+// await admin.enablePlugin('writer', 'operator_file_sink', { opts: { path: 'echo-out.txt' } });
+// await admin.bindPlugin('writer', 'my_echo', { hooks: [['on_output', {}]] });
 // await admin.send('my_echo', 'hello world', 'in');
 //
 // docs/sdk/admin.md has the whole surface. An enforced controller refuses all

@@ -8,7 +8,13 @@
  */
 
 export { Admin } from './admin.js';
-export type { StartOptions, StartOutcome, StartResult } from './admin.js';
+export type {
+  BindOptions,
+  PluginOptions,
+  StartOptions,
+  StartOutcome,
+  StartResult,
+} from './admin.js';
 export { defineOperator } from './authoring.js';
 export { defineTasklet } from './definition.js';
 export type { CallOptions, CallTarget, Response } from './call.js';

@@ -31,6 +31,26 @@ export interface StartOptions {
   opts?: unknown;
 }
 
+/** What a plugin enable takes beside its name and provider, which is what `flz plugin enable` takes. */
+export interface PluginOptions {
+  /** The provider's options. */
+  opts?: Record<string, unknown>;
+  /** Run one copy in the whole cluster. */
+  single?: boolean;
+  /** An operator to bind in the same call, with `hooks`. */
+  operator_id?: string;
+  /** The hooks the operator binds, as names or `[name, opts]` pairs. */
+  hooks?: unknown[];
+}
+
+/** What a plugin bind takes beside the plugin and the operator. */
+export interface BindOptions {
+  /** The hooks the operator binds, as names or `[name, opts]` pairs. */
+  hooks?: unknown[];
+  /** The channel the plugin feeds or reads. */
+  channel?: string;
+}
+
 /** What a start did: `already_running` only for an id given while it runs. */
 export type StartOutcome = 'started' | 'already_running';
 
@@ -65,14 +85,31 @@ export class Admin {
     return this.call('Operator.send', operatorId, message, channel);
   }
 
-  /** Enable a plugin, built from the fields `flz plugin enable` takes. */
-  async enablePlugin(pluginId: string, fields: Record<string, unknown>): Promise<unknown> {
-    return this.call('PluginManager.enable', pluginId, fields);
+  /**
+   * Enable the plugin `name` in this namespace, of the provider `provider`
+   * (for example `operator_websocket`).
+   */
+  async enablePlugin(
+    name: string,
+    provider: string,
+    options: PluginOptions = {},
+  ): Promise<unknown> {
+    return this.call('PluginManager.enable', name, { opts: {}, ...options, provider });
   }
 
-  /** Disable a plugin, or every partitioned instance of it. */
-  async disablePlugin(pluginId: string): Promise<unknown> {
-    return this.call('PluginManager.disable', pluginId);
+  /** Bind the operator `operatorId` to the enabled plugin `name`. */
+  async bindPlugin(name: string, operatorId: string, options: BindOptions = {}): Promise<unknown> {
+    return this.call('PluginManager.bind', name, { ...options, operator_id: operatorId });
+  }
+
+  /** Unbind the operator `operatorId` from the plugin `name`, which stays enabled. */
+  async unbindPlugin(name: string, operatorId: string): Promise<unknown> {
+    return this.call('PluginManager.unbind', name, { operator_id: operatorId });
+  }
+
+  /** Disable the plugin `name`, stopping it wherever it runs. */
+  async disablePlugin(name: string): Promise<unknown> {
+    return this.call('PluginManager.disable', name, {});
   }
 
   /** The operator ids running in this namespace. */
@@ -80,7 +117,7 @@ export class Admin {
     return this.call('Operator.list_operators');
   }
 
-  /** The plugins enabled on the controller node answering this call. */
+  /** The plugins enabled in this namespace: name, provider, single, bound operators. */
   async listPlugins(): Promise<unknown> {
     return this.call('PluginManager.list');
   }

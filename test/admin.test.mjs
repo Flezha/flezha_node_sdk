@@ -32,6 +32,48 @@ test('a start with an id sends it and answers only the id and the outcome', asyn
   assert.deepEqual(started, { id: 'my_echo', outcome: 'already_running' });
 });
 
+test('a plugin is enabled by name, and bound and unbound by operator', async () => {
+  const { admin, calls } = answering(null);
+  await admin.enablePlugin('writer', 'operator_file_sink', { opts: { path: 'out.txt' } });
+  await admin.enablePlugin('feed', 'operator_websocket', {
+    single: true,
+    operator_id: 'my_echo',
+    hooks: [['on_output', {}]],
+  });
+  await admin.bindPlugin('writer', 'my_echo');
+  await admin.bindPlugin('writer', 'my_other', { hooks: ['on_output'], channel: 'in' });
+  await admin.unbindPlugin('writer', 'my_echo');
+  await admin.disablePlugin('writer');
+  await admin.listPlugins();
+  assert.deepEqual(calls, [
+    [
+      'PluginManager.enable',
+      ['writer', { opts: { path: 'out.txt' }, provider: 'operator_file_sink' }],
+    ],
+    [
+      'PluginManager.enable',
+      [
+        'feed',
+        {
+          opts: {},
+          single: true,
+          operator_id: 'my_echo',
+          hooks: [['on_output', {}]],
+          provider: 'operator_websocket',
+        },
+      ],
+    ],
+    ['PluginManager.bind', ['writer', { operator_id: 'my_echo' }]],
+    [
+      'PluginManager.bind',
+      ['writer', { hooks: ['on_output'], channel: 'in', operator_id: 'my_other' }],
+    ],
+    ['PluginManager.unbind', ['writer', { operator_id: 'my_echo' }]],
+    ['PluginManager.disable', ['writer', {}]],
+    ['PluginManager.list', []],
+  ]);
+});
+
 test('a refused start rejects the way every refused call does', async () => {
   const refusal = FlezhaError.fromDocument(
     JSON.stringify({
