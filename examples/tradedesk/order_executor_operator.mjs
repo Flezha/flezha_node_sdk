@@ -37,7 +37,7 @@ import { ReserveFunds } from './reserve_funds.mjs';
  */
 export default defineOperator({
   factoryId: 'order_executor',
-  steps: {},
+  steps: { each: 'once', onFailure: 'undo_all' },
   channels: (c) => {
     c.input('order')
       .into(ReserveFunds) // step one
