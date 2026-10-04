@@ -34,13 +34,13 @@ import { TrackPrices } from './track_prices.mjs';
 export default defineOperator({
   factoryId: 'trade_watcher',
   channels: (c) => {
-    c.input('trades')
+    c.input('trades') // JSON from the exchange
       .filter((message) => message.channel === 'trade') // trade messages only
       .flatMap((message) => message.data) // a message into its trades
       .filter((trade) => trade.ord_type === 'market') // market orders only
       .keyBy((trade) => trade.symbol) // one cell per symbol
       .into(TrackPrices)
-      .into(BuyAboveAverage)
-      .sink('signals');
+      .into(BuyAboveAverage) // fed by the tasklet above
+      .sink('signals'); // out to the file plugin
   },
 });

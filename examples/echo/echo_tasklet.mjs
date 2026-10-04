@@ -13,6 +13,6 @@ import { defineTasklet } from '@flezha/sdk';
  * graph can be rewired without touching this tasklet.
  */
 export const EchoTasklet = defineTasklet({
-  name: 'echo',
-  run: (input, ctx) => ctx.emit(`echo: ${input}`),
+  name: 'echo', // state is saved under this name, so choose it once
+  run: (input, ctx) => ctx.emit(`echo: ${input}`), // where it goes is the operator's business
 });

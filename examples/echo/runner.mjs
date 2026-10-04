@@ -13,11 +13,11 @@ import { createRunner } from '@flezha/sdk';
 const namespace = process.argv[2] ?? 'default';
 
 const runner = createRunner(namespace);
-await runner.registerFactory('./echo_operator.mjs');
+await runner.registerFactory('./echo_operator.mjs'); // the operators this runner serves
 
 // Resolves once the runner is connected and serving. The process then keeps
 // running until a SIGTERM, or until standard input closes.
-await runner.run();
+await runner.run(); // connects to the controller
 
 // Everything `flz operator` and `flz plugin` do is also a method here.
 // Uncomment to drive this namespace from the application instead of from a

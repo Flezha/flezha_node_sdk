@@ -16,8 +16,10 @@ import { EchoTasklet } from './echo_tasklet.mjs';
  * UTF-8 bytes, so the output is the text itself.
  */
 export default defineOperator({
-  factoryId: 'echo',
+  factoryId: 'echo', // the name `flz operator start` takes
   channels: (c) => {
-    c.input('in', { codec: 'text' }).into(EchoTasklet).sink('out');
+    c.input('in', { codec: 'text' }) // messages arrive on the entry channel "in"
+      .into(EchoTasklet) // each one runs through the echo tasklet
+      .sink('out'); // the result leaves on "out", for a plugin to pick up
   },
 });

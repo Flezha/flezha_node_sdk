@@ -17,6 +17,7 @@ export const Reply = defineTasklet({
   },
 
   run: async (message, ctx) => {
+    // Each piece streams out as it is made; then the whole answer.
     ctx.emit(await answer(ctx.state.messages, message, (part) => ctx.part(part)));
     ctx.change({ kind: 'said', message });
   },

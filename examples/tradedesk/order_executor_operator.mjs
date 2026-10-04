@@ -37,9 +37,11 @@ import { ReserveFunds } from './reserve_funds.mjs';
  */
 export default defineOperator({
   factoryId: 'order_executor',
+  // one instance per order; each step runs once
+  // a failed step undoes the finished ones
   steps: { each: 'once', onFailure: 'undo_all' },
   channels: (c) => {
-    c.input('order')
+    c.input('order') // the order to carry out
       .into(ReserveFunds) // step one
       .into(PlaceOrder) // step two, once step one is done
       .branch([

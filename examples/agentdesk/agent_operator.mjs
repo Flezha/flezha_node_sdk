@@ -14,12 +14,12 @@ export default defineOperator({
   steps: { each: 'per_input', onFailure: 'keep_progress' },
   durable: { local: { sleepAfter: 10_000 } }, // an idle session sleeps after 10 s
   channels: (c) => {
-    c.input('turn', { codec: 'text' })
+    c.input('turn', { codec: 'text' }) // entry 1: `flz operator call`
       .into(Reply)
-      .sink('answer') // to whoever listens
+      .sink('answer') // to whoever listens; the chain goes on
       .into(Deliver)
       .response(); // to whoever called
-    c.input('message') // from the gateway
+    c.input('message') // entry 2: the gateway, into the same Reply
       .map((message) => message.text)
       .into(Reply);
   },

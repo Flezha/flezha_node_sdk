@@ -33,9 +33,11 @@ export const Budget = defineTasklet({
   run: (event, ctx) => {
     const today = new Date(Number(ctx.now())).toISOString().slice(0, 10);
     if ('tokens' in event) {
-      ctx.change({ day: today, tokens: event.tokens }); // the tokens an answer used
+      // The tokens an answer used: count them.
+      ctx.change({ day: today, tokens: event.tokens });
     } else {
-      ctx.emit({ message: event, spent: on(ctx.state, today) }); // a message to admit
+      // A message to admit: hand on its verdict.
+      ctx.emit({ message: event, spent: on(ctx.state, today) });
     }
   },
 });
