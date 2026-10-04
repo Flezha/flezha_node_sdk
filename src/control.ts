@@ -60,7 +60,7 @@ export interface StartResult {
   outcome: StartOutcome;
 }
 
-export class Admin {
+export class Control {
   constructor(private readonly native: Native) {}
 
   /** Start an operator of `factoryId`. */
@@ -75,14 +75,6 @@ export class Admin {
   /** Stop an operator, or the whole partition group it names. */
   async stopOperator(operatorId: string): Promise<unknown> {
     return this.call('Operator.stop', operatorId);
-  }
-
-  /**
-   * Inject a message into an operator's input stream and block for the
-   * delivery verdict. `channel` may be empty for none.
-   */
-  async send(operatorId: string, message: string, channel = ''): Promise<unknown> {
-    return this.call('Operator.send', operatorId, message, channel);
   }
 
   /**

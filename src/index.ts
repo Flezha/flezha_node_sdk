@@ -7,14 +7,15 @@
  * user code, and nothing else.
  */
 
-export { Admin } from './admin.js';
+export { Control } from './control.js';
 export type {
   BindOptions,
   PluginOptions,
   StartOptions,
   StartOutcome,
   StartResult,
-} from './admin.js';
+} from './control.js';
+export type { SendOptions, SendVerdict } from './runner.js';
 export { defineOperator } from './authoring.js';
 export { defineTasklet } from './definition.js';
 export type { CallOptions, CallTarget, Response } from './call.js';

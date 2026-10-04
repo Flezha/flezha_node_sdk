@@ -12,7 +12,7 @@ import { isAbsolute } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
 import type { ClassSpec } from './authoring.js';
-import { Admin } from './admin.js';
+import { Control } from './control.js';
 import { envPositive } from './env.js';
 import { flezhaError, isFlezhaError } from './errors.js';
 import { toHostClassDecl, validate } from './graph.js';
@@ -71,6 +71,28 @@ export function specsFrom(specifier: string, module: unknown): ClassSpec[] {
   }
   if (specs.length === 0) throw flezhaError('topology.no_operator_exported', { module: specifier });
   return specs;
+}
+
+/** How a `runner.send` travels: through the controller unless `local` is set. */
+export interface SendOptions {
+  /**
+   * The message's id, stamped as `flz.msg_id`: an operator whose input log
+   * still holds an input of this id absorbs the repeat and answers `absorbed`.
+   */
+  msgId?: string;
+  /** The partition key: the member of a partition group whose range owns it takes the message. */
+  key?: string;
+  /**
+   * In process, without the controller: the message is on no disk, is lost if
+   * the runner stops before handling it, and an operator's input log does not cover it.
+   */
+  local?: boolean;
+}
+
+/** A controller send's answer: the operator that took the message, and how. */
+export interface SendVerdict {
+  to: string;
+  verdict: 'delivered' | 'absorbed' | 'suspended';
 }
 
 /** Build the registry a dispatch loop serves from. Shared by both tiers. */
@@ -167,8 +189,8 @@ export class Runner {
   }
 
   /**
-   * Administer this namespace from ordinary application code: start, stop and
-   * feed operators, enable and disable plugins, read what is running.
+   * Administer this namespace from ordinary application code: start and stop
+   * operators, enable and disable plugins, read what is running.
    *
    * The controller judges every call as the identity this connection proved,
    * so no credential is held here and nothing expires. A user grants a
@@ -176,8 +198,38 @@ export class Runner {
    * `flz role bind runner@<namespace> app <namespace>`; until then every call
    * is refused.
    */
-  admin(): Admin {
-    return new Admin(this.native ?? loadNative());
+  control(): Control {
+    return new Control(this.native ?? loadNative());
+  }
+
+  /**
+   * Send `message` to the entry channel `channel` of `operatorId`, through the
+   * controller under the same role check as `control()`, answering its
+   * verdict. `msgId` and `key` ride along; `local` sends in process to an
+   * operator bound on this runner and answers `null`.
+   */
+  async send(
+    operatorId: string,
+    message: string,
+    channel: string,
+    { msgId, key, local = false }: SendOptions = {},
+  ): Promise<SendVerdict | null> {
+    const native = this.native ?? loadNative();
+    const bytes = Buffer.from(message, 'utf8');
+    const answer = await native.sendMessage(
+      operatorId,
+      channel,
+      bytes,
+      msgId ?? null,
+      key ?? null,
+      local,
+    );
+    return JSON.parse(answer) as SendVerdict | null;
+  }
+
+  /** The ids of the operator instances bound on this runner now, read without the controller. */
+  operators(): string[] {
+    return (this.native ?? loadNative()).operators();
   }
 
   async run(): Promise<void> {

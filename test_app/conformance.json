@@ -139,7 +139,8 @@
     "partitioned": ["partition_relay", "dynamic_cell", "keyed_loop_steps"],
     "dynamic_cell": ["dynamic_cell"],
     "pool_wedge": ["wedge_probe"],
-    "schema_evolution": ["schema_evolution_v1", "schema_evolution_v2"]
+    "schema_evolution": ["schema_evolution_v1", "schema_evolution_v2"],
+    "local_send": ["bench_keyed_nopersist", "store_input", "tier_store", "sugar_steps_per_input"]
   },
   "docs": "docs/sdk/node_sdk.md"
 }

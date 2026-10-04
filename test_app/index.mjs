@@ -11,7 +11,13 @@
 // FLEZHA_CONFORMANCE_REPORT writes the refusal table's verdicts and exits
 // without connecting, and FLEZHA_REFUSAL_FIXTURE registers ONE row of that
 // table in place of the app's fixtures. Both are `conformance.mjs`.
+//
+// FLEZHA_LOCAL_SEND_SCRIPT is the local-send drill: a JSON array of
+// `{operator, channel, message, when}` sends this app's own code makes with
+// `local`, each once the file `when` names exists, printing
+// `local_send <operator> ok` or `local_send <operator> err <code>` per send.
 
+import { existsSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -77,3 +83,15 @@ console.log(
   `[node_runner] namespace=${namespace} transport=${process.env.FLEZHA_TRANSPORT ?? 'uds'} ` +
     `dispatch=${workers === 0 ? 'main-loop' : `${workers} workers`}`,
 );
+
+for (const { operator, channel, message, when } of JSON.parse(
+  process.env.FLEZHA_LOCAL_SEND_SCRIPT ?? '[]',
+)) {
+  while (!existsSync(when)) await new Promise((wake) => setTimeout(wake, 50));
+  try {
+    await runner.send(operator, message, channel, { local: true });
+    console.log(`local_send ${operator} ok`);
+  } catch (error) {
+    console.log(`local_send ${operator} err ${error.code}`);
+  }
+}

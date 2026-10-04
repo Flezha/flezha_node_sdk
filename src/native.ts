@@ -224,6 +224,20 @@ export interface Native {
   part(token: bigint, item: number, payload: Uint8Array): void;
   spawnWait(handle: bigint, timeoutMs: number): Promise<string | null>;
   adminCall(verb: string, args: string): Promise<string>;
+  /**
+   * Send one message, through the controller or locally, answering as JSON:
+   * the verdict, or `null` for a local send.
+   */
+  sendMessage(
+    operator: string,
+    channel: string,
+    message: Uint8Array,
+    msgId: string | null,
+    key: string | null,
+    local: boolean,
+  ): Promise<string>;
+  /** The ids of the operator instances bound on this runner. */
+  operators(): string[];
   monotonicNanos(): bigint;
   lastError(): string | null;
   /** The JSON error document of `code`, its message rendered from `detailsJson`. */
