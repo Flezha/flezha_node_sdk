@@ -1,8 +1,8 @@
-// The builders the dispatch-shaped suites share: what one operator's dispatch
+// The builders the dispatch-shaped suites share: what one relay's dispatch
 // depends on, the activation the core hands out, and a declaration's refusal.
 import assert from 'node:assert/strict';
 
-import { FlezhaError, defineOperator, defineTasklet, validate } from '../dist/esm/index.js';
+import { FlezhaError, defineRelay, defineTasklet, validate } from '../dist/esm/index.js';
 import { Registry, answer } from '../dist/esm/dispatch.js';
 
 /**
@@ -56,7 +56,7 @@ export function spawnBridge(
  * token 7 with `bridge` for its spawns; answers that input's effect.
  */
 export async function handleOnce(bridge, body, item = {}) {
-  const spec = defineOperator({
+  const spec = defineRelay({
     factoryId: 'once',
     channels: (c) =>
       c
@@ -74,7 +74,7 @@ export const activationFor =
   (factory) =>
   (overrides = {}) => ({
     token: 1n,
-    operator: 'op-1',
+    relay: 'op-1',
     tasklet: 0,
     cellKey: 'k',
     changeSeq: 0n,

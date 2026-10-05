@@ -69,14 +69,14 @@ export function specsFrom(specifier: string, module: unknown): ClassSpec[] {
       if (!specs.includes(spec)) specs.push(spec);
     }
   }
-  if (specs.length === 0) throw flezhaError('topology.no_operator_exported', { module: specifier });
+  if (specs.length === 0) throw flezhaError('topology.no_relay_exported', { module: specifier });
   return specs;
 }
 
 /** How a `runner.send` travels: through the controller unless `local` is set. */
 export interface SendOptions {
   /**
-   * The message's id, stamped as `flz.msg_id`: an operator whose input log
+   * The message's id, stamped as `flz.msg_id`: a relay whose input log
    * still holds an input of this id absorbs the repeat and answers `absorbed`.
    */
   msgId?: string;
@@ -84,12 +84,12 @@ export interface SendOptions {
   key?: string;
   /**
    * In process, without the controller: the message is on no disk, is lost if
-   * the runner stops before handling it, and an operator's input log does not cover it.
+   * the runner stops before handling it, and a relay's input log does not cover it.
    */
   local?: boolean;
 }
 
-/** A controller send's answer: the operator that took the message, and how. */
+/** A controller send's answer: the relay that took the message, and how. */
 export interface SendVerdict {
   to: string;
   verdict: 'delivered' | 'absorbed' | 'suspended';
@@ -121,11 +121,11 @@ export class Runner {
   constructor(readonly namespace: string) {}
 
   /**
-   * Register a module's operators, of either kind — the kind is read from what
+   * Register a module's relays, of either kind — the kind is read from what
    * each export declares, never named by the call.
    *
    * Awaited, because registering imports a module. Before `run()` the import
-   * happens here, so a module that fails to load or exports no operator
+   * happens here, so a module that fails to load or exports no relay
    * rejects at the line that registers it rather than inside `run()`; after
    * `run()` it also declares every export against the running core and every
    * worker.
@@ -190,7 +190,7 @@ export class Runner {
 
   /**
    * Administer this namespace from ordinary application code: start and stop
-   * operators, enable and disable plugins, read what is running.
+   * relays, enable and disable plugins, read what is running.
    *
    * The controller judges every call as the identity this connection proved,
    * so no credential is held here and nothing expires. A user grants a
@@ -203,13 +203,13 @@ export class Runner {
   }
 
   /**
-   * Send `message` to the entry channel `channel` of `operatorId`, through the
+   * Send `message` to the entry channel `channel` of `relayId`, through the
    * controller under the same role check as `control()`, answering its
    * verdict. `msgId` and `key` ride along; `local` sends in process to an
-   * operator bound on this runner and answers `null`.
+   * relay bound on this runner and answers `null`.
    */
   async send(
-    operatorId: string,
+    relayId: string,
     message: string,
     channel: string,
     { msgId, key, local = false }: SendOptions = {},
@@ -217,7 +217,7 @@ export class Runner {
     const native = this.native ?? loadNative();
     const bytes = Buffer.from(message, 'utf8');
     const answer = await native.sendMessage(
-      operatorId,
+      relayId,
       channel,
       bytes,
       msgId ?? null,
@@ -227,9 +227,9 @@ export class Runner {
     return JSON.parse(answer) as SendVerdict | null;
   }
 
-  /** The ids of the operator instances bound on this runner now, read without the controller. */
-  operators(): string[] {
-    return (this.native ?? loadNative()).operators();
+  /** The ids of the relay instances bound on this runner now, read without the controller. */
+  relays(): string[] {
+    return (this.native ?? loadNative()).relays();
   }
 
   async run(): Promise<void> {

@@ -61,7 +61,7 @@ export type NativeActivationKind =
 
 export interface NativeActivation {
   token: bigint;
-  operator: string;
+  relay: string;
   tasklet: number;
   cellKey?: string;
   changeSeq: bigint;
@@ -195,7 +195,7 @@ export interface Native {
   checkClass(json: Buffer): Buffer;
   start(namespace: string): Promise<void>;
   /** The alternative to `start`: the declared graph runs here, no controller. */
-  localStart(factoryId: string, operatorId: string): void;
+  localStart(factoryId: string, relayId: string): void;
   localOnSink(channel: string): void;
   localFeed(channel: string, payload: Uint8Array): Promise<void>;
   /** The core built this one, so its payload is a `Buffer` and says so. */
@@ -229,15 +229,15 @@ export interface Native {
    * the verdict, or `null` for a local send.
    */
   sendMessage(
-    operator: string,
+    relay: string,
     channel: string,
     message: Uint8Array,
     msgId: string | null,
     key: string | null,
     local: boolean,
   ): Promise<string>;
-  /** The ids of the operator instances bound on this runner. */
-  operators(): string[];
+  /** The ids of the relay instances bound on this runner. */
+  relays(): string[];
   monotonicNanos(): bigint;
   lastError(): string | null;
   /** The JSON error document of `code`, its message rendered from `detailsJson`. */

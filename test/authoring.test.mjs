@@ -13,7 +13,7 @@ import test from 'node:test';
 import {
   ACTIVATION_SCHEMA_VERSION,
   FlezhaError,
-  defineOperator,
+  defineRelay,
   defineTasklet,
   encodeValue,
   loadNative,
@@ -47,7 +47,7 @@ const derivedChannels = (spec) =>
 test('a graph builds and its topology reaches the declaration', () => {
   const first = echo('first');
   const second = echo('second');
-  const spec = defineOperator({
+  const spec = defineRelay({
     factoryId: 'chain',
     channels: (c) => {
       c.input('in').into(first).into(second).sink();
@@ -90,7 +90,7 @@ test('keyBy declares a dynamic consumer and the key reaches the channel', () => 
       ctx.emit(input);
     },
   });
-  const spec = defineOperator({
+  const spec = defineRelay({
     factoryId: 'keyed',
     channels: (c) => {
       c.input('in')
@@ -113,7 +113,7 @@ test('keyBy declares a dynamic consumer and the key reaches the channel', () => 
 // advances. The refusal is the core's `topology.unservable_clock`; what is asserted here
 // is that this builder writes the fact it reads.
 test('a tasklet that folds no change declares it, and a logical clock over it is refused', () => {
-  const spec = defineOperator({
+  const spec = defineRelay({
     factoryId: 'unservable',
     channels: (c) =>
       c
@@ -129,7 +129,7 @@ test('a tasklet that folds no change declares it, and a logical clock over it is
 test('a refusal reaches the author under the core’s own codes', () => {
   const target = echo('target');
   const refused = refusal(() =>
-    defineOperator({
+    defineRelay({
       factoryId: 'edge_already_wired',
       channels: (c) => {
         const edge = c.input('in');
@@ -148,7 +148,7 @@ test('a refusal reaches the author under the core’s own codes', () => {
 // The one refusal this builder raises under a core code reads the way the core's do.
 test('a node identity collision is refused under the core’s code, in the message too', () => {
   const refused = refusal(() =>
-    defineOperator({
+    defineRelay({
       factoryId: 'collision',
       channels: (c) => {
         const entry = c.input('in');
@@ -165,7 +165,7 @@ test('a node identity collision is refused under the core’s code, in the messa
 test('a named edge names the channel, not the consuming node', () => {
   const first = echo('first');
   const second = echo('second');
-  const spec = defineOperator({
+  const spec = defineRelay({
     factoryId: 'named_edge',
     channels: (c) => {
       c.input('in').into(first).named('hop').into(second).sink();
@@ -185,7 +185,7 @@ test('a named edge names the channel, not the consuming node', () => {
 
 test('a second mention under its own node name is a second node', () => {
   const step = echo('step');
-  const spec = defineOperator({
+  const spec = defineRelay({
     factoryId: 'twice_over',
     channels: (c) => {
       c.input('in').into(step).into(step, 'step_again').sink();
@@ -202,7 +202,7 @@ test('two tasklets claiming one node identity are refused', () => {
   const refused = refusal(() => {
     const first = echo('same');
     const second = echo('same');
-    return defineOperator({
+    return defineRelay({
       factoryId: 'collide',
       channels: (c) => {
         c.input('in').branch([(edge) => edge.into(first), (edge) => edge.into(second)]);
@@ -213,7 +213,7 @@ test('two tasklets claiming one node identity are refused', () => {
 });
 
 test('the checkpoint acknowledgement reaches the declaration as the tree the core reads', () => {
-  const spec = defineOperator({
+  const spec = defineRelay({
     factoryId: 'compose',
     flow: {
       exactly: {
@@ -241,7 +241,7 @@ test('the checkpoint acknowledgement reaches the declaration as the tree the cor
 test('two tasklets each terminate on their own sink, named by their node', () => {
   const a = echo('a');
   const b = echo('b');
-  const spec = defineOperator({
+  const spec = defineRelay({
     factoryId: 'one_sink_twice',
     channels: (c) => {
       c.input('in').branch([(edge) => edge.into(a).sink(), (edge) => edge.into(b).sink()]);
@@ -258,13 +258,13 @@ test('two tasklets each terminate on their own sink, named by their node', () =>
 });
 
 test('the sink names the channel, and the no-argument form leaves it derived', () => {
-  const named = defineOperator({
+  const named = defineRelay({
     factoryId: 'sink_named',
     channels: (c) => {
       c.input('in').into(echo('producer')).sink('items_output');
     },
   });
-  const derived = defineOperator({
+  const derived = defineRelay({
     factoryId: 'sink_derived',
     channels: (c) => {
       c.input('in').into(echo('producer')).sink();
@@ -288,7 +288,7 @@ test('the sink names the channel, and the no-argument form leaves it derived', (
 });
 
 test('a channel named by both named() and sink() is refused naming both', () => {
-  const spec = defineOperator({
+  const spec = defineRelay({
     factoryId: 'named_twice',
     channels: (c) => {
       c.input('in').into(echo('producer')).named('a').sink('b');
@@ -304,7 +304,7 @@ test('a channel named by both named() and sink() is refused naming both', () => 
 });
 
 test('a channel option with nothing wired after it still reaches the channel', () => {
-  const renamed = defineOperator({
+  const renamed = defineRelay({
     factoryId: 'trailing_named',
     channels: (c) => {
       c.input('in').into(echo('producer')).named('renamed');
@@ -315,7 +315,7 @@ test('a channel option with nothing wired after it still reaches the channel', (
     ['in', 'renamed'],
   );
   const keyed = refusal(() =>
-    defineOperator({
+    defineRelay({
       factoryId: 'trailing_keyed',
       channels: (c) => {
         c.input('in').into(echo('producer')).keyed();
@@ -326,7 +326,7 @@ test('a channel option with nothing wired after it still reaches the channel', (
 });
 
 test('two channels naming one sink is refused as a duplicate sink name', () => {
-  const spec = defineOperator({
+  const spec = defineRelay({
     factoryId: 'one_sink_two_channels',
     channels: (c) => {
       c.input('in').branch([
@@ -342,7 +342,7 @@ test('two channels naming one sink is refused as a duplicate sink name', () => {
 });
 
 test('a steps class declares its run and its wall-clock stop beside its tasklets', () => {
-  const spec = defineOperator({
+  const spec = defineRelay({
     factoryId: 'saga',
     steps: { each: 'chained', onFailure: 'keep_progress' },
     maxDurationMs: 60_000,
@@ -410,12 +410,12 @@ test('a declared state that cannot be encoded is refused at definition', () => {
 
 test('a sink names the channel a forwarded frame carries', () => {
   // The channel name is what a forwarded frame carries and what selects the
-  // receiving operator's entry channel, so the name an author writes on the
+  // receiving relay's entry channel, so the name an author writes on the
   // sink has to be the one that rides the wire.
-  const spec = defineOperator({
+  const spec = defineRelay({
     factoryId: 'named_sink',
     channels: (c) => {
-      c.input('in').into(echo('relay')).sink('input');
+      c.input('in').into(echo('forward')).sink('input');
     },
   });
   validate(spec);
@@ -429,7 +429,7 @@ test('a sink names the channel a forwarded frame carries', () => {
 // NODE, never from the sink it terminates on — the sink's name is the plugin's,
 // and several channels may name one sink.
 test('an unnamed edge terminating on a sink takes the producing node’s name', () => {
-  const spec = defineOperator({
+  const spec = defineRelay({
     factoryId: 'unnamed_sink',
     channels: (c) => {
       c.input('in').into(echo('plain')).sink();
@@ -460,7 +460,7 @@ test('an unnamed edge terminating on a sink takes the producing node’s name', 
 
 test('a held handle wired twice is one channel with two consumers', () => {
   const producer = echo('producer');
-  const spec = defineOperator({
+  const spec = defineRelay({
     factoryId: 'fan_out',
     channels: (c) => {
       const edge = c.input('in').into(producer);
@@ -482,7 +482,7 @@ test('branch(...) and two into(...) statements derive the identical topology', (
   const graph = (factoryId, wire) =>
     JSON.stringify(
       derivedChannels(
-        defineOperator({
+        defineRelay({
           factoryId,
           channels: (c) => wire(c.input('in').into(echo('producer'))),
         }),
@@ -500,7 +500,7 @@ test('branch(...) and two into(...) statements derive the identical topology', (
 });
 
 test('sink(...) returns the handle, so a consumer wires behind it', () => {
-  const spec = defineOperator({
+  const spec = defineRelay({
     factoryId: 'hybrid',
     channels: (c) => {
       c.input('in').into(echo('producer')).sink('hybrid_indicator').into(echo('consumer'));
@@ -524,13 +524,13 @@ test('sink(...) returns the handle, so a consumer wires behind it', () => {
 });
 
 test('response() records its link and ends the channel as a sink would, keeping the name', () => {
-  const terminal = defineOperator({
+  const terminal = defineRelay({
     factoryId: 'answers',
     channels: (c) => {
       c.input('in').into(echo('producer')).response();
     },
   });
-  const hybrid = defineOperator({
+  const hybrid = defineRelay({
     factoryId: 'answers_and_feeds',
     channels: (c) => {
       c.input('in').into(echo('producer')).response().into(echo('consumer'));
@@ -557,7 +557,7 @@ test('response() records its link and ends the channel as a sink would, keeping 
 
 test('a sink beside a response on one channel is refused as ending twice', () => {
   const error = refusal(() =>
-    defineOperator({
+    defineRelay({
       factoryId: 'ends_twice',
       channels: (c) => {
         c.input('in').into(echo('producer')).sink('out').response();
@@ -569,7 +569,7 @@ test('a sink beside a response on one channel is refused as ending twice', () =>
 });
 
 test('keyed() reaches the channel of a handle that also declares a sink', () => {
-  const spec = defineOperator({
+  const spec = defineRelay({
     factoryId: 'keyed_hybrid',
     channels: (c) => {
       c.input('in').into(echo('producer')).keyed().sink('mid').into(echo('consumer'));
@@ -580,7 +580,7 @@ test('keyed() reaches the channel of a handle that also declares a sink', () => 
 });
 
 test('a transform declared before one into(...) reaches that consumer only', () => {
-  const spec = defineOperator({
+  const spec = defineRelay({
     factoryId: 'per_edge_transform',
     channels: (c) => {
       const edge = c.input('in').into(echo('producer'));
@@ -606,7 +606,7 @@ test('a transform declared before one into(...) reaches that consumer only', () 
 
 test('a bare re-declared edge is a no-op, not a second edge', () => {
   const target = echo('target');
-  const spec = defineOperator({
+  const spec = defineRelay({
     factoryId: 'edge_redeclared_bare',
     channels: (c) => {
       const edge = c.input('in');
@@ -634,7 +634,7 @@ test('a setting under a parent that does not carry it is refused naming both, in
     [{ durable: { false: { sleepAfter: 1_000 } } }, 'sleep_after', 'false'],
   ]) {
     for (const [form, body] of Object.entries(forms)) {
-      const error = refusal(() => defineOperator({ factoryId: 'misplaced', ...settings, ...body }));
+      const error = refusal(() => defineRelay({ factoryId: 'misplaced', ...settings, ...body }));
       assert.deepEqual(codesOf(error), ['topology.unknown_field'], `${field} on a ${form} form`);
       assert.ok(
         error.message.includes(field) && error.message.includes(`'${parent}'`),
@@ -647,7 +647,7 @@ test('a setting under a parent that does not carry it is refused naming both, in
 test('the durability reaches the declaration as the tree, its members as the core spells them', () => {
   const channels = (c) => c.input('in').into(echo('p'));
   const durable = (settings) =>
-    toHostClassDecl(defineOperator({ factoryId: 'kept', ...settings, channels })).durable;
+    toHostClassDecl(defineRelay({ factoryId: 'kept', ...settings, channels })).durable;
   assert.equal(durable({}), undefined);
   assert.equal(durable({ durable: false }), false);
   assert.equal(durable({ steps: {}, durable: 'remote' }), 'remote');
@@ -655,12 +655,12 @@ test('the durability reaches the declaration as the tree, its members as the cor
     local: { sleep_after: false },
   });
   validate(
-    defineOperator({ factoryId: 'awake', durable: { local: { sleepAfter: 2_000 } }, channels }),
+    defineRelay({ factoryId: 'awake', durable: { local: { sleepAfter: 2_000 } }, channels }),
   );
 });
 
 test('a flow class may keep its work remote', () => {
-  const op = defineOperator({ factoryId: 'remote', durable: 'remote', ...forms.full });
+  const op = defineRelay({ factoryId: 'remote', durable: 'remote', ...forms.full });
   assert.equal(toHostClassDecl(op).durable, 'remote');
 });
 
@@ -669,7 +669,7 @@ test('a class that names both runs, or a kind word where its run is written, is 
     [{ flow: {}, steps: {} }, '{"flow":{},"steps":{}}'],
     [{ bounded: {} }, 'bounded'],
   ]) {
-    const error = refusal(() => defineOperator({ factoryId: 'runs', ...settings, ...forms.full }));
+    const error = refusal(() => defineRelay({ factoryId: 'runs', ...settings, ...forms.full }));
     assert.deepEqual(codesOf(error), ['topology.invalid_setting'], error.message);
     assert.ok(error.message.includes(value), error.message);
   }
@@ -678,10 +678,10 @@ test('a class that names both runs, or a kind word where its run is written, is 
 test('the retired wake field is refused in either form, naming it', () => {
   for (const [form, body] of Object.entries(forms)) {
     const error = refusal(() =>
-      defineOperator({ factoryId: 'w', steps: {}, wakeAfterMs: 5_000, ...body }),
+      defineRelay({ factoryId: 'w', steps: {}, wakeAfterMs: 5_000, ...body }),
     );
     assert.equal(error.code, 'topology.unknown_field', form);
-    assert.deepEqual(error.details, { declaration: "operator 'w'", fields: '`wakeAfterMs`' });
+    assert.deepEqual(error.details, { declaration: "relay 'w'", fields: '`wakeAfterMs`' });
   }
 });
 
@@ -691,7 +691,7 @@ test('a loop shape or failure mode outside its choice is refused at registration
     [{ onFailure: 'sometimes' }, 'sometimes'],
   ]) {
     for (const body of Object.values(forms)) {
-      const error = refusal(() => defineOperator({ factoryId: 'moded', steps, ...body }));
+      const error = refusal(() => defineRelay({ factoryId: 'moded', steps, ...body }));
       assert.deepEqual(codesOf(error), ['topology.invalid_setting'], error.message);
       assert.ok(error.message.includes(value), error.message);
     }
@@ -707,7 +707,7 @@ test('a loop shape or failure mode outside its choice is refused at registration
 const CODEC_CASES = member('test/fixtures/channel_codecs.txt');
 
 const codecSpec = (input = [], sink = []) =>
-  defineOperator({
+  defineRelay({
     factoryId: 'codecs',
     channels: (c) => {
       c.input('in', ...input)
@@ -790,7 +790,7 @@ test('a value JSON has no form for is refused naming the channel', () => {
   assert.throws(() => encode(undefined), emitRefusal('out'));
 });
 
-test('an unknown codec name is refused naming the operator, the channel and the names', () => {
+test('an unknown codec name is refused naming the relay, the channel and the names', () => {
   for (const [input, sink, channel] of [
     [[{ codec: 'yaml' }], [], 'in'],
     [[], [{ codec: 'yaml' }], 'out'],
@@ -807,7 +807,7 @@ test('an unknown codec name is refused naming the operator, the channel and the 
 
 test('a codec and a callable together are refused', () => {
   const unnamed = () =>
-    defineOperator({
+    defineRelay({
       factoryId: 'codecs',
       channels: (c) => {
         c.input('in')
@@ -854,7 +854,7 @@ test('two sources merge into one node, each edge applying its own mapping', () =
 });
 
 test('a tasklet output and an entry are both merge sources', () => {
-  const spec = defineOperator({
+  const spec = defineRelay({
     factoryId: 'merged_hop',
     channels: (c) => {
       const parsed = c.input('raw').into(echo('parse'));
@@ -876,7 +876,7 @@ test('a tasklet output and an entry are both merge sources', () => {
 test('a merge is refused by the core’s codes', () => {
   const target = echo('target');
   const refused = (channels) =>
-    codesOf(refusal(() => defineOperator({ factoryId: 'merge_refused', channels })));
+    codesOf(refusal(() => defineRelay({ factoryId: 'merge_refused', channels })));
 
   assert.deepEqual(
     refused((c) => c.merge().from(c.input('in'), identity).into(target)),
@@ -912,7 +912,7 @@ test('a merge is refused by the core’s codes', () => {
 });
 
 test('the router is a merge into the route_latest node, and a named one is its own node', () => {
-  const spec = defineOperator({
+  const spec = defineRelay({
     factoryId: 'routers',
     channels: (c) => {
       const trades = c.input('trades');
@@ -935,7 +935,7 @@ test('the router is a merge into the route_latest node, and a named one is its o
 });
 
 test('the router hands each key each document once, on that key’s own traffic', async () => {
-  const spec = defineOperator({
+  const spec = defineRelay({
     factoryId: 'routed',
     channels: (c) => {
       c.routeLatest(c.input('config'), c.input('trades'), (trade) => trade.symbol).into(
@@ -973,8 +973,8 @@ test('the router hands each key each document once, on that key’s own traffic'
 
 // --- the §5 short form ------------------------------------------------------
 //
-// An operator definition carrying one tasklet's `run` body in place of a
-// `channels` body is a whole operator of the function's kind, built on the
+// A relay definition carrying one tasklet's `run` body in place of a
+// `channels` body is a whole relay of the function's kind, built on the
 // same graph path a hand-written one is built on. `topology.sink_without_output` is not
 // among the refusals: no `run` returns output and the output type is erased
 // before the SDK runs, so nothing here says whether a short form emits. The
@@ -987,8 +987,8 @@ const declared = (spec) => ({ decl: toHostClassDecl(spec), derived: validate(spe
 
 // Each twin is the full form: a `channels` body still declares one.
 test('a flow short form is its hand-written twin', () => {
-  const short = defineOperator({ factoryId: 'upcase', sink: 'out', codec: 'text', run: upper });
-  const twin = defineOperator({
+  const short = defineRelay({ factoryId: 'upcase', sink: 'out', codec: 'text', run: upper });
+  const twin = defineRelay({
     factoryId: 'upcase',
     channels: (c) => {
       c.input('input', { codec: 'text' })
@@ -1002,7 +1002,7 @@ test('a flow short form is its hand-written twin', () => {
 });
 
 test('a steps short form is its hand-written steps twin', () => {
-  const short = defineOperator({
+  const short = defineRelay({
     factoryId: 'place',
     steps: {},
     sink: 'placed',
@@ -1010,7 +1010,7 @@ test('a steps short form is its hand-written steps twin', () => {
     codec: 'text',
     run: upper,
   });
-  const twin = defineOperator({
+  const twin = defineRelay({
     factoryId: 'place',
     steps: {},
     channels: (c) => {
@@ -1025,7 +1025,7 @@ test('a steps short form is its hand-written steps twin', () => {
 });
 
 test('a short form takes the class settings the full form takes', () => {
-  const short = defineOperator({
+  const short = defineRelay({
     factoryId: 'chat',
     steps: { each: 'per_input' },
     durable: { local: { sleepAfter: 2_000 } },
@@ -1034,7 +1034,7 @@ test('a short form takes the class settings the full form takes', () => {
     codec: 'text',
     run: upper,
   });
-  const twin = defineOperator({
+  const twin = defineRelay({
     factoryId: 'chat',
     steps: { each: 'per_input' },
     durable: { local: { sleepAfter: 2_000 } },
@@ -1050,11 +1050,11 @@ test('a short form takes the class settings the full form takes', () => {
   assert.deepEqual(declared(short), declared(twin));
 });
 
-test('every operator is declared with defineOperator, the one operator export', () => {
-  assert.equal(sdk.defineOperator, defineOperator);
+test('every relay is declared with defineRelay, the one relay export', () => {
+  assert.equal(sdk.defineRelay, defineRelay);
   assert.deepEqual(
-    Object.keys(sdk).filter((name) => /^define.*Operator|Operator$/.test(name)),
-    ['LocalOperator', 'defineOperator'],
+    Object.keys(sdk).filter((name) => /^define.*Relay|Relay$/.test(name)),
+    ['LocalRelay', 'defineRelay'],
   );
 });
 
@@ -1107,7 +1107,7 @@ test('every tasklet field a short form carries reaches its generated tasklet', (
     [{ steps: {} }, keyed],
     [{}, dynamic],
   ]) {
-    const node = defineOperator({ factoryId: 'fielded', sink: 'out', ...settings, ...fields })
+    const node = defineRelay({ factoryId: 'fielded', sink: 'out', ...settings, ...fields })
       .tasklets[0];
     assert.equal(node.name, 'fielded');
     for (const [field, value] of Object.entries(fields)) {
@@ -1119,23 +1119,23 @@ test('every tasklet field a short form carries reaches its generated tasklet', (
 test('a short form names its tasklet after its factory id, and a name is refused', () => {
   for (const settings of [{}, { steps: {} }]) {
     const error = refusal(() =>
-      defineOperator({ factoryId: 'short', sink: 'out', run: upper, name: 'other', ...settings }),
+      defineRelay({ factoryId: 'short', sink: 'out', run: upper, name: 'other', ...settings }),
     );
     assert.equal(error.code, 'topology.setting_on_short_form', error.message);
     assert.deepEqual(error.details, { factory_id: 'short', fields: '`name`' });
   }
 });
 
-test('a retired class setting is refused under the operator, naming it', () => {
+test('a retired class setting is refused under the relay, naming it', () => {
   for (const field of ['persistent', 'effectivelyOnce', 'correctionWindow']) {
     for (const body of [
       { sink: 'out', run: upper },
       { channels: (c) => c.input('in').into(echo('p')) },
     ]) {
-      const error = refusal(() => defineOperator({ factoryId: 'retired', [field]: true, ...body }));
+      const error = refusal(() => defineRelay({ factoryId: 'retired', [field]: true, ...body }));
       assert.equal(error.code, 'topology.unknown_field', error.message);
       assert.deepEqual(error.details, {
-        declaration: "operator 'retired'",
+        declaration: "relay 'retired'",
         fields: `\`${field}\``,
       });
     }
@@ -1153,7 +1153,7 @@ test('a short-form key or a tasklet field beside a channels body is refused, nam
       ['cells', { keys: ['a'] }],
     ]) {
       const error = refusal(() =>
-        defineOperator({
+        defineRelay({
           factoryId: 'full',
           ...settings,
           [key]: value,
@@ -1169,7 +1169,7 @@ test('a short-form key or a tasklet field beside a channels body is refused, nam
 test('a run body beside a channels body is refused as topology.short_form_with_topology', () => {
   for (const settings of [{}, { steps: {} }]) {
     const error = refusal(() =>
-      defineOperator({
+      defineRelay({
         factoryId: 'both',
         ...settings,
         sink: 'out',
@@ -1185,9 +1185,9 @@ test('a run body beside a channels body is refused as topology.short_form_with_t
 
 test('a definition with neither body is refused, naming both', () => {
   for (const settings of [{}, { steps: {} }]) {
-    const error = refusal(() => defineOperator({ factoryId: 'bodiless', ...settings }));
+    const error = refusal(() => defineRelay({ factoryId: 'bodiless', ...settings }));
     assert.equal(error.code, 'topology.missing_body');
-    assert.equal(error.details.declaration, "operator 'bodiless'");
+    assert.equal(error.details.declaration, "relay 'bodiless'");
     assert.ok(
       error.message.includes('`run`') && error.message.includes('`channels`'),
       error.message,
@@ -1197,12 +1197,12 @@ test('a definition with neither body is refused, naming both', () => {
 
 test('a definition with no factory id is refused, naming it', () => {
   for (const factoryId of [undefined, '', '  ']) {
-    const error = refusal(() => defineOperator({ factoryId, sink: 'out', run: upper }));
+    const error = refusal(() => defineRelay({ factoryId, sink: 'out', run: upper }));
     assert.equal(error.code, 'topology.missing_factory_id');
   }
 });
 
-test('an operator field on a tasklet is refused, naming it and defineOperator', () => {
+test('a relay field on a tasklet is refused, naming it and defineRelay', () => {
   for (const [field, value] of [
     ['steps', {}],
     ['durable', false],
@@ -1211,20 +1211,18 @@ test('an operator field on a tasklet is refused, naming it and defineOperator', 
     ['codec', 'text'],
   ]) {
     const error = refusal(() => defineTasklet({ name: 'upcase', [field]: value, run: upper }));
-    assert.equal(error.code, 'topology.operator_field_on_tasklet');
+    assert.equal(error.code, 'topology.relay_field_on_tasklet');
     assert.equal(error.details.fields, `\`${field}\``);
-    assert.ok(error.message.includes('`defineOperator`'), error.message);
+    assert.ok(error.message.includes('`defineRelay`'), error.message);
   }
 });
 
 test('a short form under a factory id already held is refused across runs', () => {
   const registry = new Registry();
-  registry.add(defineOperator({ factoryId: 'twice', sink: 'out', run: upper }));
+  registry.add(defineRelay({ factoryId: 'twice', sink: 'out', run: upper }));
   assert.throws(
     () =>
-      registry.add(
-        defineOperator({ factoryId: 'twice', steps: {}, sink: 'twin_sink', run: upper }),
-      ),
+      registry.add(defineRelay({ factoryId: 'twice', steps: {}, sink: 'twin_sink', run: upper })),
     (error) =>
       error.message.startsWith('topology.duplicate_factory_id') &&
       error.details.factory_id === 'twice',

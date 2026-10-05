@@ -8,7 +8,7 @@
 
 import { BroadcastChannel } from 'node:worker_threads';
 
-import { defineOperator, defineTasklet } from '@flezha/sdk';
+import { defineRelay, defineTasklet } from '@flezha/sdk';
 
 import { fixtureDurable, prefix } from './fixture_support.mjs';
 
@@ -22,7 +22,7 @@ const DoNothing = defineTasklet({
   run: (input, ctx) => ctx.emit(input),
 });
 
-export const doNothing = defineOperator({
+export const doNothing = defineRelay({
   factoryId: 'do_nothing',
   channels: (c) => {
     c.input('input', { codec: 'text' }).into(DoNothing).sink('echo');
@@ -32,7 +32,7 @@ export const doNothing = defineOperator({
 // Echo with a declared DropNothing on its entry mailbox. `do_nothing` is the
 // merge-blocking bench factory and must not change; this keeps the round-trip
 // bench's back-pressure posture independent of it.
-export const benchEcho = defineOperator({
+export const benchEcho = defineRelay({
   factoryId: 'bench_echo',
   channels: (c) => {
     c.input('input', { codec: 'text' }).onFull('drop_nothing').into(DoNothing).sink('echo');
@@ -51,7 +51,7 @@ const CompleteFlow = defineTasklet({
   },
 });
 
-export const completeFlow = defineOperator({
+export const completeFlow = defineRelay({
   factoryId: 'complete_flow',
   channels: (c) => {
     c.input('input', { codec: 'text' }).into(CompleteFlow).sink('complete_flow_out');
@@ -70,7 +70,7 @@ const ChainedCountdown = defineTasklet({
   },
 });
 
-export const chainedSteps = defineOperator({
+export const chainedSteps = defineRelay({
   factoryId: 'chained_steps',
   steps: { each: 'chained' },
   channels: (c) => {
@@ -90,14 +90,14 @@ const CompareFilter = defineTasklet({
   },
 });
 
-export const compareFilter = defineOperator({
+export const compareFilter = defineRelay({
   factoryId: 'compare_filter',
   channels: (c) => {
     c.input('input', { codec: 'text' }).into(CompareFilter).sink('sink');
   },
 });
 
-// -- static_cell / sugar_static_cell / mixed_operator ------------------
+// -- static_cell / sugar_static_cell / mixed_relay ------------------
 
 const STATIC_KEYS = ['a', 'b', 'c', 'd'];
 const staticCellsFor = (input) => {
@@ -124,7 +124,7 @@ const passThrough = (name) => defineTasklet({ name, run: (input, ctx) => ctx.emi
 const StaticEntry = staticEntry('static_entry_tasklet');
 const StaticDownstream = passThrough('static_downstream_tasklet');
 
-export const staticCell = defineOperator({
+export const staticCell = defineRelay({
   factoryId: 'static_cell',
   channels: (c) => {
     c.input('input', { codec: 'text' })
@@ -140,7 +140,7 @@ const MacroStaticDownstream = passThrough('macro_static_downstream_tasklet');
 
 // The reference pipeline sugar leaves the hop unnamed and lets the sink name
 // the producing channel.
-export const sugarStaticCell = defineOperator({
+export const sugarStaticCell = defineRelay({
   factoryId: 'sugar_static_cell',
   channels: (c) => {
     c.input('input', { codec: 'text' })
@@ -153,8 +153,8 @@ export const sugarStaticCell = defineOperator({
 const MixedMacroEntry = passThrough('mixed_macro_entry_tasklet');
 const MixedHandDownstream = passThrough('mixed_hand_downstream');
 
-export const mixedOperator = defineOperator({
-  factoryId: 'mixed_operator',
+export const mixedRelay = defineRelay({
+  factoryId: 'mixed_relay',
   channels: (c) => {
     c.input('input', { codec: 'text' })
       .into(MixedMacroEntry)
@@ -166,17 +166,17 @@ export const mixedOperator = defineOperator({
 
 // -- the §5 short forms -----------------------------------------------------
 //
-// One operator declaration each, carrying its tasklet's `run` body in place
+// One relay declaration each, carrying its tasklet's `run` body in place
 // of a `channels` body. No tasklet is declared beside them.
 
-export const sugarDoNothing = defineOperator({
+export const sugarDoNothing = defineRelay({
   factoryId: 'sugar_do_nothing',
   sink: 'sugar_do_nothing_echo',
   codec: 'text',
   run: (input, ctx) => ctx.emit(input),
 });
 
-export const sugarStoreInput = defineOperator({
+export const sugarStoreInput = defineRelay({
   factoryId: 'sugar_store_input',
   sink: 'sugar_store_sink',
   codec: 'text',
@@ -190,7 +190,7 @@ export const sugarStoreInput = defineOperator({
   },
 });
 
-export const sugarNamedInput = defineOperator({
+export const sugarNamedInput = defineRelay({
   factoryId: 'sugar_named_input',
   sink: 'sugar_named_input_sink',
   input: 'prices',
@@ -198,7 +198,7 @@ export const sugarNamedInput = defineOperator({
   run: (input, ctx) => ctx.emit(input),
 });
 
-export const sugarSteps = defineOperator({
+export const sugarSteps = defineRelay({
   factoryId: 'sugar_steps',
   steps: {},
   durable: fixtureDurable(),
@@ -210,7 +210,7 @@ export const sugarSteps = defineOperator({
 
 // The one class-level setting a short form writes: one pass per message, so
 // the instance runs on after the first.
-export const sugarStepsPerInput = defineOperator({
+export const sugarStepsPerInput = defineRelay({
   factoryId: 'sugar_steps_per_input',
   steps: { each: 'per_input' },
   durable: fixtureDurable(),
@@ -220,7 +220,7 @@ export const sugarStepsPerInput = defineOperator({
 });
 
 // No sink: the entry feeds a tasklet that only keeps state.
-export const sugarStateOnly = defineOperator({
+export const sugarStateOnly = defineRelay({
   factoryId: 'sugar_state_only',
   input: 'ticks',
   codec: 'text',
@@ -262,7 +262,7 @@ const HybridConsumer = defineTasklet({
   },
 });
 
-export const hybridChannel = defineOperator({
+export const hybridChannel = defineRelay({
   factoryId: 'hybrid_channel',
   channels: (c) => {
     c.input('input', { codec: 'text' })
@@ -297,7 +297,7 @@ const MergeLabel = defineTasklet({
   run: (input, ctx) => ctx.emit(`${input.source}:${input.payload}`),
 });
 
-export const mergedInput = defineOperator({
+export const mergedInput = defineRelay({
   factoryId: 'merged_input',
   channels: (c) => {
     c.merge()
@@ -317,7 +317,7 @@ export const mergedInput = defineOperator({
 
 const TransformLabel = passThrough('transform_label_tasklet');
 
-export const transformChain = defineOperator({
+export const transformChain = defineRelay({
   factoryId: 'transform_chain',
   channels: (c) => {
     c.input('trades', { codec: 'text' })
@@ -347,7 +347,7 @@ const StressB = stress('stress_b', () => ['p0']);
 const StressC = stress('stress_c', () => ['p0']);
 const StressD = stress('stress_d', () => ['p0']);
 
-export const cellStress = defineOperator({
+export const cellStress = defineRelay({
   factoryId: 'cell_stress',
   channels: (c) => {
     c.input('input', { codec: 'text' })
@@ -375,7 +375,7 @@ const PoisonProbe = defineTasklet({
   },
 });
 
-export const poisonProbe = defineOperator({
+export const poisonProbe = defineRelay({
   factoryId: 'poison_probe',
   channels: (c) => {
     c.input('input', { codec: 'text' }).retryBackoffMs(25).into(PoisonProbe).sink('out');
@@ -404,7 +404,7 @@ const WedgeProbe = defineTasklet({
   },
 });
 
-export const wedgeProbe = defineOperator({
+export const wedgeProbe = defineRelay({
   factoryId: 'wedge_probe',
   channels: (c) => {
     c.input('input', { codec: 'text' }).into(WedgeProbe).sink('out');
@@ -438,7 +438,7 @@ const Candle = defineTasklet({
   },
 });
 
-export const candle = defineOperator({
+export const candle = defineRelay({
   factoryId: 'candle',
   flow: { exactly: { effectively_once: { correctionMs: 600_000 } } },
   channels: (c) => {
@@ -473,7 +473,7 @@ const SessionTimeout = defineTasklet({
   },
 });
 
-export const sessionTimeout = defineOperator({
+export const sessionTimeout = defineRelay({
   factoryId: 'session_timeout',
   channels: (c) => {
     c.input('input', { codec: 'text' }).into(SessionTimeout).sink('kafka');
@@ -497,7 +497,7 @@ const boundedMailboxTasklet = (name) =>
   });
 
 const boundedMailbox = (policy) =>
-  defineOperator({
+  defineRelay({
     factoryId: `bounded_mailbox_${policy}`,
     channels: (c) => {
       c.input(`${policy}_input`, { codec: 'text' })
@@ -511,16 +511,16 @@ export const boundedMailboxDropNothing = boundedMailbox('drop_nothing');
 export const boundedMailboxDropNewest = boundedMailbox('drop_newest');
 export const boundedMailboxDropOldest = boundedMailbox('drop_oldest');
 
-// -- partition_relay --------------------------------------------------------
+// -- partition_pass --------------------------------------------------------
 //
-// The partitioned-operators upstream: keyed on the wiring so it can be
+// The partitioned-relays upstream: keyed on the wiring so it can be
 // partitioned at all, and emitting keyed so a partitioned forward target can
 // resolve the owning member. The plugin channel is named `input` because a
 // forwarded frame keeps its producing channel's name, and that is what selects
-// the receiving operator's entry channel — so the entry here is `in`.
+// the receiving relay's entry channel — so the entry here is `in`.
 
-const PartitionRelay = defineTasklet({
-  name: 'partition_relay_tasklet',
+const PartitionPass = defineTasklet({
+  name: 'partition_pass_tasklet',
   initState: () => ({ seen: [] }),
   applyChange: (state, change) => {
     state.seen.push(change.push);
@@ -531,10 +531,10 @@ const PartitionRelay = defineTasklet({
   },
 });
 
-export const partitionRelay = defineOperator({
-  factoryId: 'partition_relay',
+export const partitionPass = defineRelay({
+  factoryId: 'partition_pass',
   channels: (c) => {
-    c.input('in', { codec: 'text' }).keyBy(prefix).into(PartitionRelay).keyed().sink('input');
+    c.input('in', { codec: 'text' }).keyBy(prefix).into(PartitionPass).keyed().sink('input');
   },
 });
 
@@ -554,7 +554,7 @@ const DynamicCell = defineTasklet({
   },
 });
 
-export const dynamicCell = defineOperator({
+export const dynamicCell = defineRelay({
   factoryId: 'dynamic_cell',
   channels: (c) => {
     c.input('input', { codec: 'text' })
@@ -570,12 +570,12 @@ export const dynamicCell = defineOperator({
 
 // -- call_response ----------------------------------------------------------
 //
-// Operators an outside caller calls and whose graph answers it through
+// Relays an outside caller calls and whose graph answers it through
 // `response()`: from the first tasklet, from a downstream one, and from
 // whichever of two filtered paths the input took. `call_turn` is the steps
 // one, in fixtures_steps.mjs.
 
-export const callEcho = defineOperator({
+export const callEcho = defineRelay({
   factoryId: 'call_echo',
   channels: (c) => {
     c.input('in', { codec: 'text' }).into(passThrough('call_echo')).response();
@@ -587,7 +587,7 @@ const CallAnswer = defineTasklet({
   run: (input, ctx) => ctx.emit(`re:${input}`),
 });
 
-export const callDownstream = defineOperator({
+export const callDownstream = defineRelay({
   factoryId: 'call_downstream',
   channels: (c) => {
     c.input('in', { codec: 'text' }).into(passThrough('call_parse')).into(CallAnswer).response();
@@ -604,7 +604,7 @@ const CallRefuse = defineTasklet({
   run: (input, ctx) => ctx.emit(`refused:${input}`),
 });
 
-export const callSplit = defineOperator({
+export const callSplit = defineRelay({
   factoryId: 'call_split',
   channels: (c) => {
     const admitted = c.input('in', { codec: 'text' }).into(passThrough('call_admit'));
@@ -622,7 +622,7 @@ export const callSplit = defineOperator({
 // -- parts ------------------------------------------------------------------
 //
 // For an input `n` the tasklet sends the parts `1` .. `n` and then emits
-// `done:<n>` on its sink `answer`, in a flow operator and in a
+// `done:<n>` on its sink `answer`, in a flow relay and in a
 // `per_input` steps one. `retry:<n>` sends its parts and then fails
 // retryably the first time this process sees it, so the retry's parts number
 // from 0 again under the next attempt.
@@ -642,7 +642,7 @@ const sendParts = (input, ctx) => {
   ctx.emit(`done:${count}`);
 };
 
-export const partEcho = defineOperator({
+export const partEcho = defineRelay({
   factoryId: 'part_echo',
   channels: (c) => {
     c.input('in', { codec: 'text' })
@@ -652,7 +652,7 @@ export const partEcho = defineOperator({
   },
 });
 
-export const partEchoSteps = defineOperator({
+export const partEchoSteps = defineRelay({
   factoryId: 'part_echo_steps',
   steps: { each: 'per_input' },
   durable: fixtureDurable(),

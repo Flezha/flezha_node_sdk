@@ -64,7 +64,7 @@ export interface DerivedDecl {
 
 /**
  * The nodes some chain reaches through a `key` link. The cell mode is the
- * wiring's, so one tasklet can be keyed in one operator and single in another.
+ * wiring's, so one tasklet can be keyed in one relay and single in another.
  */
 function keyedConsumers(spec: ClassSpec): Set<number> {
   const keyed = new Set<number>();

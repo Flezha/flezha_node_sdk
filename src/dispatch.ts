@@ -26,8 +26,8 @@ import type {
 import { foldRestore, rawState } from './state.js';
 
 /**
- * Where one cell's state is kept: its operator's table, and its key there. The
- * operator is part of it because one class serves every instance and
+ * Where one cell's state is kept: its relay's table, and its key there. The
+ * relay is part of it because one class serves every instance and
  * partition of its factory on this runner, each with cells of its own under
  * the same tasklet and key.
  */
@@ -40,8 +40,8 @@ export interface CellAddress {
 export class RegisteredClass {
   /** Channels each tasklet produces on, by tasklet index. */
   readonly outgoing: ChannelSpec[][];
-  /** Live cell state: one table per operator, keyed by tasklet index and cell key. */
-  private readonly operators = new Map<string, Map<string, unknown>>();
+  /** Live cell state: one table per relay, keyed by tasklet index and cell key. */
+  private readonly relays = new Map<string, Map<string, unknown>>();
 
   constructor(readonly spec: ClassSpec) {
     this.outgoing = spec.tasklets.map((node) =>
@@ -51,8 +51,8 @@ export class RegisteredClass {
 
   /** The address of the cell an activation names. */
   address(activation: NativeActivation, node: TaskNode): CellAddress {
-    let table = this.operators.get(activation.operator);
-    if (!table) this.operators.set(activation.operator, (table = new Map()));
+    let table = this.relays.get(activation.relay);
+    if (!table) this.relays.set(activation.relay, (table = new Map()));
     return { table, key: `${node.index}\0${activation.cellKey ?? ''}` };
   }
 
@@ -212,7 +212,7 @@ async function invoke(
     spec: registered.spec,
     node,
     outgoing: registered.outgoing[node.index] as ChannelSpec[],
-    operator: activation.operator,
+    relay: activation.relay,
     cellKey: activation.cellKey,
     changeSeq: activation.changeSeq,
     now: at.now,
@@ -268,7 +268,7 @@ async function runWork(
           // This node's own edge off the channel: a transform chain declared
           // before one `into` belongs to that consumer and to no other. It is
           // evaluated here only for a payload that reached us untransformed —
-          // an entry payload, whose producer is the wire, or a steps operator
+          // an entry payload, whose producer is the wire, or a steps relay
           // stage's released value. A flow producer evaluated it as its
           // activation completed, and evaluating it again would compose the
           // chain with itself.

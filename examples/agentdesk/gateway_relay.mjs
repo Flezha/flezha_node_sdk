@@ -1,4 +1,4 @@
-import { defineOperator } from '@flezha/sdk';
+import { defineRelay } from '@flezha/sdk';
 
 import { Admit } from './admit.mjs';
 import { Budget, admitted, used } from './budget.mjs';
@@ -9,10 +9,10 @@ const DEADLINE_MS = 60_000;
 const user = (value) => value.user;
 
 /**
- * The HTTP side of the desk: a flow operator that carries the HTTP
+ * The HTTP side of the desk: a flow relay that carries the HTTP
  * plugin, answers every request, and calls the session a message is for.
  */
-export default defineOperator({
+export default defineRelay({
   factoryId: 'gateway',
   flow: { exactly: 'effectively_once' }, // each request and answer on disk before it runs
   channels: (c) => {
@@ -37,7 +37,7 @@ export default defineOperator({
       .filter(admitted)
       .map((verdict) => verdict.message)
       .keyBy(user) // the user's session
-      // call the "agent" operator; its answer comes back here
+      // call the "agent" relay; its answer comes back here
       .call({ factory: 'agent', channel: 'message' }, { deadlineMs: DEADLINE_MS })
       .map(used) // the session's answer, as tokens used
       .keyBy(user)

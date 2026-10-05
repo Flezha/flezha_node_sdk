@@ -8,7 +8,7 @@ import test from 'node:test';
 
 import {
   ACTIVATION_SCHEMA_VERSION,
-  defineOperator,
+  defineRelay,
   defineTasklet,
   loadNative,
   toHostClassDecl,
@@ -53,7 +53,7 @@ function fullyDeclaredFlow() {
       ctx.emit(input);
     },
   });
-  return defineOperator({
+  return defineRelay({
     factoryId: 'node_decl_full',
     description: 'every flow option',
     flow: {
@@ -87,7 +87,7 @@ function fullyDeclaredStatic() {
     cells: { keys: ['a', 'b'], cellsFor: () => ['a'] },
     run: (input, ctx) => ctx.emit(input),
   });
-  return defineOperator({
+  return defineRelay({
     factoryId: 'node_decl_static',
     channels: (c) => c.input('in').into(statik).sink(),
   });
@@ -190,7 +190,7 @@ function hybridChannel() {
     run: (input, ctx) => ctx.emit(input),
   });
   const consumer = defineTasklet({ name: 'hybrid_consumer_tasklet', run: () => {} });
-  return defineOperator({
+  return defineRelay({
     factoryId: 'hybrid_channel',
     channels: (c) => {
       c.input('input').into(producer).sink('hybrid_indicator', bytes).into(consumer);
@@ -204,7 +204,7 @@ function commitBlockChain() {
     run: (input, ctx) => ctx.emit(input, { key: 'job' }),
   });
   const blockB = defineTasklet({ name: 'block_b', run: () => {} });
-  return defineOperator({
+  return defineRelay({
     factoryId: 'commit_block_chain',
     steps: {},
     channels: (c) => {
@@ -229,7 +229,7 @@ test('the structured steps topology is the reference, channel for channel', () =
 test('a merge source serialises as the core’s merge link, keyed after its mapping', () => {
   const merged = (name) => defineTasklet({ name, run: (i, ctx) => ctx.emit(i) });
   const decl = toHostClassDecl(
-    defineOperator({
+    defineRelay({
       factoryId: 'node_decl_merge',
       channels: (c) => {
         for (const [first, second, into] of [

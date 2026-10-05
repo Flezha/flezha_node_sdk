@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "One message in, one message out: a tasklet, an operator and a runner.",
+  "description": "One message in, one message out: a tasklet, a relay and a runner.",
   "scripts": {
     "start": "node runner.mjs"
   },

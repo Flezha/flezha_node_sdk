@@ -12,7 +12,7 @@
  * at registration and covered by `test/authoring.test.mjs`.
  */
 
-import { defineOperator, defineTasklet, type Ctx } from '../src/index.js';
+import { defineRelay, defineTasklet, type Ctx } from '../src/index.js';
 
 interface Trade {
   symbol: string;
@@ -64,14 +64,14 @@ const Count = defineTasklet({
 
 // The topology this is all about: it compiles, and every refusal below is a
 // deviation from it.
-export const wellTyped = defineOperator({
+export const wellTyped = defineRelay({
   factoryId: 'well_typed',
   channels: (c) => {
     c.input<Trade>('trades').into(Ohlc).into(Publish).sink();
   },
 });
 
-export const refusals = defineOperator({
+export const refusals = defineRelay({
   factoryId: 'refusals',
   channels: (c) => {
     // A producer wired to a consumer whose declared input it does not satisfy.
@@ -174,7 +174,7 @@ const NoOutput = defineTasklet({
   },
 });
 
-export const moreRefusals = defineOperator({
+export const moreRefusals = defineRelay({
   factoryId: 'more_refusals',
   channels: (c) => {
     c.input<Trade>('j').branch([
@@ -187,14 +187,14 @@ export const moreRefusals = defineOperator({
 
 // The §5 short form: one tasklet's fields and its `run` body in place of a
 // `channels` body, with the class settings the full form takes.
-export const shortForm = defineOperator({
+export const shortForm = defineRelay({
   factoryId: 'short_form',
   sink: 'out',
   codec: 'text',
   run: (line: string, ctx: Ctx<string>) => ctx.emit(line.toUpperCase()),
 });
 
-export const statefulShortForm = defineOperator({
+export const statefulShortForm = defineRelay({
   factoryId: 'stateful_short_form',
   steps: {},
   initState: () => ({ seen: [] as string[] }),
@@ -209,13 +209,13 @@ export const statefulShortForm = defineOperator({
 });
 
 // @ts-expect-error a short form carries its body in place of a topology body, never beside one
-defineOperator({ factoryId: 'both', run: quiet, channels: () => {} });
+defineRelay({ factoryId: 'both', run: quiet, channels: () => {} });
 
 // @ts-expect-error a short form's tasklet is named after its `factoryId`
-defineOperator({ factoryId: 'named', name: 'other', run: quiet });
+defineRelay({ factoryId: 'named', name: 'other', run: quiet });
 
 // A short form takes the class settings the full form takes.
-export const loopedShortForm = defineOperator({
+export const loopedShortForm = defineRelay({
   factoryId: 'looped',
   steps: { each: 'per_input', onFailure: 'keep_progress' },
   durable: { local: { sleepAfter: 2_000 } },
@@ -223,21 +223,21 @@ export const loopedShortForm = defineOperator({
 });
 
 // @ts-expect-error a class runs as a flow or in steps, never both
-defineOperator({ factoryId: 'both_runs', flow: {}, steps: {}, run: quiet });
+defineRelay({ factoryId: 'both_runs', flow: {}, steps: {}, run: quiet });
 
 // @ts-expect-error `forever` is not a loop shape
-defineOperator({ factoryId: 'forever', steps: { each: 'forever' }, run: quiet });
+defineRelay({ factoryId: 'forever', steps: { each: 'forever' }, run: quiet });
 
 // @ts-expect-error a flow has no loop shape: `each` belongs under `steps`
-defineOperator({ factoryId: 'streamed', flow: { each: 'per_input' }, run: quiet });
+defineRelay({ factoryId: 'streamed', flow: { each: 'per_input' }, run: quiet });
 
 // @ts-expect-error the acknowledgement belongs under `effectively_once`
-defineOperator({ factoryId: 'acked', flow: { exactly: { at_least_once: { ack: 'checkpoint' } } }, run: quiet });
+defineRelay({ factoryId: 'acked', flow: { exactly: { at_least_once: { ack: 'checkpoint' } } }, run: quiet });
 
 // @ts-expect-error an instance that keeps nothing has nothing to sleep with
-defineOperator({ factoryId: 'dreaming', durable: { false: { sleepAfter: 1_000 } }, run: quiet });
+defineRelay({ factoryId: 'dreaming', durable: { false: { sleepAfter: 1_000 } }, run: quiet });
 
-export const remoteEffectivelyOnce = defineOperator({
+export const remoteEffectivelyOnce = defineRelay({
   factoryId: 'remote_eo',
   flow: {
     exactly: {
@@ -252,9 +252,9 @@ export const remoteEffectivelyOnce = defineOperator({
 });
 
 // @ts-expect-error retry is the edge's `retryMax`, never a class setting
-defineOperator({ factoryId: 'retried', steps: {}, retryAttempts: 0, channels: () => {} });
+defineRelay({ factoryId: 'retried', steps: {}, retryAttempts: 0, channels: () => {} });
 
-// @ts-expect-error a tasklet carries no sink; the short form is an operator
+// @ts-expect-error a tasklet carries no sink; the short form is a relay
 defineTasklet({ name: 'sinking', sink: 'out', run: quiet });
 
 // @ts-expect-error a tasklet's body is `run`
@@ -276,7 +276,7 @@ defineTasklet({ name: 'async_returning', run: async (trade: Trade) => trade });
 defineTasklet({ name: 'by_reference', run: upper });
 
 // @ts-expect-error a short form's `run` is a tasklet's
-defineOperator({ factoryId: 'returning_short', sink: 'out', run: upper });
+defineRelay({ factoryId: 'returning_short', sink: 'out', run: upper });
 
 // @ts-expect-error `onTimer` returns nothing either
 defineTasklet({ name: 'returning_timer', run: quiet, onTimer: (firing) => firing.scheduledAt });

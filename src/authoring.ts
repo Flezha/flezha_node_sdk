@@ -25,7 +25,7 @@ import {
   type ChannelCodec,
   type CodecOptions,
   type Merge,
-  type OperatorDefinition,
+  type RelayDefinition,
   type OverflowPolicy,
   type Tasklet,
   type RoutedDocument,
@@ -302,7 +302,7 @@ class Builder implements ChannelBuilder {
   }
 }
 
-/** Where a flow operator's values come from: an entry channel, or a tasklet. */
+/** Where a flow relay's values come from: an entry channel, or a tasklet. */
 type Source = { source: 'entry'; channel: ChannelSpec } | { source: 'tasklet'; node: TaskNode };
 
 class EdgeStream<T> implements Stream<T> {
@@ -588,14 +588,14 @@ function applyPending(channel: ChannelSpec, pending: PendingEdge): void {
 }
 
 /**
- * Define an operator from its channels graph, or, as the §5 short form, from
+ * Define a relay from its channels graph, or, as the §5 short form, from
  * one tasklet's fields and `run` body. Either form takes the class settings.
  */
-export function defineOperator(definition: OperatorDefinition): ClassSpec;
-export function defineOperator<TIn, TOut = never, TState = void, TChange = never>(
+export function defineRelay(definition: RelayDefinition): ClassSpec;
+export function defineRelay<TIn, TOut = never, TState = void, TChange = never>(
   definition: ShortFormDefinition<TIn, TOut, TState, TChange>,
 ): ClassSpec;
-export function defineOperator(definition: EitherForm<OperatorDefinition>): ClassSpec {
+export function defineRelay(definition: EitherForm<RelayDefinition>): ClassSpec {
   const builder = new Builder(definition.factoryId);
   channelsOf(definition)(builder);
   return {
@@ -678,7 +678,7 @@ export function runsInSteps(spec: ClassSpec): boolean {
 /**
  * Whether each invocation's output rides one effect record the controller
  * stamps at flush: under the effectively-once tier, and for a durable steps
- * operator, whose stage commit names the record.
+ * relay, whose stage commit names the record.
  */
 export function recordsEffects(spec: ClassSpec): boolean {
   const flow = branchOf(spec.run) === 'flow' ? (spec.run as { flow?: unknown }).flow : undefined;

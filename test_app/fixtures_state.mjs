@@ -2,7 +2,7 @@
 // shares, and the counter and resume twins — the same partition as
 // test/apps/python_runner/fixtures_state.py and the reference's state.rs.
 
-import { decodeValue, defineOperator, defineTasklet } from '@flezha/sdk';
+import { decodeValue, defineRelay, defineTasklet } from '@flezha/sdk';
 
 import { fixtureDurable, prefix } from './fixture_support.mjs';
 
@@ -60,7 +60,7 @@ const BenchCheckpoint = keyedUpsertTasklet('bench_checkpoint_tasklet', upsert);
 // The same keyed upsert under both durability postures, so the round-trip
 // bench can isolate the cost of per-Cell persistence.
 const keyedUpsert = (factoryId, options = {}) =>
-  defineOperator({
+  defineRelay({
     factoryId,
     ...options,
     channels: (c) => {
@@ -79,7 +79,7 @@ export const benchKeyed = keyedUpsert('bench_keyed');
 
 // The effectively-once reference: a keyed upsert under the tier. A 300 ms
 // backoff base keeps the min-watermark freeze observable in the DLQ e2e.
-// Declared DropNothing: a durable-input-log operator that shed at its mailbox
+// Declared DropNothing: a durable-input-log relay that shed at its mailbox
 // would hold the min-watermark on the shed offset forever while the log behind
 // it kept growing.
 const tierStoreChannels = (c) => {
@@ -91,7 +91,7 @@ const tierStoreChannels = (c) => {
     .sink('sink');
 };
 
-export const tierStore = defineOperator({
+export const tierStore = defineRelay({
   factoryId: 'tier_store',
   flow: { exactly: 'effectively_once' },
   channels: tierStoreChannels,
@@ -99,7 +99,7 @@ export const tierStore = defineOperator({
 
 // The same store kept `durable: remote`: an input is acknowledged only once the
 // durability backend holds the records it produced.
-export const remoteTierStore = defineOperator({
+export const remoteTierStore = defineRelay({
   factoryId: 'remote_tier_store',
   flow: { exactly: 'effectively_once' },
   durable: 'remote',
@@ -108,11 +108,11 @@ export const remoteTierStore = defineOperator({
 
 // -- tier_chain -------------------------------------------------------------
 //
-// An effectively-once stream of two tasklets. `tier_relay` counts what it
-// relays and passes each `key:value` on; `tier_tally` counts each key's inputs
+// An effectively-once stream of two tasklets. `tier_pass` counts what it
+// forwards and passes each `key:value` on; `tier_tally` counts each key's inputs
 // and emits `key=count`. Until the release env is set the tally fails the
 // value `hold` and keeps retrying it, so a runner killed there has made the
-// relay's record durable and not the tally's.
+// pass's record durable and not the tally's.
 
 const counting = (name, run) =>
   defineTasklet({
@@ -124,7 +124,7 @@ const counting = (name, run) =>
     run,
   });
 
-const TierRelay = counting('tier_relay', (input, ctx) => {
+const TierPass = counting('tier_pass', (input, ctx) => {
   ctx.change({ delta: 1 });
   ctx.emit(input);
 });
@@ -138,13 +138,13 @@ const TierTally = counting('tier_tally', (input, ctx) => {
   ctx.emit(`${key}=${ctx.state.value}`, { key });
 });
 
-export const tierChain = defineOperator({
+export const tierChain = defineRelay({
   factoryId: 'tier_chain',
   flow: { exactly: 'effectively_once' },
   channels: (c) => {
     c.input('input', { codec: 'text' })
       .onFull('drop_nothing')
-      .into(TierRelay)
+      .into(TierPass)
       .keyBy(prefix)
       .retryMax(1_000)
       .into(TierTally)
@@ -153,7 +153,7 @@ export const tierChain = defineOperator({
   },
 });
 
-export const checkpointStore = defineOperator({
+export const checkpointStore = defineRelay({
   factoryId: 'checkpoint_store',
   flow: { exactly: { effectively_once: { ack: 'checkpoint' } } },
   channels: (c) => {
@@ -166,7 +166,7 @@ export const checkpointStore = defineOperator({
 // `every` is deliberately absent so the test drives the close itself
 // — with `commit:` for the batch case, and with the delay alone for the
 // quiet-Cell case.
-export const checkpointBatchedStore = defineOperator({
+export const checkpointBatchedStore = defineRelay({
   factoryId: 'checkpoint_batched_store',
   flow: {
     exactly: {
@@ -187,7 +187,7 @@ const envInt = (key, fallback) => Number(process.env[key]) || fallback;
 // until it closes.
 const benchHolds = process.env.FLEZHA_BENCH_CHECKPOINT_OUTPUTS === 'at_checkpoint';
 
-export const benchCheckpoint = defineOperator({
+export const benchCheckpoint = defineRelay({
   factoryId: 'bench_checkpoint',
   flow: {
     exactly: {
@@ -230,7 +230,7 @@ const StoreInput = defineTasklet({
   },
 });
 
-export const storeInput = defineOperator({
+export const storeInput = defineRelay({
   factoryId: 'store_input',
   channels: (c) => {
     c.input('input', { codec: 'text' }).into(StoreInput).sink('sink');
@@ -255,7 +255,7 @@ const Counter = defineTasklet({
   },
 });
 
-export const statefulCounter = defineOperator({
+export const statefulCounter = defineRelay({
   factoryId: 'stateful_counter',
   channels: (c) => {
     c.input('input', { codec: 'text' }).into(CounterEntry).named('ticks').into(Counter);
@@ -264,7 +264,7 @@ export const statefulCounter = defineOperator({
 
 // The same topology with per-Cell persistence off, under the reference's
 // node names: the toggle is a class property, not a different computation.
-export const persistenceOffCounter = defineOperator({
+export const persistenceOffCounter = defineRelay({
   factoryId: 'persistence_off_counter',
   durable: false,
   channels: (c) => {
@@ -277,7 +277,7 @@ export const persistenceOffCounter = defineOperator({
 
 // -- sleeping_counter -------------------------------------------------------
 //
-// A flow operator that sleeps when idle: `key:delta` inputs fold into one running
+// A flow relay that sleeps when idle: `key:delta` inputs fold into one running
 // total per key, and every input emits `key=total` on the `totals` sink. The
 // sleep e2e reads the total after a wake to prove the Cell came back with the
 // state it slept with.
@@ -295,7 +295,7 @@ const SleepingCounter = defineTasklet({
   },
 });
 
-export const sleepingCounter = defineOperator({
+export const sleepingCounter = defineRelay({
   factoryId: 'sleeping_counter',
   durable: fixtureDurable(),
   channels: (c) => {
@@ -329,7 +329,7 @@ const Tick = defineTasklet({
   },
 });
 
-export const coalescingCounter = defineOperator({
+export const coalescingCounter = defineRelay({
   factoryId: 'coalescing_counter',
   channels: (c) => {
     c.input('input', { codec: 'text' }).into(TickEntry).named('ticks').into(Tick);
@@ -354,7 +354,7 @@ const ResumeProbe = defineTasklet({
   },
 });
 
-export const resumeProbe = defineOperator({
+export const resumeProbe = defineRelay({
   factoryId: 'resume_probe',
   channels: (c) => {
     c.input('input', { codec: 'text' }).into(ResumeProbe).sink('total');
@@ -364,7 +364,7 @@ export const resumeProbe = defineOperator({
 // -- schema_evolution_v1 / schema_evolution_v2 ------------------------------
 //
 // The same class either side of a deploy that edits its own state type. Both
-// halves declare the SAME tasklet name, so an operator started under v1 and
+// halves declare the SAME tasklet name, so a relay started under v1 and
 // restarted under v2 restores from the very WAL v1 wrote — which is what a
 // deploy does, with the two binaries collapsed into one fixture file.
 //
@@ -414,7 +414,7 @@ const EvolvingCartV2 = defineTasklet({
 });
 
 const evolvingCart = (factoryId, tasklet) =>
-  defineOperator({
+  defineRelay({
     factoryId,
     channels: (c) => {
       c.input('input', { codec: 'text' }).into(tasklet).sink('total');

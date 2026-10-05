@@ -13,9 +13,9 @@
 // table in place of the app's fixtures. Both are `conformance.mjs`.
 //
 // FLEZHA_LOCAL_SEND_SCRIPT is the local-send drill: a JSON array of
-// `{operator, channel, message, when}` sends this app's own code makes with
+// `{relay, channel, message, when}` sends this app's own code makes with
 // `local`, each once the file `when` names exists, printing
-// `local_send <operator> ok` or `local_send <operator> err <code>` per send.
+// `local_send <relay> ok` or `local_send <relay> err <code>` per send.
 
 import { existsSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
@@ -84,14 +84,14 @@ console.log(
     `dispatch=${workers === 0 ? 'main-loop' : `${workers} workers`}`,
 );
 
-for (const { operator, channel, message, when } of JSON.parse(
+for (const { relay, channel, message, when } of JSON.parse(
   process.env.FLEZHA_LOCAL_SEND_SCRIPT ?? '[]',
 )) {
   while (!existsSync(when)) await new Promise((wake) => setTimeout(wake, 50));
   try {
-    await runner.send(operator, message, channel, { local: true });
-    console.log(`local_send ${operator} ok`);
+    await runner.send(relay, message, channel, { local: true });
+    console.log(`local_send ${relay} ok`);
   } catch (error) {
-    console.log(`local_send ${operator} err ${error.code}`);
+    console.log(`local_send ${relay} err ${error.code}`);
   }
 }

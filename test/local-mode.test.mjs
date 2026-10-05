@@ -1,4 +1,4 @@
-// The Node SDK's local mode: a user's own operator definition, its declared
+// The Node SDK's local mode: a user's own relay definition, its declared
 // two-tasklet graph, and no controller anywhere.
 //
 // The graph and its expected sink output are read from
@@ -10,7 +10,7 @@ import assert from 'node:assert/strict';
 import { dirname } from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
-import { LocalOperator, defineOperator, defineTasklet } from '../dist/esm/index.js';
+import { LocalRelay, defineRelay, defineTasklet } from '../dist/esm/index.js';
 
 import { read } from './contract.mjs';
 
@@ -43,7 +43,7 @@ const Tally = defineTasklet({
   },
 });
 
-const WordCount = defineOperator({
+const WordCount = defineRelay({
   factoryId: 'local_word_count_node',
   channels: (c) => {
     c.input('lines', { codec: 'text' })
@@ -74,7 +74,7 @@ function scenario() {
 test('a declared graph runs locally and releases the recorded output', async () => {
   const { lines, expected } = scenario();
   const released = [];
-  const run = LocalOperator.start(WordCount);
+  const run = LocalRelay.start(WordCount);
   try {
     run.onSink('totals', (output) => released.push(output));
     for (const line of lines) {
@@ -117,7 +117,7 @@ test('the core reads a payload view, at its own offset, exactly as it reads a Bu
 
   for (const payload of [view, bytes(line), line]) {
     const released = [];
-    const run = LocalOperator.start(WordCount);
+    const run = LocalRelay.start(WordCount);
     try {
       run.onSink('totals', (output) => released.push(utf8(output.payload)));
       await run.feed('lines', payload);
@@ -130,7 +130,7 @@ test('the core reads a payload view, at its own offset, exactly as it reads a Bu
 });
 
 test('a channel the class does not declare is refused by name', async () => {
-  const run = LocalOperator.start(WordCount);
+  const run = LocalRelay.start(WordCount);
   try {
     await assert.rejects(
       () => run.feed('nope', '1'),
@@ -154,7 +154,7 @@ const Defaults = defineTasklet({
   },
 });
 
-const DefaultCodecs = defineOperator({
+const DefaultCodecs = defineRelay({
   factoryId: 'local_default_codecs_node',
   channels: (c) => {
     c.input('in').into(Defaults).sink('out');
@@ -163,7 +163,7 @@ const DefaultCodecs = defineOperator({
 
 test('an undeclared entry reads JSON and an undeclared sink follows the value', async () => {
   const released = [];
-  const run = LocalOperator.start(DefaultCodecs);
+  const run = LocalRelay.start(DefaultCodecs);
   try {
     run.onSink('out', (output) => released.push(utf8(output.payload)));
     await run.feed('in', '{"a":1}');
@@ -177,7 +177,7 @@ test('an undeclared entry reads JSON and an undeclared sink follows the value', 
 // Plain JavaScript runs no type checker, so a returning `run` still loads.
 test('a short form whose run returns a value runs it once, and nothing reaches its sink', async () => {
   let calls = 0;
-  const Returning = defineOperator({
+  const Returning = defineRelay({
     factoryId: 'local_returning_node',
     input: 'ticks',
     sink: 'out',
@@ -188,7 +188,7 @@ test('a short form whose run returns a value runs it once, and nothing reaches i
     },
   });
   const released = [];
-  const run = LocalOperator.start(Returning);
+  const run = LocalRelay.start(Returning);
   try {
     run.onSink('out', (output) => released.push(output));
     await run.feed('ticks', 'a');
@@ -218,8 +218,8 @@ test('a spawn with no controller anywhere is unavailable, from either read', asy
     },
   });
   const released = [];
-  const run = LocalOperator.start(
-    defineOperator({
+  const run = LocalRelay.start(
+    defineRelay({
       factoryId: 'local_spawner_node',
       channels: (c) => c.input('in', { codec: 'text' }).into(Spawner).sink('out'),
     }),
@@ -243,8 +243,8 @@ test('a local run drops every part and releases the output alone', async () => {
     },
   });
   const released = [];
-  const run = LocalOperator.start(
-    defineOperator({
+  const run = LocalRelay.start(
+    defineRelay({
       factoryId: 'local_parts_node',
       channels: (c) => c.input('in', { codec: 'text' }).into(Parts).sink('answer'),
     }),
@@ -278,7 +278,7 @@ test('the core refuses a part whose channel ends in no sink', async () => {
     local_part_to_response_node: (c) => c.input('in', { codec: 'text' }).into(Refused).response(),
   };
   for (const [factoryId, channels] of Object.entries(graphs)) {
-    const run = LocalOperator.start(defineOperator({ factoryId, channels }));
+    const run = LocalRelay.start(defineRelay({ factoryId, channels }));
     try {
       await run.feed('in', 'p');
       await run.runUntilIdle(5_000);

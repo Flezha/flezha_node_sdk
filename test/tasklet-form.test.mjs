@@ -8,7 +8,7 @@ import {
   ACTIVATION_SCHEMA_VERSION,
   decodeValue,
   defineTasklet,
-  defineOperator,
+  defineRelay,
   encodeValue,
   loadNative,
   toHostClassDecl,
@@ -32,9 +32,9 @@ after(() => native.contextFree());
 
 const utf8 = (bytes) => Buffer.from(bytes).toString('utf8');
 
-/** One operator wiring `tasklet` from `in` to the sink `out`. */
+/** One relay wiring `tasklet` from `in` to the sink `out`. */
 const piped = (factoryId, tasklet, settings = {}) =>
-  defineOperator({
+  defineRelay({
     factoryId,
     ...settings,
     channels: (c) => c.input('in').into(tasklet).sink('out'),
@@ -112,7 +112,7 @@ test('a value run returns is ignored under the harness', async () => {
 // --- the tasklet's settings are fields of its definition --------------------
 
 const keyedInto = (tasklet) =>
-  defineOperator({
+  defineRelay({
     factoryId: `keyed_${tasklet.name}`,
     channels: (c) =>
       c
@@ -272,7 +272,7 @@ test('a retired hook a definition inherits is refused as well', () => {
 
 test('a retired field on a short form is refused, naming it', () => {
   const error = refusal(() =>
-    defineOperator({ factoryId: 'old_short', sink: 'out', dynamicCells: {}, ...emitting }),
+    defineRelay({ factoryId: 'old_short', sink: 'out', dynamicCells: {}, ...emitting }),
   );
   assert.equal(error.code, 'topology.unknown_field');
   assert.ok(error.details.fields.includes('`dynamicCells`'), error.message);
@@ -290,7 +290,7 @@ const Customers = defineTasklet({
 });
 
 test('keyBy alone makes a tasklet dynamic, with a cell per key', async () => {
-  const spec = defineOperator({
+  const spec = defineRelay({
     factoryId: 'orders',
     channels: (c) =>
       c
@@ -318,7 +318,7 @@ test('keyBy alone makes a tasklet dynamic, with a cell per key', async () => {
 });
 
 test('a keyed merge makes its tasklet dynamic', () => {
-  const spec = defineOperator({
+  const spec = defineRelay({
     factoryId: 'detector',
     channels: (c) =>
       c
@@ -332,7 +332,7 @@ test('a keyed merge makes its tasklet dynamic', () => {
 });
 
 test('one definition takes its mode from each wiring', () => {
-  const keyed = defineOperator({
+  const keyed = defineRelay({
     factoryId: 'keyed_orders',
     channels: (c) =>
       c
@@ -340,7 +340,7 @@ test('one definition takes its mode from each wiring', () => {
         .keyBy((order) => order.customer)
         .into(Customers),
   });
-  const single = defineOperator({
+  const single = defineRelay({
     factoryId: 'all_orders',
     channels: (c) => c.input('orders').into(Customers),
   });
@@ -367,7 +367,7 @@ test('a static key set fed by keyBy is refused as topology.key_by_on_unkeyable_t
 // --- the short form is a tasklet's fields --------------------------------------
 
 test("a steps short form's emitted value reaches its sink", async () => {
-  const spec = defineOperator({
+  const spec = defineRelay({
     factoryId: 'place',
     steps: {},
     sink: 'placed',
@@ -383,8 +383,7 @@ test("a steps short form's emitted value reaches its sink", async () => {
 });
 
 test('a short form emits only through its context', async () => {
-  const shortForm = (factoryId, run) =>
-    defineOperator({ factoryId, sink: 'out', codec: 'text', run });
+  const shortForm = (factoryId, run) => defineRelay({ factoryId, sink: 'out', codec: 'text', run });
   const hello = [{ ...inputItem(''), payload: Buffer.from('hello') }];
   const [emitted] = await effectsOf(
     shortForm('upcase', (line, ctx) => ctx.emit(line.toUpperCase())),
@@ -409,8 +408,8 @@ test('a short form grown into its full form declares the same record and keeps i
     },
     run: (line, ctx) => ctx.change(line),
   };
-  const short = defineOperator({ factoryId: 'counter', input: 'ticks', codec: 'text', ...fields });
-  const full = defineOperator({
+  const short = defineRelay({ factoryId: 'counter', input: 'ticks', codec: 'text', ...fields });
+  const full = defineRelay({
     factoryId: 'counter',
     channels: (c) =>
       c.input('ticks', { codec: 'text' }).into(defineTasklet({ name: 'counter', ...fields })),
@@ -440,7 +439,7 @@ test('a short form grown into its full form declares the same record and keeps i
 // The tasklet's declared name is where its state is filed: a short form's is
 // its factory id, verbatim.
 test("a tasklet's durable identity is its declared name", () => {
-  const short = defineOperator({
+  const short = defineRelay({
     factoryId: 'order_executor',
     steps: {},
     sink: 'out',
@@ -480,13 +479,13 @@ class InheritedHook {
 }
 
 test('a short form keeps a hook it inherits, as it keeps its own', () => {
-  const { definition } = defineOperator(new InheritedHook()).tasklets[0].tasklet;
+  const { definition } = defineRelay(new InheritedHook()).tasklets[0].tasklet;
   assert.equal(typeof definition.initState, 'function', 'initState reached the tasklet');
   assert.deepEqual(definition.initState(), { n: 1 });
 });
 
 test('a short form keeps a run it inherits', async () => {
-  const { tasklet } = defineOperator(new InheritedShortForm()).tasklets[0];
+  const { tasklet } = defineRelay(new InheritedShortForm()).tasklets[0];
   assert.deepEqual((await TaskletTestHarness.of(tasklet).input('v')).emits, [
     { value: 'v', state: { n: 1 } },
   ]);

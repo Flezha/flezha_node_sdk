@@ -12,7 +12,7 @@ const UNITS_PER_PERCENT = 10;
  * `initState`, beside `TrackPrices`, which keeps the window.
  *
  * It does two things per input, both through the context: it starts an
- * operator that runs in steps and it emits.
+ * relay that runs in steps and it emits.
  */
 export const BuyAboveAverage = defineTasklet({
   name: 'buy_above_average',
@@ -24,7 +24,7 @@ export const BuyAboveAverage = defineTasklet({
     const quantity = Math.round(percent * UNITS_PER_PERCENT); // a stronger move buys more
 
     const order = { symbol: move.symbol, quantity };
-    ctx.spawnSteps('order_executor', order); // one steps operator per order
+    ctx.spawnSteps('order_executor', order); // one steps relay per order
 
     ctx.emit(
       `${move.symbol} ${move.price.toFixed(4)} is ${percent.toFixed(2)}% above its average ` +

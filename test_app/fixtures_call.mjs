@@ -1,12 +1,12 @@
-// The operator_call fixtures: operators that call another operator from their
+// The relay_call fixtures: relays that call another relay from their
 // graph and read the outcome as a `Response`, the mirror of
-// `sdk/rust/test_app/src/operator_call.rs`. Every outcome is written as one
+// `sdk/rust/test_app/src/relay_call.rs`. Every outcome is written as one
 // line, `<request>=ok:<answer>@<target>/<created>` or
 // `<request>=error:<code>@<target>/<created>`.
 
 import { setTimeout as sleep } from 'node:timers/promises';
 
-import { defineOperator, defineTasklet } from '@flezha/sdk';
+import { defineRelay, defineTasklet } from '@flezha/sdk';
 
 import { fixtureDurable } from './fixture_support.mjs';
 
@@ -45,7 +45,7 @@ const outcomeLog = (name) => step(name, (input, ctx) => ctx.emit(input.slice(OUT
 
 const sessionKnobs = { durable: fixtureDurable(), maxDurationMs: 600_000 };
 
-export const callPricing = defineOperator({
+export const callPricing = defineRelay({
   factoryId: 'call_pricing',
   channels: (c) => {
     c.input('in', { codec: 'text' })
@@ -58,7 +58,7 @@ export const callPricing = defineOperator({
   },
 });
 
-export const callOrders = defineOperator({
+export const callOrders = defineRelay({
   factoryId: 'call_orders',
   channels: (c) => {
     c.input('in', { codec: 'text' })
@@ -70,7 +70,7 @@ export const callOrders = defineOperator({
   },
 });
 
-export const callAgent = defineOperator({
+export const callAgent = defineRelay({
   factoryId: 'call_agent',
   steps: { each: 'per_input', onFailure: 'keep_progress' },
   ...sessionKnobs,
@@ -90,7 +90,7 @@ export const callAgent = defineOperator({
   },
 });
 
-export const callGateway = defineOperator({
+export const callGateway = defineRelay({
   factoryId: 'call_gateway',
   flow: { exactly: 'effectively_once' },
   channels: (c) => {
@@ -123,7 +123,7 @@ export const callGateway = defineOperator({
   },
 });
 
-export const callToolSession = defineOperator({
+export const callToolSession = defineRelay({
   factoryId: 'call_tool_session',
   steps: { each: 'per_input' },
   ...sessionKnobs,

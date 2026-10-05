@@ -1,5 +1,5 @@
 /**
- * A graph's call to another operator: where it goes, and the outcome that
+ * A graph's call to another relay: where it goes, and the outcome that
  * comes back on the caller's Response channel.
  */
 
@@ -8,7 +8,7 @@ import { FlezhaError, type ErrorFields } from './errors.js';
 import type { ChannelCodec } from './types.js';
 
 /**
- * The operator a `call` reaches: an instance (or a partition group, whose
+ * The relay a `call` reaches: an instance (or a partition group, whose
  * member the request's key chooses) by its id, or an instance of a factory —
  * after a `keyBy`, the one whose id is the request's key, started with the
  * request unless `create` is false; without one, a new steps instance per

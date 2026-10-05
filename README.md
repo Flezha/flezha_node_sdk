@@ -57,10 +57,10 @@ One caution about installs: npm treats an optional dependency it cannot resolve
 as a non-event, so an install that fetched no binary succeeds and prints
 nothing. That is why the refusal at load is explicit about what is missing.
 
-## Writing an operator
+## Writing a relay
 
 ```ts
-import { createRunner, defineOperator, defineTasklet, type Ctx } from '@flezha/sdk';
+import { createRunner, defineRelay, defineTasklet, type Ctx } from '@flezha/sdk';
 
 interface Trade {
   symbol: string;
@@ -88,7 +88,7 @@ const Ohlc = defineTasklet({
   },
 });
 
-export default defineOperator({
+export default defineRelay({
   factoryId: 'candles',
   channels: (c) => {
     c.input<Trade>('trades')
@@ -117,12 +117,12 @@ a compile error.
 
 ## Class settings
 
-Every operator is declared with `defineOperator`, in the full form above or as
+Every relay is declared with `defineRelay`, in the full form above or as
 the short form, one tasklet's fields and its `run` body with a `sink`. Both
 forms take the class settings:
 
 ```ts
-export default defineOperator({
+export default defineRelay({
   factoryId: 'orders',
   steps: { each: 'per_input', onFailure: 'keep_progress' },
   durable: { local: { sleepAfter: 10_000 } },
@@ -131,7 +131,7 @@ export default defineOperator({
 });
 ```
 
-An operator runs as a flow unless it writes `steps`; `flow` and `steps` are
+A relay runs as a flow unless it writes `steps`; `flow` and `steps` are
 written as the branch itself, since a short form's `run` is its body. A flow
 may take `exactly: 'effectively_once'`, or
 `{ effectively_once: { ack, correctionMs, beyondWindow } }` with `ack` either
@@ -146,7 +146,7 @@ carry it is refused as `topology.unknown_field`, naming both.
 
 A channel ends in one `sink`, one `response()` or one `call(...)`. `response()`
 answers the outside caller whose input caused the value. `call(target, { deadlineMs, codec? })`
-sends each value, after the chain's transforms and key, to another operator:
+sends each value, after the chain's transforms and key, to another relay:
 a string names an instance, and `{ factory, create?, channel? }` an instance of a
 factory, the one the chain's `keyBy` names (`create: false` refuses to start it,
 `channel` picks its entry channel). One codec writes the request and reads the

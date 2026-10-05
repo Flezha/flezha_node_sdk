@@ -10,7 +10,7 @@
 // the core derives that channel's journal codec from the channel's kind, so no
 // fixture declares one.
 
-import { defineOperator, defineTasklet } from '@flezha/sdk';
+import { defineRelay, defineTasklet } from '@flezha/sdk';
 
 import { fixtureDurable, prefix } from './fixture_support.mjs';
 
@@ -98,13 +98,13 @@ const failingStep = (name) =>
 
 // -- echo_steps ----------------------------------------------------------
 //
-// A `once` steps operator of one tasklet (steps.rs): its single pass runs on the
+// A `once` steps relay of one tasklet (steps.rs): its single pass runs on the
 // first message and emits it back, so the instance completes and the
 // controller deregisters it.
 
 const Echo = statelessStep('echo', (input, ctx) => ctx.emit(`echo:${input}`));
 
-export const echoSteps = defineOperator({
+export const echoSteps = defineRelay({
   factoryId: 'echo_steps',
   steps: {},
   durable: fixtureDurable(),
@@ -128,14 +128,14 @@ const commitBlockChain = (c) => {
   c.input('in', { codec: 'text' }).into(CommitA).named('mid').into(BlockB);
 };
 
-export const commitBlockSteps = defineOperator({
+export const commitBlockSteps = defineRelay({
   factoryId: 'commit_block_steps',
   steps: {},
   durable: fixtureDurable(),
   channels: commitBlockChain,
 });
 
-export const syncDurableSteps = defineOperator({
+export const syncDurableSteps = defineRelay({
   factoryId: 'sync_durable_steps',
   steps: {},
   durable: 'remote',
@@ -149,7 +149,7 @@ export const syncDurableSteps = defineOperator({
 // without durable state. A crash re-runs the chain from the top, so the sink
 // sees A's marker once per run and no journal file exists.
 
-export const optoutCommitBlock = defineOperator({
+export const optoutCommitBlock = defineRelay({
   factoryId: 'optout_commit_block',
   steps: {},
   durable: false,
@@ -173,7 +173,7 @@ const TierCommitA = durableStep('tier_commit_a', {
   emit: (input, ctx) => ctx.emit(`committed:${input}`, { key: 'job' }),
 });
 
-export const tierCommitBlockSteps = defineOperator({
+export const tierCommitBlockSteps = defineRelay({
   factoryId: 'tier_commit_block_steps',
   steps: {},
   durable: fixtureDurable(),
@@ -193,7 +193,7 @@ const SagaA = durableStep('saga_a', { compensate: blockUntilReleased });
 const SagaB = durableStep('saga_b', { compensate: () => {} });
 const SagaC = failingStep('saga_c');
 
-export const sagaBlockSteps = defineOperator({
+export const sagaBlockSteps = defineRelay({
   factoryId: 'saga_block_steps',
   steps: {},
   durable: fixtureDurable(),
@@ -225,7 +225,7 @@ const keyedCommits = (c) =>
     .into(KeyedCommit)
     .named('committed');
 
-export const keyedBlockSteps = defineOperator({
+export const keyedBlockSteps = defineRelay({
   factoryId: 'keyed_block_steps',
   steps: {},
   durable: fixtureDurable(),
@@ -234,7 +234,7 @@ export const keyedBlockSteps = defineOperator({
   },
 });
 
-export const keyedSagaSteps = defineOperator({
+export const keyedSagaSteps = defineRelay({
   factoryId: 'keyed_saga_steps',
   steps: {},
   durable: fixtureDurable(),
@@ -254,7 +254,7 @@ const OutboxA = durableStep('commit_a', {
   emit: (input, ctx) => ctx.emit(input, { key: 'k', metadata: { trace: 't1' } }),
 });
 
-export const outboxBlockSteps = defineOperator({
+export const outboxBlockSteps = defineRelay({
   factoryId: 'outbox_block_steps',
   steps: {},
   durable: fixtureDurable(),
@@ -286,7 +286,7 @@ const UndoOutboxA = durableStep('undo_outbox_a', {
 
 const UndoC = failingStep('undo_outbox_c');
 
-export const undoOutboxSteps = defineOperator({
+export const undoOutboxSteps = defineRelay({
   factoryId: 'undo_outbox_steps',
   steps: {},
   durable: fixtureDurable(),
@@ -310,7 +310,7 @@ const FailedStage = statelessStep('failed_stage', (input, ctx) => {
   ctx.emit(input);
 });
 
-export const failedStageSteps = defineOperator({
+export const failedStageSteps = defineRelay({
   factoryId: 'failed_stage_steps',
   steps: {},
   durable: fixtureDurable(),
@@ -362,7 +362,7 @@ const BranchD = statelessStep('branch_d', async (input, ctx) => {
   ctx.emit(`d:${input}`);
 });
 
-export const branchSteps = defineOperator({
+export const branchSteps = defineRelay({
   factoryId: 'branch_steps',
   steps: {},
   durable: fixtureDurable(),
@@ -411,7 +411,7 @@ const DiamC = durableStep('diam_c', { emit: (input, ctx) => ctx.emit(`c:${input}
 // The join: one `j:`-tagged record per accumulated contribution.
 const DiamJoin = statelessStep('diam_join', (input, ctx) => ctx.emit(`j:${input}`));
 
-export const diamondSteps = defineOperator({
+export const diamondSteps = defineRelay({
   factoryId: 'diamond_steps',
   steps: {},
   durable: fixtureDurable(),
@@ -454,7 +454,7 @@ const RetryFlaky = statelessStep('retry_flaky', (input, ctx) => {
   ctx.emit(`attempt:${flakyAttempts}:${input}`);
 });
 
-export const retrySteps = defineOperator({
+export const retrySteps = defineRelay({
   factoryId: 'retry_steps',
   steps: {},
   durable: fixtureDurable(),
@@ -469,12 +469,12 @@ export const retrySteps = defineOperator({
 
 // -- timer_loop_steps ----------------------------------------------------
 //
-// `in -> tick -> relay -> out`, a per-input loop whose `tick` arms a
+// `in -> tick -> tock -> out`, a per-input loop whose `tick` arms a
 // processing-time timer of the delay `after:<ms>` names and emits `armed:<at>`;
 // its firing emits `fired:<at>` and opens a pass of its own. `slow:<ms>` holds
 // `tick` that long, for a firing due mid-pass (steps.rs). On a runner booted
 // with `FLEZHA_STEPS_E2E_HOLD` the firing parks at the gate: `timer` inside
-// `on_timer`, before `tick` commits; `relay` in `relay`, after.
+// `on_timer`, before `tick` commits; `tock` in `tock`, after.
 
 const millisAfter = (input, prefix) => Number.parseInt(input.slice(prefix.length), 10) || 0;
 
@@ -500,18 +500,18 @@ const TimerTick = defineTasklet({
   },
 });
 
-const TimerRelay = statelessStep('relay', async (input, ctx) => {
-  if (input.startsWith('fired:')) await holdAt('relay');
-  ctx.emit(`relay:${input}`);
+const TimerTock = statelessStep('tock', async (input, ctx) => {
+  if (input.startsWith('fired:')) await holdAt('tock');
+  ctx.emit(`tock:${input}`);
 });
 
-export const timerLoopSteps = defineOperator({
+export const timerLoopSteps = defineRelay({
   factoryId: 'timer_loop_steps',
   steps: { each: 'per_input' },
   durable: fixtureDurable(),
   maxDurationMs: 600_000,
   channels: (c) => {
-    c.input('in', { codec: 'text' }).into(TimerTick).named('ticked').into(TimerRelay).sink('out');
+    c.input('in', { codec: 'text' }).into(TimerTick).named('ticked').into(TimerTock).sink('out');
   },
 });
 
@@ -534,7 +534,7 @@ const EventTick = defineTasklet({
   onTimer: (timer, ctx) => ctx.emit(`fired:${timer.scheduledAt}`),
 });
 
-export const eventTimerSteps = defineOperator({
+export const eventTimerSteps = defineRelay({
   factoryId: 'event_timer_steps',
   steps: { each: 'per_input' },
   durable: fixtureDurable(),
@@ -556,7 +556,7 @@ const StaticCellStep = defineTasklet({
   run: (input, ctx) => ctx.emit(`${ctx.cellKey}:${input}`),
 });
 
-export const staticCellSteps = defineOperator({
+export const staticCellSteps = defineRelay({
   factoryId: 'static_cell_steps',
   steps: { each: 'per_input' },
   durable: fixtureDurable(),
@@ -640,7 +640,7 @@ const loopKnobs = {
   maxDurationMs: 600_000,
 };
 
-export const chatLoopSteps = defineOperator({
+export const chatLoopSteps = defineRelay({
   factoryId: 'chat_loop_steps',
   ...loopKnobs,
   channels: (c) => {
@@ -648,7 +648,7 @@ export const chatLoopSteps = defineOperator({
   },
 });
 
-export const statelessLoopSteps = defineOperator({
+export const statelessLoopSteps = defineRelay({
   factoryId: 'stateless_loop_steps',
   ...loopKnobs,
   channels: (c) => {
@@ -658,7 +658,7 @@ export const statelessLoopSteps = defineOperator({
 
 // keyed_loop_steps is a durable per-input loop keyed on its entry edge by
 // the text before the first `:`, so one Cell counts one symbol's messages and
-// emits `<symbol>:<count>`: the shape a partition group of steps operator members
+// emits `<symbol>:<count>`: the shape a partition group of steps relay members
 // takes.
 const KeyedLoopCount = defineTasklet({
   name: 'keyed_loop_count',
@@ -673,7 +673,7 @@ const KeyedLoopCount = defineTasklet({
   },
 });
 
-export const keyedLoopSteps = defineOperator({
+export const keyedLoopSteps = defineRelay({
   factoryId: 'keyed_loop_steps',
   ...loopKnobs,
   channels: (c) => {
@@ -695,7 +695,7 @@ const BlockingReply = statelessStep('blocking_reply', async (input, ctx) => {
   ctx.emit(`reply:${input}`);
 });
 
-export const replyBlockLoopSteps = defineOperator({
+export const replyBlockLoopSteps = defineRelay({
   factoryId: 'reply_block_loop_steps',
   ...loopKnobs,
   channels: (c) => {
@@ -731,7 +731,7 @@ const SpawnRequester = defineTasklet({
   },
 });
 
-export const spawnRequester = defineOperator({
+export const spawnRequester = defineRelay({
   factoryId: 'spawn_requester',
   channels: (c) => {
     c.input('in', { codec: 'text' }).into(SpawnRequester).sink('out');
@@ -753,7 +753,7 @@ const SpawnHoldRequester = defineTasklet({
   },
 });
 
-export const spawnHoldRequester = defineOperator({
+export const spawnHoldRequester = defineRelay({
   factoryId: 'spawn_hold_requester',
   flow: { exactly: 'effectively_once' },
   channels: (c) => {
@@ -767,7 +767,7 @@ export const spawnHoldRequester = defineOperator({
 
 // -- spawn_once_requester / typed_once_steps -------------------------------
 //
-// The KB-381 shape: a flow tasklet spawns a `once` steps operator whose entry
+// The KB-381 shape: a flow tasklet spawns a `once` steps relay whose entry
 // channel decodes the payload's type. The spawned instance prints what its
 // entry decoded and completes with it, because the runner's stdout and the
 // completion record are the two places the scenario can read.
@@ -778,7 +778,7 @@ const OncePlaced = statelessStep('once_placed', (ticket, ctx) => {
   ctx.complete(ticket.text);
 });
 
-export const typedOnceSteps = defineOperator({
+export const typedOnceSteps = defineRelay({
   factoryId: 'typed_once_steps',
   steps: {},
   durable: fixtureDurable(),
@@ -793,14 +793,14 @@ const SpawnOnceRequester = defineTasklet({
     reportSpawn('once', ctx.spawnSteps(typedOnceSteps.factoryId, { text: input })),
 });
 
-export const spawnOnceRequester = defineOperator({
+export const spawnOnceRequester = defineRelay({
   factoryId: 'spawn_once_requester',
   channels: (c) => {
     c.input('in', { codec: 'text' }).into(SpawnOnceRequester).sink('out');
   },
 });
 
-export const chatRewindSteps = defineOperator({
+export const chatRewindSteps = defineRelay({
   factoryId: 'chat_rewind_steps',
   ...loopKnobs,
   channels: (c) => {
@@ -853,7 +853,7 @@ const Answer = defineTasklet({
 });
 
 const failingTurnLoop = (factoryId, onFailure) =>
-  defineOperator({
+  defineRelay({
     factoryId,
     ...loopKnobs,
     steps: { each: 'per_input', onFailure },
@@ -877,7 +877,7 @@ export const failingTurnUndoAllSteps = failingTurnLoop('failing_turn_undo_all_st
 const benchSteps = Array.from({ length: 16 }, (_, at) => durableStep(`bench_s${at}`));
 
 const benchChain = (factoryId, steps, durable) =>
-  defineOperator({
+  defineRelay({
     factoryId,
     steps: {},
     durable: durable ? 'local' : false,
@@ -921,7 +921,7 @@ const BenchTurn = defineTasklet({
   onTimer: (timer, ctx) => ctx.emit(`wake:${timer.scheduledAt}`),
 });
 
-export const benchLoopSteps = defineOperator({
+export const benchLoopSteps = defineRelay({
   factoryId: 'bench_loop_steps',
   steps: { each: 'per_input' },
   durable: fixtureDurable(),
@@ -934,7 +934,7 @@ export const benchLoopSteps = defineOperator({
 
 // call_turn: a durable per-input loop whose turn answers the outside call
 // through `response()`.
-export const callTurn = defineOperator({
+export const callTurn = defineRelay({
   factoryId: 'call_turn',
   ...loopKnobs,
   channels: (c) => {

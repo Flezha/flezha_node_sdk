@@ -1,4 +1,4 @@
-import { defineOperator } from '@flezha/sdk';
+import { defineRelay } from '@flezha/sdk';
 
 import { BuyAboveAverage } from './buy_above_average.mjs';
 import { TrackPrices } from './track_prices.mjs';
@@ -7,7 +7,7 @@ import { TrackPrices } from './track_prices.mjs';
  * The desk's stream: trades in, each price compared with its symbol's recent
  * average, and an order started when a price jumps far enough above it.
  *
- * A flow operator runs for as long as the desk does. The exchange sends
+ * A flow relay runs for as long as the desk does. The exchange sends
  * other messages beside its trades and delivers several trades in one message,
  * so the wiring keeps the trade messages, splits each into its trades before
  * anything else sees them, drops what the desk does not follow, and routes the
@@ -31,7 +31,7 @@ import { TrackPrices } from './track_prices.mjs';
  * single-cell, which is right for the second stage, since it keeps nothing per
  * symbol.
  */
-export default defineOperator({
+export default defineRelay({
   factoryId: 'trade_watcher',
   channels: (c) => {
     c.input('trades') // JSON from the exchange

@@ -114,7 +114,7 @@ export interface Ctx<TOut = never, TState = void, TChange = never> {
    * `undefined` or `null` carries no result. The rest of the iteration still
    * runs and commits; once that commit is durable the instance ends instead of
    * waiting for its next input; a flow instance first lets every Cell go
-   * idle. In a `once` steps operator it sets the result the pass ends
+   * idle. In a `once` steps relay it sets the result the pass ends
    * with. A second call in one item replaces the first; calls from several
    * cells in one iteration end the instance once, with the result of the
    * tasklet latest in the chain and, within it, the cell whose key sorts
@@ -152,7 +152,7 @@ export interface StaticCells<TIn> {
 }
 
 export interface TaskletDefinition<TIn, TOut, TState, TChange> {
-  /** The tasklet's node identity within its operator, and where its state is filed. */
+  /** The tasklet's node identity within its relay, and where its state is filed. */
   name: string;
 
   /**
@@ -282,7 +282,7 @@ export interface Stream<T> {
   response(encode?: (value: T) => Uint8Array): Stream<T>;
   response(options: CodecOptions): Stream<T>;
   /**
-   * End this edge's chain in a call to another operator: each value that
+   * End this edge's chain in a call to another relay: each value that
    * reaches it, after this chain's transforms and key, is one request. The
    * call waits for nothing: its outcome arrives later as a `Response` on the
    * entry channel this answers, `<this channel>.response`, which must feed a
@@ -338,7 +338,7 @@ export interface ChannelBuilder {
     traffic: Stream<T>,
     key: (value: T) => string,
   ): Stream<RoutedDocument<D>>;
-  /** `routeLatest` under a node name of its own, for a second router in one operator. */
+  /** `routeLatest` under a node name of its own, for a second router in one relay. */
   routeLatestNamed<D, T>(
     documents: Stream<D>,
     traffic: Stream<T>,
@@ -414,15 +414,15 @@ export interface ClassSettings {
 export type RunSettings =
   { flow?: FlowSettings; steps?: never } | { steps: StepsSettings; flow?: never };
 
-export type OperatorSettings = ClassSettings & RunSettings;
+export type RelaySettings = ClassSettings & RunSettings;
 
-export type OperatorDefinition = OperatorSettings & {
+export type RelayDefinition = RelaySettings & {
   factoryId: string;
   channels: (builder: ChannelBuilder) => void;
 };
 
 /**
- * The §5 short form, taken by `defineOperator`: one tasklet's fields and its
+ * The §5 short form, taken by `defineRelay`: one tasklet's fields and its
  * `run` body in place of a `channels` body, with the class settings the full
  * form takes. It generates an entry channel into a tasklet named `factoryId`,
  * and that tasklet's output into the `sink` plugin channel when one is written.
@@ -431,7 +431,7 @@ export type ShortFormDefinition<TIn, TOut, TState, TChange> = Omit<
   TaskletDefinition<TIn, TOut, TState, TChange>,
   'name'
 > &
-  OperatorSettings & {
+  RelaySettings & {
     factoryId: string;
     /** The plugin sink the tasklet's output reaches. Absent declares none. */
     sink?: string;

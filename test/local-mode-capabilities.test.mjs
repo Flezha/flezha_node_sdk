@@ -4,21 +4,21 @@
 // what passes there cannot be two different graphs.
 //
 // The other ten capabilities in the vocabulary are the controller's:
-// persistence, effectively-once, correction, partitioning, steps operators,
+// persistence, effectively-once, correction, partitioning, steps relays,
 // liveness, restarts. Local mode refuses them by name rather than
 // approximating them, and `sdk-local-mode` says a sixth needs its own
 // proposal.
 //
 // What each test can assert is what a run with no controller can see. A
 // durable write reaches a null sink, a parked payload has nowhere to park, and
-// a partition member's key range arrives with `AddOperator`, so the
+// a partition member's key range arrives with `AddRelay`, so the
 // assertions here are the output side of each capability, which is the half
 // the language layer produces.
 
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { LocalOperator } from '../dist/esm/index.js';
+import { LocalRelay } from '../dist/esm/index.js';
 
 import { manifest, testAppModule } from './test-app.mjs';
 
@@ -28,9 +28,9 @@ const declared = manifest().fixtures;
 const utf8 = (bytes) => Buffer.from(bytes).toString('utf8');
 
 /** Run one class over `inputs` on `channel`, and return what `sink` released. */
-async function release(operator, channel, sink, inputs, budgetMs = 20_000) {
+async function release(relay, channel, sink, inputs, budgetMs = 20_000) {
   const released = [];
-  const run = LocalOperator.start(operator);
+  const run = LocalRelay.start(relay);
   try {
     run.onSink(sink, (output) => released.push(output));
     for (const input of inputs) await run.feed(channel, input);
@@ -66,13 +66,13 @@ test('shorthand: a short form is built and run with no controller', async () => 
 });
 
 test('keyed_channels: a keyed sink stamps the key the class resolved', async () => {
-  // `partition_relay` is the manifest's only keyed-channel class. Partitioning
+  // `partition_pass` is the manifest's only keyed-channel class. Partitioning
   // itself is the controller's (a member's key-group range arrives with
-  // `AddOperator`), so what is asserted here is the half the language layer
+  // `AddRelay`), so what is asserted here is the half the language layer
   // owns: the key it resolves and the stamps it puts on the released value.
-  declares('keyed_channels', 'partition_relay');
+  declares('keyed_channels', 'partition_pass');
 
-  const released = await release(fixtures.partitionRelay, 'in', 'input', ['a:1', 'b:1', 'a:2']);
+  const released = await release(fixtures.partitionPass, 'in', 'input', ['a:1', 'b:1', 'a:2']);
 
   assert.deepEqual(
     released.map((output) => utf8(output.payload)),
@@ -91,7 +91,7 @@ test('keyed_channels: a keyed sink stamps the key the class resolved', async () 
 test('dynamic_cell: the declared filter runs before keying and nothing else is lost', async () => {
   // The class's sink is not keyed, so a released value carries no cell
   // stamp and the per-key minting is not visible on this channel. It is
-  // asserted above, on `partition_relay`, whose tasklet is dynamic too and
+  // asserted above, on `partition_pass`, whose tasklet is dynamic too and
   // whose sink IS keyed. What this class shows that that one does not is the
   // declared filter: a value it rejects answers no key, so the core is never
   // asked to mint a Cell for it.
@@ -171,7 +171,7 @@ test('a controller capability is refused by name, not approximated', async () =>
   // from, so a local run says so instead of running the graph.
   const { tierStore } = await testAppModule('fixtures_state.mjs');
   await assert.rejects(
-    async () => LocalOperator.start(tierStore),
+    async () => LocalRelay.start(tierStore),
     (error) => {
       assert.equal(error.code, 'runtime.local_needs_controller');
       assert.match(error.details.capability, /effectively_once/);

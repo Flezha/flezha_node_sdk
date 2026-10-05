@@ -21,7 +21,7 @@ import { fileURLToPath } from 'node:url';
 import {
   ACTIVATION_SCHEMA_VERSION,
   FlezhaError,
-  defineOperator,
+  defineRelay,
   defineTasklet,
   loadNative,
   Registry,
@@ -275,7 +275,7 @@ function specOf(row) {
 
   // The tree goes as the row wrote it, so a misplaced setting reaches the
   // core, which refuses it by name.
-  return defineOperator({ factoryId: row.topology, ...settings, channels });
+  return defineRelay({ factoryId: row.topology, ...settings, channels });
 }
 
 /** The class a topology id declares — the cited twins by name, the rest by steps. */
@@ -310,7 +310,7 @@ function derivedOf(declaration) {
 }
 
 // ---------------------------------------------------------------------------
-// The §5 short form. Node refuses a malformed declaration where `defineOperator`
+// The §5 short form. Node refuses a malformed declaration where `defineRelay`
 // runs and a duplicate factory id where the registry takes the second spec, so every row this SDK can write boots for real.
 
 /** The `shorthand(<id>|-, <sink>|-, <input>|-)[.noout|.topology]` steps of a row. */
@@ -344,7 +344,7 @@ function shorthandSteps(row) {
  * flow, any later one in steps, so a collision crosses runs.
  */
 function declareShorthand(declaration, index) {
-  return defineOperator({
+  return defineRelay({
     factoryId: declaration.factoryId,
     ...(index === 0 ? {} : { steps: {} }),
     sink: declaration.sink,

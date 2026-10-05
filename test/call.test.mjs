@@ -9,7 +9,7 @@ import {
   ACTIVATION_SCHEMA_VERSION,
   FlezhaError,
   defineTasklet,
-  defineOperator,
+  defineRelay,
   loadNative,
   toHostClassDecl,
   validate,
@@ -31,7 +31,7 @@ const b64 = (bytes) => Buffer.from(bytes).toString('base64');
 /** A caller whose `ask` channel calls with `codec`, the outcome fed back into `asker`. */
 function caller(codec) {
   const Asker = echo('asker');
-  return defineOperator({
+  return defineRelay({
     factoryId: 'caller',
     channels: (c) => {
       c.input('in', { codec: 'text' })
@@ -79,7 +79,7 @@ test('call closes its chain with the call link and declares <channel>.response',
 });
 
 test('a call to a named instance records its target and create true', () => {
-  const spec = defineOperator({
+  const spec = defineRelay({
     factoryId: 'named_call',
     channels: (c) => {
       const asked = c.input('in').into(echo('asker'));
@@ -102,7 +102,7 @@ test('a call to a named instance records its target and create true', () => {
 test('a call on an entry channel is refused as a sink on one is', () => {
   assert.throws(
     () =>
-      defineOperator({
+      defineRelay({
         factoryId: 'entry_call',
         channels: (c) => {
           c.input('in').call('pricing', { deadlineMs: 500 });
@@ -228,14 +228,14 @@ test('the reference call rows refuse or derive as the fixture states', async () 
   }
 });
 
-test('the operator_call fixtures the manifest lists are declared and pass the core', async () => {
+test('the relay_call fixtures the manifest lists are declared and pass the core', async () => {
   const { manifest } = await import('./test-app.mjs');
   const fixtures = Object.values(await testAppModule('fixtures_call.mjs')).filter(
     (spec) => typeof spec === 'object' && spec.factoryId,
   );
   assert.deepEqual(
     fixtures.map((spec) => spec.factoryId).sort(),
-    [...manifest().fixtures.operator_call].sort(),
+    [...manifest().fixtures.relay_call].sort(),
   );
   for (const spec of fixtures) validate(spec);
 });

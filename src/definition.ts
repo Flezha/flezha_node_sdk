@@ -1,10 +1,10 @@
 /**
- * What a definition may carry: the fields a tasklet and either operator form
+ * What a definition may carry: the fields a tasklet and either relay form
  * read, and the refusals of a field written where it does not belong.
  *
  * `defineTasklet` checks a tasklet's own definition; `channelsOf` checks an
- * operator definition and turns a short form into the channels body a
- * hand-written single-tasklet operator carries.
+ * relay definition and turns a short form into the channels body a
+ * hand-written single-tasklet relay carries.
  */
 
 import { assertRepresentable } from './codec.js';
@@ -14,7 +14,7 @@ import type {
   ChannelBuilder,
   ClassSettings,
   CodecOptions,
-  OperatorDefinition,
+  RelayDefinition,
   ShortFormDefinition,
   Stream,
   Tasklet,
@@ -35,12 +35,12 @@ export function defineTasklet<TIn, TOut = never, TState = void, TChange = never>
   definition: TaskletDefinition<TIn, TOut, TState, TChange>,
 ): Tasklet<TIn, TOut, TState, TChange> {
   const tasklet = definition.name || '<tasklet>';
-  const operatorFields = written(definition, [...SHORT_FORM_KEYS, ...RUN_BRANCHES, 'durable']);
-  if (operatorFields) {
-    throw flezhaError('topology.operator_field_on_tasklet', {
+  const relayFields = written(definition, [...SHORT_FORM_KEYS, ...RUN_BRANCHES, 'durable']);
+  if (relayFields) {
+    throw flezhaError('topology.relay_field_on_tasklet', {
       tasklet,
-      fields: operatorFields,
-      instead: '`defineOperator`',
+      fields: relayFields,
+      instead: '`defineRelay`',
     });
   }
   if (!definition.name || !definition.name.trim()) {
@@ -175,7 +175,7 @@ const RUN_BRANCHES = ['flow', 'steps'] as const;
 const KIND_LITERALS = ['bounded', 'unbounded'] as const;
 
 /**
- * Every field either form reads. The operator's own are keyed by the type, so
+ * Every field either form reads. The relay's own are keyed by the type, so
  * a field the definition gains is listed here or does not compile; anything
  * else, a retired setting among them, is refused by name.
  */
@@ -201,11 +201,11 @@ function written(definition: object, keys: readonly string[]): string {
 }
 
 /**
- * A definition as `defineOperator` reads it: the full form's fields with
+ * A definition as `defineRelay` reads it: the full form's fields with
  * `channels` optional, which a short form also is, since it carries `run` in
  * place of `channels`.
  */
-export type EitherForm<D extends OperatorDefinition> = Omit<D, 'channels'> &
+export type EitherForm<D extends RelayDefinition> = Omit<D, 'channels'> &
   Partial<Pick<D, 'channels'>>;
 
 /** A member name as the tree's JSON spells it: `sleepAfter` is `sleep_after`. */
@@ -227,7 +227,7 @@ function treeJson(tree: unknown): unknown {
  * run naming two.
  */
 export function settingsOf(
-  definition: EitherForm<OperatorDefinition>,
+  definition: EitherForm<RelayDefinition>,
 ): Pick<ClassSpec, 'description' | 'maxDurationMs' | 'run' | 'durable'> {
   const branches = RUN_BRANCHES.filter((branch) => definition[branch] !== undefined);
   return {
@@ -249,7 +249,7 @@ interface EntryBuilder {
 /**
  * The channels body a definition wires: its own `channels`, or, for a §5 short
  * form carrying one tasklet's `run` body in their place, the body a
- * hand-written single-tasklet operator carries. `topology.short_form_with_topology`
+ * hand-written single-tasklet relay carries. `topology.short_form_with_topology`
  * is the one contract refusal (`authoring_contract.md` §5.2) raised here.
  *
  * `topology.sink_without_output` is not raised: a `.mjs` definition declares no output
@@ -259,10 +259,10 @@ interface EntryBuilder {
  * and the row skips by name.
  */
 export function channelsOf(
-  definition: EitherForm<OperatorDefinition>,
+  definition: EitherForm<RelayDefinition>,
 ): (builder: ChannelBuilder & EntryBuilder) => void {
   if (typeof definition.factoryId !== 'string' || !definition.factoryId.trim()) {
-    throw flezhaError('topology.missing_factory_id', { operator: '<operator>' });
+    throw flezhaError('topology.missing_factory_id', { relay: '<relay>' });
   }
   const factoryId = definition.factoryId;
   const kind = KIND_LITERALS.find(
@@ -270,7 +270,7 @@ export function channelsOf(
   );
   if (kind) {
     throw flezhaError('topology.invalid_setting', {
-      declaration: `operator '${factoryId}'`,
+      declaration: `relay '${factoryId}'`,
       setting: 'run',
       value: kind,
       expected: RUN_BRANCHES.join(' | '),
@@ -279,7 +279,7 @@ export function channelsOf(
   const unknown = unknownFields(definition, DEFINITION_FIELDS);
   if (unknown) {
     throw flezhaError('topology.unknown_field', {
-      declaration: `operator '${factoryId}'`,
+      declaration: `relay '${factoryId}'`,
       fields: unknown,
     });
   }
@@ -291,7 +291,7 @@ export function channelsOf(
   if (run === undefined) {
     if (typeof channels !== 'function') {
       throw flezhaError('topology.missing_body', {
-        declaration: `operator '${factoryId}'`,
+        declaration: `relay '${factoryId}'`,
         body: "`channels`, or one tasklet's `run` as the short form",
       });
     }
@@ -307,7 +307,7 @@ export function channelsOf(
   return shortFormBody(definition as ShortForm);
 }
 
-/** The channels body a §5 short form stands for, once its operator fields are judged. */
+/** The channels body a §5 short form stands for, once its relay fields are judged. */
 function shortFormBody(definition: ShortForm): (builder: ChannelBuilder & EntryBuilder) => void {
   // The tasklet is named after the factory id.
   const fields = written(definition, ['name']);
@@ -318,7 +318,7 @@ function shortFormBody(definition: ShortForm): (builder: ChannelBuilder & EntryB
     });
   }
   const { factoryId, sink, input = 'input', codec } = definition;
-  // The tasklet's own fields, own or inherited; the operator's stay behind.
+  // The tasklet's own fields, own or inherited; the relay's stay behind.
   const tasklet: Record<string, unknown> = {};
   for (const name of fieldNames(definition)) {
     if (TASKLET_DEFINITION_FIELDS.has(name)) tasklet[name] = (definition as never)[name];

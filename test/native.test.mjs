@@ -10,7 +10,7 @@ import { fileURLToPath } from 'node:url';
 
 import {
   ACTIVATION_SCHEMA_VERSION,
-  defineOperator,
+  defineRelay,
   defineTasklet,
   FlezhaError,
   loadNative,
@@ -130,7 +130,7 @@ test('a core refusal is the one error, carrying the code and the engine detail',
 // The checkpoint acknowledgements the core accepts. Asserted by registering,
 // because the core is what reads the tree and refuses a malformed one.
 const checkpointClass = (factoryId, ack) =>
-  defineOperator({
+  defineRelay({
     factoryId,
     flow: { exactly: { effectively_once: { ack } } },
     channels: (c) => {

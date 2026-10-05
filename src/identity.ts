@@ -32,7 +32,7 @@ export function cellIdentity(instanceId: string, taskletName: string, cellKey: s
   const tasklet = Buffer.from(taskletName, 'utf8');
   const key = Buffer.from(cellKey, 'utf8');
   for (const [part, value, bytes, limit] of [
-    ['operator id', instanceId, instance, 255],
+    ['relay id', instanceId, instance, 255],
     ['tasklet name', taskletName, tasklet, 255],
     ['cell key', cellKey, key, 0xffff],
   ] as const) {

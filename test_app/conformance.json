@@ -44,7 +44,7 @@
     "graph_builder": [
       "sugar_static_cell",
       "static_cell",
-      "mixed_operator",
+      "mixed_relay",
       "hybrid_channel",
       "merged_input",
       "transform_chain",
@@ -85,7 +85,7 @@
     ],
     "cell_timers": ["session_timeout"],
     "correction_window": ["candle"],
-    "keyed_channels": ["partition_relay"],
+    "keyed_channels": ["partition_pass"],
     "steps": [
       "spawn_requester",
       "spawn_hold_requester",
@@ -128,7 +128,7 @@
       "call_split",
       "call_turn"
     ],
-    "operator_call": [
+    "relay_call": [
       "call_pricing",
       "call_orders",
       "call_agent",
@@ -136,7 +136,7 @@
       "call_tool_session"
     ],
     "parts": ["part_echo", "part_echo_steps"],
-    "partitioned": ["partition_relay", "dynamic_cell", "keyed_loop_steps"],
+    "partitioned": ["partition_pass", "dynamic_cell", "keyed_loop_steps"],
     "dynamic_cell": ["dynamic_cell"],
     "pool_wedge": ["wedge_probe"],
     "schema_evolution": ["schema_evolution_v1", "schema_evolution_v2"],

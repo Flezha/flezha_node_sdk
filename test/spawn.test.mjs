@@ -97,7 +97,7 @@ test('a spawn resolves to the id it resolved to, generated or given', async () =
 
 test('the error policy is sent, and a running id is thrown by both reads', async () => {
   const bridge = spawnBridge(() =>
-    failed('operator.already_running', "operator 'w1' is already running", { operator: 'w1' }),
+    failed('relay.already_running', "relay 'w1' is already running", { relay: 'w1' }),
   );
   const failures = [];
   await handled(bridge, async (input, ctx) => {
@@ -110,8 +110,8 @@ test('the error policy is sent, and a running id is thrown by both reads', async
   assert.equal(bridge.requests[0].ifRunning, 'error');
   const [waited, tried] = failures;
   assert.ok(waited instanceof FlezhaError);
-  assert.equal(waited.code, 'operator.already_running');
-  assert.deepEqual(waited.details, { operator: 'w1' });
+  assert.equal(waited.code, 'relay.already_running');
+  assert.deepEqual(waited.details, { relay: 'w1' });
   assert.deepEqual(tried, waited, 'every read answers the resolved failure');
   assert.deepEqual(bridge.reads, ['wait', 'try']);
 });
@@ -129,9 +129,9 @@ test('ifRunning without an id throws a TypeError naming both, and sends nothing'
 
 test('each failure the core answers is thrown as the one error, carrying its code', async () => {
   for (const code of [
-    'operator.already_running',
-    'operator.factory_unknown',
-    'operator.factory_not_steps',
+    'relay.already_running',
+    'relay.factory_unknown',
+    'relay.factory_not_steps',
     'quota.exceeded',
     'spawn.timeout',
     'spawn.unavailable',

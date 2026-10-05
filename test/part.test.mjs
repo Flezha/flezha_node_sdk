@@ -9,7 +9,7 @@ import {
   ACTIVATION_SCHEMA_VERSION,
   FlezhaError,
   defineTasklet,
-  defineOperator,
+  defineRelay,
   loadNative,
 } from '../dist/esm/index.js';
 import { answer } from '../dist/esm/dispatch.js';
@@ -56,7 +56,7 @@ test("each item's parts carry the token, the item's index and the sink's encodin
   const seen = [];
   const bridge = partBridge();
   bridge.part = (token, item, payload) => seen.push(`${token}/${item}/${utf8(payload)}`);
-  const spec = defineOperator({
+  const spec = defineRelay({
     factoryId: 'part_flow',
     channels: (c) => c.input('in').into(Parts(seen)).sink('answer'),
   });
@@ -78,7 +78,7 @@ test("each item's parts carry the token, the item's index and the sink's encodin
 
 test('a timer handler sends a part under its own item', async () => {
   const bridge = partBridge();
-  const spec = defineOperator({
+  const spec = defineRelay({
     factoryId: 'part_timer',
     channels: (c) => c.input('in').into(Parts([])).sink('answer'),
   });
@@ -93,7 +93,7 @@ test('a timer handler sends a part under its own item', async () => {
 test('a per_input steps stage sends its parts as a flow tasklet does', async () => {
   const seen = [];
   const bridge = partBridge();
-  const spec = defineOperator({
+  const spec = defineRelay({
     factoryId: 'part_steps',
     steps: { each: 'per_input' },
     channels: (c) => c.input('in').into(Parts(seen)).sink('answer'),
@@ -105,10 +105,10 @@ test('a per_input steps stage sends its parts as a flow tasklet does', async () 
 });
 
 test('a refused part fails the invocation as any throw does', async () => {
-  const details = JSON.stringify({ tasklet: 'parts', operator: 'op-1', channel: 'answer' });
+  const details = JSON.stringify({ tasklet: 'parts', relay: 'op-1', channel: 'answer' });
   const refusal = () =>
     FlezhaError.fromDocument(loadNative().errorDocument('part.no_sink', details));
-  const spec = defineOperator({
+  const spec = defineRelay({
     factoryId: 'part_refused',
     channels: (c) => c.input('in').into(Parts([])).sink('answer'),
   });

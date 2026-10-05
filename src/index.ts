@@ -16,7 +16,7 @@ export type {
   StartResult,
 } from './control.js';
 export type { SendOptions, SendVerdict } from './runner.js';
-export { defineOperator } from './authoring.js';
+export { defineRelay } from './authoring.js';
 export { defineTasklet } from './definition.js';
 export type { CallOptions, CallTarget, Response } from './call.js';
 export type { ChannelSpec, ClassSpec, Link, TaskNode } from './authoring.js';
@@ -29,7 +29,7 @@ export type { Codec } from './codec.js';
 export { Registry } from './dispatch.js';
 export { FORMAT_ID_MSGPACK, SDK_LANG_NODE, toHostClassDecl, validate } from './graph.js';
 export type { DerivedChannel, DerivedDecl, DerivedEdge } from './graph.js';
-export { LocalOperator } from './local.js';
+export { LocalRelay } from './local.js';
 export type { SinkOutput } from './local.js';
 export { consoleLogger, setLogger } from './logger.js';
 export type { Logger, LogLevel } from './logger.js';
@@ -55,8 +55,8 @@ export type {
   IfRunning,
   Merge,
   OnFailure,
-  OperatorDefinition,
-  OperatorSettings,
+  RelayDefinition,
+  RelaySettings,
   OverflowPolicy,
   Tasklet,
   TaskletDefinition,

@@ -17,17 +17,17 @@
  */
 import type { Native } from './native.js';
 
-/** What an operator start takes beside its factory, which is what `flz operator start` takes. */
+/** What a relay start takes beside its factory, which is what `flz relay start` takes. */
 export interface StartOptions {
   /**
-   * The operator's own id. Without one, every start runs a new operator
+   * The relay's own id. Without one, every start runs a new relay
    * under a generated id, so a start retried after a lost answer starts a
-   * second one; with one, a second start leaves the running operator untouched.
+   * second one; with one, a second start leaves the running relay untouched.
    */
   id?: string;
   /** The values the factory is seeded with, keyed by tasklet. */
   init_values?: unknown;
-  /** The start options, as `flz operator start` takes them. */
+  /** The start options, as `flz relay start` takes them. */
   opts?: unknown;
 }
 
@@ -37,15 +37,15 @@ export interface PluginOptions {
   opts?: Record<string, unknown>;
   /** Run one copy in the whole cluster. */
   single?: boolean;
-  /** An operator to bind in the same call, with `hooks`. */
-  operator_id?: string;
-  /** The hooks the operator binds, as names or `[name, opts]` pairs. */
+  /** A relay to bind in the same call, with `hooks`. */
+  relay_id?: string;
+  /** The hooks the relay binds, as names or `[name, opts]` pairs. */
   hooks?: unknown[];
 }
 
-/** What a plugin bind takes beside the plugin and the operator. */
+/** What a plugin bind takes beside the plugin and the relay. */
 export interface BindOptions {
-  /** The hooks the operator binds, as names or `[name, opts]` pairs. */
+  /** The hooks the relay binds, as names or `[name, opts]` pairs. */
   hooks?: unknown[];
   /** The channel the plugin feeds or reads. */
   channel?: string;
@@ -54,7 +54,7 @@ export interface BindOptions {
 /** What a start did: `already_running` only for an id given while it runs. */
 export type StartOutcome = 'started' | 'already_running';
 
-/** A start's answer: the id the operator runs under, given or generated. */
+/** A start's answer: the id the relay runs under, given or generated. */
 export interface StartResult {
   id: string;
   outcome: StartOutcome;
@@ -63,23 +63,23 @@ export interface StartResult {
 export class Control {
   constructor(private readonly native: Native) {}
 
-  /** Start an operator of `factoryId`. */
-  async startOperator(factoryId: string, options: StartOptions = {}): Promise<StartResult> {
-    const { id, outcome } = (await this.call('Operator.start', {
+  /** Start a relay of `factoryId`. */
+  async startRelay(factoryId: string, options: StartOptions = {}): Promise<StartResult> {
+    const { id, outcome } = (await this.call('Relay.start', {
       ...options,
       factory_id: factoryId,
     })) as StartResult;
     return { id, outcome };
   }
 
-  /** Stop an operator, or the whole partition group it names. */
-  async stopOperator(operatorId: string): Promise<unknown> {
-    return this.call('Operator.stop', operatorId);
+  /** Stop a relay, or the whole partition group it names. */
+  async stopRelay(relayId: string): Promise<unknown> {
+    return this.call('Relay.stop', relayId);
   }
 
   /**
    * Enable the plugin `name` in this namespace, of the provider `provider`
-   * (for example `operator_websocket`).
+   * (for example `relay_websocket`).
    */
   async enablePlugin(
     name: string,
@@ -89,14 +89,14 @@ export class Control {
     return this.call('PluginManager.enable', name, { opts: {}, ...options, provider });
   }
 
-  /** Bind the operator `operatorId` to the enabled plugin `name`. */
-  async bindPlugin(name: string, operatorId: string, options: BindOptions = {}): Promise<unknown> {
-    return this.call('PluginManager.bind', name, { ...options, operator_id: operatorId });
+  /** Bind the relay `relayId` to the enabled plugin `name`. */
+  async bindPlugin(name: string, relayId: string, options: BindOptions = {}): Promise<unknown> {
+    return this.call('PluginManager.bind', name, { ...options, relay_id: relayId });
   }
 
-  /** Unbind the operator `operatorId` from the plugin `name`, which stays enabled. */
-  async unbindPlugin(name: string, operatorId: string): Promise<unknown> {
-    return this.call('PluginManager.unbind', name, { operator_id: operatorId });
+  /** Unbind the relay `relayId` from the plugin `name`, which stays enabled. */
+  async unbindPlugin(name: string, relayId: string): Promise<unknown> {
+    return this.call('PluginManager.unbind', name, { relay_id: relayId });
   }
 
   /** Disable the plugin `name`, stopping it wherever it runs. */
@@ -104,19 +104,19 @@ export class Control {
     return this.call('PluginManager.disable', name, {});
   }
 
-  /** The operator ids running in this namespace. */
-  async listOperators(): Promise<unknown> {
-    return this.call('Operator.list_operators');
+  /** The relay ids running in this namespace. */
+  async listRelays(): Promise<unknown> {
+    return this.call('Relay.list_relays');
   }
 
-  /** The plugins enabled in this namespace: name, provider, single, bound operators. */
+  /** The plugins enabled in this namespace: name, provider, single, bound relays. */
   async listPlugins(): Promise<unknown> {
     return this.call('PluginManager.list');
   }
 
   /** One cell's live state, and the change sequence it was read at. */
-  async cellState(operatorId: string, cellKey: string): Promise<unknown> {
-    return this.call('Operator.cell_state', operatorId, cellKey);
+  async cellState(relayId: string, cellKey: string): Promise<unknown> {
+    return this.call('Relay.cell_state', relayId, cellKey);
   }
 
   /**

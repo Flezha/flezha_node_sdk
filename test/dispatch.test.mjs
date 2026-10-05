@@ -10,7 +10,7 @@ import {
   ACTIVATION_SCHEMA_VERSION,
   FlezhaError,
   decodeValue,
-  defineOperator,
+  defineRelay,
   defineTasklet,
   encodeValue,
   loadNative,
@@ -71,7 +71,7 @@ const Counter = defineTasklet({
   },
 });
 
-const Spec = defineOperator({
+const Spec = defineRelay({
   factoryId: 'counters',
   channels: (c) => {
     c.input('in')
@@ -108,7 +108,7 @@ test('a work batch answers one effect per item, in order', async () => {
 });
 
 test('an emit on a response channel leaves as the plugin output a sink’s would', async () => {
-  const spec = defineOperator({
+  const spec = defineRelay({
     factoryId: 'answering',
     channels: (c) =>
       c
@@ -135,7 +135,7 @@ test('a throwing handler is a retryable verdict and stops the batch', async () =
       ctx.emit(input);
     },
   });
-  const spec = defineOperator({
+  const spec = defineRelay({
     factoryId: 'throwing_op',
     channels: (c) => c.input('in').into(Throwing).sink(),
   });
@@ -159,7 +159,7 @@ test('a rejected promise is answered the same way a throw is', async () => {
       throw Object.assign(new Error('gave up'), { nonRetryable: true });
     },
   });
-  const spec = defineOperator({
+  const spec = defineRelay({
     factoryId: 'rejecting_op',
     channels: (c) => c.input('in').into(Rejecting).sink(),
   });
@@ -224,7 +224,7 @@ test('the JSON handover carries a bigint and a byte array without narrowing', as
     },
     run: () => undefined,
   });
-  const spec = defineOperator({
+  const spec = defineRelay({
     factoryId: 'wide_op',
     channels: (c) => c.input('in').into(Wide).sink(),
   });
@@ -288,7 +288,7 @@ test('a prepare crossing answers one key per payload, in order', async () => {
 
 test('a prepare crossing answers the keyed consumer behind an unkeyed one', async () => {
   const Watch = defineTasklet({ name: 'watch', run: (input, ctx) => ctx.emit(input) });
-  const spec = defineOperator({
+  const spec = defineRelay({
     factoryId: 'split_keyed',
     channels: (c) => {
       const entry = c.input('in');
@@ -316,7 +316,7 @@ test('one payload failing its prepare does not fail the others', async () => {
     },
     run: (input, ctx) => ctx.emit(input),
   });
-  const spec = defineOperator({
+  const spec = defineRelay({
     factoryId: 'windowed_op',
     channels: (c) =>
       c
@@ -385,17 +385,17 @@ test('an activation for an unknown factory is answered, not dropped', async () =
   assert.match(reported, /runtime\.unknown_activation_token: activation token 13 /);
 });
 
-test('a module specifier is imported and its operators registered', async () => {
+test('a module specifier is imported and its relays registered', async () => {
   const dir = tempDir('flezha-specifier-');
   const module = join(dir, 'handlers.mjs');
   writeFileSync(
     module,
-    `import { defineOperator, defineTasklet } from '${new URL('../dist/esm/index.js', import.meta.url).pathname}';\n` +
+    `import { defineRelay, defineTasklet } from '${new URL('../dist/esm/index.js', import.meta.url).pathname}';\n` +
       `const Echo = defineTasklet({ name: 'echo', run: (i) => i });\n` +
-      `export default defineOperator({ factoryId: 'from_specifier', channels: (c) => c.input('in').into(Echo).sink() });\n`,
+      `export default defineRelay({ factoryId: 'from_specifier', channels: (c) => c.input('in').into(Echo).sink() });\n`,
   );
   const registry = await loadRegistry([module]);
-  assert.ok(registry.get('from_specifier'), "the module's operator was registered");
+  assert.ok(registry.get('from_specifier'), "the module's relay was registered");
   assert.deepEqual(
     specsFrom(module, await importModule(module)).map((s) => s.factoryId),
     ['from_specifier'],
@@ -409,14 +409,14 @@ for (const [build, load, file, bind, exporting] of [
     'esm',
     loadRegistry,
     'handlers.mjs',
-    (sdk) => `import { defineOperator, defineTasklet } from '${sdk}';`,
+    (sdk) => `import { defineRelay, defineTasklet } from '${sdk}';`,
     'export default',
   ],
   [
     'cjs',
     createRequire(import.meta.url)('../dist/cjs/runner.js').loadRegistry,
     'handlers.cjs',
-    (sdk) => `const { defineOperator, defineTasklet } = require('${sdk}');`,
+    (sdk) => `const { defineRelay, defineTasklet } = require('${sdk}');`,
     'module.exports =',
   ],
 ]) {
@@ -426,10 +426,10 @@ for (const [build, load, file, bind, exporting] of [
       module,
       `${bind(new URL(`../dist/${build}/index.js`, import.meta.url).pathname)}\n` +
         `const Echo = defineTasklet({ name: 'echo', run: (i) => i });\n` +
-        `${exporting} defineOperator({ factoryId: 'by_relative_path', channels: (c) => c.input('in').into(Echo).sink() });\n`,
+        `${exporting} defineRelay({ factoryId: 'by_relative_path', channels: (c) => c.input('in').into(Echo).sink() });\n`,
     );
     const registry = await load([`./${relative(process.cwd(), module)}`]);
-    assert.ok(registry.get('by_relative_path'), "the module's operator was registered");
+    assert.ok(registry.get('by_relative_path'), "the module's relay was registered");
   });
 }
 
@@ -450,10 +450,10 @@ test('a refusal raised while a handler module is imported keeps its own name', a
   const module = join(dir, 'handlers.mjs');
   writeFileSync(
     module,
-    `import { defineOperator, defineTasklet } from '${new URL('../dist/esm/index.js', import.meta.url).pathname}';\n` +
+    `import { defineRelay, defineTasklet } from '${new URL('../dist/esm/index.js', import.meta.url).pathname}';\n` +
       `const A = defineTasklet({ name: 'twin', run: (i) => i });\n` +
       `const B = defineTasklet({ name: 'twin', run: (i) => i });\n` +
-      `export default defineOperator({ factoryId: 'module_scope', channels: (c) => {\n` +
+      `export default defineRelay({ factoryId: 'module_scope', channels: (c) => {\n` +
       `  const s = c.input('in'); s.into(A); s.into(B);\n` +
       `} });\n`,
   );
@@ -476,13 +476,13 @@ test('a module that throws anything but a refusal is named, with the original er
   );
 });
 
-test('a module exporting no operator is refused naming the specifier', async () => {
+test('a module exporting no relay is refused naming the specifier', async () => {
   const dir = tempDir('flezha-empty-');
   const module = join(dir, 'empty.mjs');
   writeFileSync(module, 'export const nothing = 1;\n');
   await assert.rejects(
     () => loadRegistry([module]),
-    (error) => error.code === 'topology.no_operator_exported' && error.details.module === module,
+    (error) => error.code === 'topology.no_relay_exported' && error.details.module === module,
   );
 });
 
@@ -517,7 +517,7 @@ const StampEmitter = defineTasklet({
 
 // One keyed plugin channel: the topology every SDK can express, and where the
 // per-emit ordinal has to be right.
-const StampSpec = defineOperator({
+const StampSpec = defineRelay({
   factoryId: 'stamps',
   channels: (c) => {
     c.input('in')
@@ -537,7 +537,7 @@ const PlainEmitter = defineTasklet({
   },
 });
 
-const MixedSpec = defineOperator({
+const MixedSpec = defineRelay({
   factoryId: 'stamps_mixed',
   channels: (c) => {
     c.input('in')
@@ -612,7 +612,7 @@ test('user metadata survives beside the stamps and cannot spoof one', async () =
       ctx.emit('v', { metadata: { user: 'meta' } });
     },
   });
-  const spec = defineOperator({
+  const spec = defineRelay({
     factoryId: 'stamps_user',
     channels: (c) => {
       c.input('in')
@@ -691,8 +691,8 @@ const stepsGraph = (c) => {
 const payloadOf = (output) =>
   output.target === 'plugin' ? jsonOf(output.payload) : decodeValue(output.payload);
 
-const StepsSpec = defineOperator({ factoryId: 'steps_emit', steps: {}, channels: stepsGraph });
-const FlowTwinSpec = defineOperator({
+const StepsSpec = defineRelay({ factoryId: 'steps_emit', steps: {}, channels: stepsGraph });
+const FlowTwinSpec = defineRelay({
   factoryId: 'steps_emit_stream',
   channels: stepsGraph,
 });
@@ -715,7 +715,7 @@ test('a structured steps releases one untransformed edge output per emit', async
   assert.equal(outputs[0].eventTime, undefined);
 });
 
-const CarrySpec = defineOperator({
+const CarrySpec = defineRelay({
   factoryId: 'steps_carry',
   steps: { each: 'chained' },
   channels: (c) => {
@@ -770,7 +770,7 @@ test('every timer call inside a steps tasklet reaches the item effect as a timer
       },
       onTimer: () => {},
     });
-    const spec = defineOperator({
+    const spec = defineRelay({
       factoryId: `steps_timer_${call}`,
       steps: {},
       channels: (c) => c.input('in').into(Arms),
@@ -791,7 +791,7 @@ test('a timer call inside a compensate hook fails naming runtime.timers_unavaila
       ctx.timerAfter(1_000);
     },
   });
-  const spec = defineOperator({
+  const spec = defineRelay({
     factoryId: 'steps_timer_compensate',
     steps: {},
     channels: (c) => c.input('in').into(Undo),
@@ -821,7 +821,7 @@ test('the same graph on a flow class releases one output per consumer', async ()
 });
 
 // The other end of the same two arms: what the CONSUMER is handed. A stream
-// producer already applied the edge, so delivery applies nothing; a steps operator
+// producer already applied the edge, so delivery applies nothing; a steps relay
 // stage released the value raw, so delivery is the one application.
 
 /** Hand `payload` to `tasklet` on the `handoff` channel and answer what it saw. */
@@ -876,7 +876,7 @@ for (const [run, settings] of [
   ['flow', {}],
 ]) {
   test(`a ${run} tasklet's complete rides its effect, the last call winning`, async () => {
-    const spec = defineOperator({
+    const spec = defineRelay({
       factoryId: `complete_${run}`,
       ...settings,
       channels: completingGraph,
@@ -898,7 +898,7 @@ for (const [run, settings] of [
 // item is reported unreadable (the entrance's failure, not the handler's), so
 // the core parks it under the entry channel, and the handler is never handed it.
 test('plain text into an entry naming no codec is unreadable and never reaches the handler', async () => {
-  const spec = defineOperator({
+  const spec = defineRelay({
     factoryId: 'json_entry',
     channels: (c) => {
       c.input('in').into(record('json_entry_tasklet'));
@@ -917,7 +917,7 @@ test('plain text into an entry naming no codec is unreadable and never reaches t
 });
 
 test('bytes that are not UTF-8 into a text entry are unreadable', async () => {
-  const spec = defineOperator({
+  const spec = defineRelay({
     factoryId: 'text_entry',
     channels: (c) => {
       c.input('in', { codec: 'text' }).into(record('text_entry_tasklet'));
@@ -936,7 +936,7 @@ test('bytes that are not UTF-8 into a text entry are unreadable', async () => {
 // entrance's; a handler throwing on a value that did decode stays a handler
 // failure, which is what the retry ladder is for.
 test('an entry edge transform that throws is unreadable, a handler that throws is not', async () => {
-  const spec = defineOperator({
+  const spec = defineRelay({
     factoryId: 'entry_edge',
     channels: (c) => {
       c.input('in', { codec: 'text' })
@@ -1002,7 +1002,7 @@ test('every merged source is keyed on its mapped value at the crossing', async (
 });
 
 test('a tasklet merged with an entry releases its mapped value to the merged node', async () => {
-  const spec = defineOperator({
+  const spec = defineRelay({
     factoryId: 'merged_hop',
     channels: (c) => {
       const produced = c.input('raw').into(StepsProducer);
@@ -1025,7 +1025,7 @@ test('a tasklet merged with an entry releases its mapped value to the merged nod
 // input, the crossing answers every value's key, and a producer releases one
 // frame per value.
 
-const FanSpec = defineOperator({
+const FanSpec = defineRelay({
   factoryId: 'fan',
   channels: (c) => {
     c.input('lines', { codec: 'text' })
@@ -1065,7 +1065,7 @@ test('a cell handed a fanned payload runs only the values keyed to it', async ()
 test('a fan into a static consumer runs each value on the cells it names, and [] on none', async () => {
   const keys = ['a', 'b'];
   const cellsFor = (trade) => keys.filter((key) => trade.startsWith(`${key}:`));
-  const spec = defineOperator({
+  const spec = defineRelay({
     factoryId: 'static_fan',
     channels: (c) => {
       c.input('trades', { codec: 'text' })
@@ -1081,7 +1081,7 @@ test('a fan into a static consumer runs each value on the cells it names, and []
 
 test('a producer releases one frame per fanned value, and an array from map is one value', async () => {
   const released = async (factoryId, reshape) => {
-    const spec = defineOperator({
+    const spec = defineRelay({
       factoryId,
       channels: (c) =>
         reshape(c.input('in').into(StepsProducer)).into(record(`${factoryId}_record`)),
@@ -1105,9 +1105,9 @@ test('a module exporting short forms registers each, with the run it declares', 
   const module = join(dir, 'short.mjs');
   writeFileSync(
     module,
-    `import { defineOperator } from '${new URL('../dist/esm/index.js', import.meta.url).pathname}';\n` +
-      `export const upcase = defineOperator({ factoryId: 'short_form', sink: 'out', run: (i) => i });\n` +
-      `export const place = defineOperator({ factoryId: 'short_steps', steps: {}, sink: 'placed', input: 'order', run: (i) => i });\n`,
+    `import { defineRelay } from '${new URL('../dist/esm/index.js', import.meta.url).pathname}';\n` +
+      `export const upcase = defineRelay({ factoryId: 'short_form', sink: 'out', run: (i) => i });\n` +
+      `export const place = defineRelay({ factoryId: 'short_steps', steps: {}, sink: 'placed', input: 'order', run: (i) => i });\n`,
   );
   const registry = await loadRegistry([module]);
   assert.equal(registry.get('short_form')?.spec.run, undefined);
@@ -1122,14 +1122,14 @@ test('registerFactory rejects at the line that names a module which cannot load'
   );
 });
 
-test('registerFactory rejects a module exporting no operator, before run()', async () => {
+test('registerFactory rejects a module exporting no relay, before run()', async () => {
   const dir = tempDir('flezha-empty-register-');
   const module = join(dir, 'empty.mjs');
   writeFileSync(module, 'export const nothing = 1;\n');
   const runner = createRunner('register_factory_empty_ns');
   await assert.rejects(
     () => runner.registerFactory(module),
-    (error) => error.code === 'topology.no_operator_exported' && error.details.module === module,
+    (error) => error.code === 'topology.no_relay_exported' && error.details.module === module,
   );
 });
 
@@ -1138,8 +1138,8 @@ test('unregisterFactory undoes a pre-run registration and names an unknown one',
   const module = join(dir, 'one.mjs');
   writeFileSync(
     module,
-    `import { defineOperator } from '${new URL('../dist/esm/index.js', import.meta.url).pathname}';\n` +
-      `export const one = defineOperator({ factoryId: 'unregister_me', sink: 'out', run: (i) => i });\n`,
+    `import { defineRelay } from '${new URL('../dist/esm/index.js', import.meta.url).pathname}';\n` +
+      `export const one = defineRelay({ factoryId: 'unregister_me', sink: 'out', run: (i) => i });\n`,
   );
   const runner = createRunner('unregister_ns');
   await runner.registerFactory(module);
@@ -1155,8 +1155,8 @@ test('a post-start registerFactory declares against the core and the workers', a
   const module = join(dir, 'late.mjs');
   writeFileSync(
     module,
-    `import { defineOperator } from '${new URL('../dist/esm/index.js', import.meta.url).pathname}';\n` +
-      `export const late = defineOperator({ factoryId: 'late_form', sink: 'out', run: (i) => i });\n`,
+    `import { defineRelay } from '${new URL('../dist/esm/index.js', import.meta.url).pathname}';\n` +
+      `export const late = defineRelay({ factoryId: 'late_form', sink: 'out', run: (i) => i });\n`,
   );
 
   // A started runner is one that holds a core and a registry. Standing those in

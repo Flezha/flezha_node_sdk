@@ -5,16 +5,16 @@ standalone project. Nothing here depends on the Flezha source tree:
 `package.json` names one released version of `@flezha/sdk`, the way your own
 project would. It needs Node 20 or later.
 
-It holds the desk's two operators and the runner that serves them. The guides
+It holds the desk's two relays and the runner that serves them. The guides
 write them one tasklet at a time.
 
 | File | What is in it |
 |---|---|
 | `runner.mjs` | the runner: this process joins the `trading` namespace and registers both factories |
-| `trade_watcher_operator.mjs` | the ETL stream, a flow operator: the exchange's trade messages in, a cell per symbol, buy signals out |
+| `trade_watcher_relay.mjs` | the ETL stream, a flow relay: the exchange's trade messages in, a cell per symbol, buy signals out |
 | `track_prices.mjs` | keeps each symbol's last ten prices, and compares a new price with their average |
 | `buy_above_average.mjs` | starts an order when a price is 2 % or more above its average |
-| `order_executor_operator.mjs` | the workflow, a steps operator: two steps in order, then two side by side |
+| `order_executor_relay.mjs` | the workflow, a steps relay: two steps in order, then two side by side |
 | `reserve_funds.mjs` | step one: puts the money aside, and releases it again if the order is undone |
 | `place_order.mjs` | step two: places the paper order, and cancels it if the order is undone |
 | `confirm_fill.mjs` | waits ten seconds for the exchange, confirms the fill and ends the order with its result, and refuses an order above the exchange's limit |
@@ -25,7 +25,7 @@ and a `run` that takes the value and the context and emits through
 `ctx.emit`; what `run` returns is not output. What a tasklet remembers and the
 changes that record it are plain objects, folded by its own `applyChange`, and
 the values it takes and hands on are the objects their JSON decodes to. Each
-operator module's default export is what the runner registers.
+relay module's default export is what the runner registers.
 
 ## Run it
 
@@ -40,8 +40,8 @@ npm install
 FLEZHA_NAMESPACE_SECRET=<trading key> node runner.mjs
 ```
 
-Start it from this folder: the runner registers its operators by module
-specifier, `./trade_watcher_operator.mjs`, and that resolves against the
+Start it from this folder: the runner registers its relays by module
+specifier, `./trade_watcher_relay.mjs`, and that resolves against the
 working directory. It keeps running until a SIGTERM, Ctrl-C, or its standard
 input closing, so do not start it with standard input closed. The namespace is
 the first argument and defaults to `trading`: `node runner.mjs my_desk`.
@@ -58,7 +58,7 @@ One instance of `order_executor` is one order, and each needs an id of its own. 
 `order` channel:
 
 ```sh
-flz operator start order_executor --id order_3 --namespace trading \
+flz relay start order_executor --id order_3 --namespace trading \
   --text '{"symbol": "EUR/USD", "quantity": 10}' --channel order
 ```
 
@@ -70,15 +70,15 @@ The runner's terminal shows the order being booked. The ids come from
 ```
 
 About ten seconds later, once `confirm_fill` has its answer from the exchange,
-the instance ends, and `flz operator info` shows how:
+the instance ends, and `flz relay info` shows how:
 
 ```sh
-flz operator info order_3 --namespace trading
+flz relay info order_3 --namespace trading
 ```
 
 ```
 ...
-Operator: order_3
+Relay: order_3
   Run: steps
   Phase: finished
   Status: ok
@@ -91,7 +91,7 @@ The paper exchange fills at most 100 at a time, so `confirm_fill` refuses a
 larger order. Start one the same way, with a quantity above the limit:
 
 ```sh
-flz operator start order_executor --id order_4 --namespace trading \
+flz relay start order_executor --id order_4 --namespace trading \
   --text '{"symbol": "EUR/USD", "quantity": 500}' --channel order
 ```
 
@@ -109,12 +109,12 @@ undone, in reverse: the order is cancelled, then the money is released.
 ```
 
 ```sh
-flz operator info order_4 --namespace trading
+flz relay info order_4 --namespace trading
 ```
 
 ```
 ...
-Operator: order_4
+Relay: order_4
   Run: steps
   Phase: finished
   Status: error
@@ -140,4 +140,4 @@ is. Once the package is published, the step goes away.
 
 The echo in [`../echo`](../echo/README.md) is the Part 1 project, and
 [`docs/guides/runner_deployment.md`](../../../../docs/guides/runner_deployment.md)
-walks through what a tasklet, an operator and a runner each are.
+walks through what a tasklet, a relay and a runner each are.

@@ -2,7 +2,7 @@
  * The invocation context: every deterministic effect a handler is allowed.
  *
  * The context accumulates one item's effects — recorded changes, outputs,
- * timer operations, the checkpoint flag, a request to end the steps operator — and
+ * timer operations, the checkpoint flag, a request to end the steps relay — and
  * the dispatcher turns them into the `ItemEffect` the core folds. Nothing here
  * reaches the wire on its own; an emit is a value in a list until the
  * completion carries it.
@@ -87,7 +87,7 @@ export interface InvocationInput {
   node: TaskNode;
   /** Channels this tasklet produces on, in declaration order. */
   outgoing: ChannelSpec[];
-  operator: string;
+  relay: string;
   cellKey: string | undefined;
   changeSeq: bigint;
   now: bigint;
@@ -163,7 +163,7 @@ export class Invocation implements Ctx<unknown, unknown, unknown> {
       // Lazily, because most invocations never ask and the identity is the
       // one part of the derivation that costs an allocation.
       this.identityBytes = cellIdentity(
-        this.input.operator,
+        this.input.relay,
         this.input.node.name,
         this.input.cellKey ?? '',
       );
@@ -331,7 +331,7 @@ export class Invocation implements Ctx<unknown, unknown, unknown> {
   /**
    * Output identity for one plugin frame, appended after the user's metadata.
    * Written only when the class records no effects: under the tier, and for a
-   * durable steps operator, the controller derives the identity from the durable
+   * durable steps relay, the controller derives the identity from the durable
    * effect record, and a second answer here would contradict it. The ordinal
    * advances on every plugin output, stamped or not, so hosts of one topology
    * agree on the sequence.
@@ -342,7 +342,7 @@ export class Invocation implements Ctx<unknown, unknown, unknown> {
     key: string | undefined,
   ): void {
     if (channel.keyed && !recordsEffects(this.input.spec)) {
-      const cell = `${this.input.operator}/${this.input.node.name}/${this.input.cellKey ?? ''}`;
+      const cell = `${this.input.relay}/${this.input.node.name}/${this.input.cellKey ?? ''}`;
       metadata.push(
         { key: 'flz.cell', value: cell },
         { key: 'flz.seq', value: `${this.input.changeSeq}.${this.emitOrdinal}` },
