@@ -218,8 +218,8 @@ function specOf(row) {
           case 'on_full':
             stream = stream.onFull(arg);
             break;
-          case 'sink':
-            stream = arg === '' ? stream.sink() : stream.sink(arg);
+          case 'output':
+            stream = arg === '' ? stream.output() : stream.output(arg);
             break;
           case 'call':
           case 'call_unread':
@@ -344,7 +344,7 @@ function declareShorthand(declaration, index) {
   return defineRelay({
     factoryId: declaration.factoryId,
     ...(index === 0 ? {} : { steps: {} }),
-    sink: declaration.sink,
+    output: declaration.sink,
     input: declaration.input,
     run: declaration.noout ? () => {} : (input, ctx) => ctx.emit(input),
     ...(declaration.topology ? { channels: () => {} } : {}),

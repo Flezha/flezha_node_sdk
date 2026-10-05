@@ -78,7 +78,7 @@ const Spec = defineRelay({
       .keyBy((value) => String(value))
       .into(Counter)
       .keyed()
-      .sink('out');
+      .output('out');
   },
 });
 
@@ -117,7 +117,7 @@ test('a throwing handler is a retryable verdict and stops the batch', async () =
   });
   const spec = defineRelay({
     factoryId: 'throwing_op',
-    channels: (c) => c.input('in').into(Throwing).sink(),
+    channels: (c) => c.input('in').into(Throwing).output(),
   });
   const result = await answer(
     activation({
@@ -141,7 +141,7 @@ test('a rejected promise is answered the same way a throw is', async () => {
   });
   const spec = defineRelay({
     factoryId: 'rejecting_op',
-    channels: (c) => c.input('in').into(Rejecting).sink(),
+    channels: (c) => c.input('in').into(Rejecting).output(),
   });
   const result = await answer(
     activation({ factory: 'rejecting_op', cellKey: undefined, items: [inputItem(1)] }),
@@ -206,7 +206,7 @@ test('the JSON handover carries a bigint and a byte array without narrowing', as
   });
   const spec = defineRelay({
     factoryId: 'wide_op',
-    channels: (c) => c.input('in').into(Wide).sink(),
+    channels: (c) => c.input('in').into(Wide).output(),
   });
   const source = depsFor(spec);
   const huge = (1n << 63n) + 7n;
@@ -275,13 +275,13 @@ test('a prepare crossing answers the keyed consumer behind an unkeyed one', asyn
       entry
         .filter((value) => value === 'drop')
         .into(Watch)
-        .sink('dropped');
+        .output('dropped');
       entry
         .filter((value) => value !== 'drop')
         .keyBy((value) => value.split(':')[0])
         .into(Counter)
         .keyed()
-        .sink('out');
+        .output('out');
     },
   });
   assert.deepEqual(await keysAt(spec, 0, '"a:1"', '"drop"'), [['a'], []]);
@@ -304,7 +304,7 @@ test('one payload failing its prepare does not fail the others', async () => {
         .keyBy((v) => v.k)
         .into(Windowed)
         .keyed()
-        .sink(),
+        .output(),
   });
   const result = await answer(
     activation({
@@ -372,7 +372,7 @@ test('a module specifier is imported and its relays registered', async () => {
     module,
     `import { defineRelay, defineTasklet } from '${new URL('../dist/esm/index.js', import.meta.url).pathname}';\n` +
       `const Echo = defineTasklet({ name: 'echo', run: (i) => i });\n` +
-      `export default defineRelay({ factoryId: 'from_specifier', channels: (c) => c.input('in').into(Echo).sink() });\n`,
+      `export default defineRelay({ factoryId: 'from_specifier', channels: (c) => c.input('in').into(Echo).output() });\n`,
   );
   const registry = await loadRegistry([module]);
   assert.ok(registry.get('from_specifier'), "the module's relay was registered");
@@ -406,7 +406,7 @@ for (const [build, load, file, bind, exporting] of [
       module,
       `${bind(new URL(`../dist/${build}/index.js`, import.meta.url).pathname)}\n` +
         `const Echo = defineTasklet({ name: 'echo', run: (i) => i });\n` +
-        `${exporting} defineRelay({ factoryId: 'by_relative_path', channels: (c) => c.input('in').into(Echo).sink() });\n`,
+        `${exporting} defineRelay({ factoryId: 'by_relative_path', channels: (c) => c.input('in').into(Echo).output() });\n`,
     );
     const registry = await load([`./${relative(process.cwd(), module)}`]);
     assert.ok(registry.get('by_relative_path'), "the module's relay was registered");
@@ -504,7 +504,7 @@ const StampSpec = defineRelay({
       .keyBy(() => 'ek')
       .into(StampEmitter)
       .keyed()
-      .sink('keyed_out');
+      .output('keyed_out');
   },
 });
 
@@ -523,8 +523,8 @@ const MixedSpec = defineRelay({
     c.input('in')
       .keyBy(() => 'ek')
       .branch([
-        (edge) => edge.into(PlainEmitter).sink('plain_out'),
-        (edge) => edge.into(StampEmitter).keyed().sink('keyed_out'),
+        (edge) => edge.into(PlainEmitter).output('plain_out'),
+        (edge) => edge.into(StampEmitter).keyed().output('keyed_out'),
       ]);
   },
 });
@@ -599,7 +599,7 @@ test('user metadata survives beside the stamps and cannot spoof one', async () =
         .keyBy(() => 'ek')
         .into(UserMeta)
         .keyed()
-        .sink();
+        .output();
     },
   });
   const activation = activationFor('stamps_user');
@@ -661,11 +661,11 @@ const stepsGraph = (c) => {
   const edge = c.input('in').into(StepsProducer).named('handoff');
   edge.map((value) => value + 1).into(record('steps_b'));
   edge.into(record('steps_c'));
-  edge.sink();
+  edge.output();
 };
 
 /**
- * An edge payload is the class codec's MessagePack; the `handoff` sink names no
+ * An edge payload is the class codec's MessagePack; the `handoff` output names no
  * codec, so its frame for a number is JSON.
  */
 const payloadOf = (output) =>
@@ -849,7 +849,7 @@ const Completing = defineTasklet({
   },
 });
 
-const completingGraph = (c) => c.input('in').into(Completing).sink('out');
+const completingGraph = (c) => c.input('in').into(Completing).output('out');
 
 for (const [run, settings] of [
   ['steps', { steps: {} }],
@@ -951,7 +951,7 @@ test('an entry edge transform that throws is unreadable, a handler that throws i
 // --- merged sources ---------------------------------------------------------
 //
 // Where the test app's own `merged_input` and `transform_chain` carry the shape,
-// they are what runs. Both sink, as text, what their tasklet returned for
+// they are what runs. Both output, as text, what their tasklet returned for
 // each value it ran.
 
 const textItem = (channel, text) => inputItem(0, { channel, payload: Buffer.from(text) });
@@ -1086,8 +1086,8 @@ test('a module exporting short forms registers each, with the run it declares', 
   writeFileSync(
     module,
     `import { defineRelay } from '${new URL('../dist/esm/index.js', import.meta.url).pathname}';\n` +
-      `export const upcase = defineRelay({ factoryId: 'short_form', sink: 'out', run: (i) => i });\n` +
-      `export const place = defineRelay({ factoryId: 'short_steps', steps: {}, sink: 'placed', input: 'order', run: (i) => i });\n`,
+      `export const upcase = defineRelay({ factoryId: 'short_form', output: 'out', run: (i) => i });\n` +
+      `export const place = defineRelay({ factoryId: 'short_steps', steps: {}, output: 'placed', input: 'order', run: (i) => i });\n`,
   );
   const registry = await loadRegistry([module]);
   assert.equal(registry.get('short_form')?.spec.run, undefined);
@@ -1119,7 +1119,7 @@ test('unregisterFactory undoes a pre-run registration and names an unknown one',
   writeFileSync(
     module,
     `import { defineRelay } from '${new URL('../dist/esm/index.js', import.meta.url).pathname}';\n` +
-      `export const one = defineRelay({ factoryId: 'unregister_me', sink: 'out', run: (i) => i });\n`,
+      `export const one = defineRelay({ factoryId: 'unregister_me', output: 'out', run: (i) => i });\n`,
   );
   const runner = createRunner('unregister_ns');
   await runner.registerFactory(module);
@@ -1136,7 +1136,7 @@ test('a post-start registerFactory declares against the core and the workers', a
   writeFileSync(
     module,
     `import { defineRelay } from '${new URL('../dist/esm/index.js', import.meta.url).pathname}';\n` +
-      `export const late = defineRelay({ factoryId: 'late_form', sink: 'out', run: (i) => i });\n`,
+      `export const late = defineRelay({ factoryId: 'late_form', output: 'out', run: (i) => i });\n`,
   );
 
   // A started runner is one that holds a core and a registry. Standing those in

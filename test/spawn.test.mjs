@@ -56,7 +56,7 @@ test('a spawn returns its handle at once, under the activation and input offset 
   assert.deepEqual(JSON.parse(Buffer.from(payload).toString('utf8')), { order: 'p' });
 });
 
-// The payload is the spawned instance's first message, encoded as a sink
+// The payload is the spawned instance's first message, encoded as an output
 // naming no codec sends a value, so the entry channel that reads it needs no
 // knowledge of this SDK's inter-tasklet codec.
 test('a spawn payload is what a text or json entry reads: UTF-8 for a string, JSON otherwise', async () => {

@@ -34,7 +34,7 @@ test('a start with an id sends it and answers only the id and the outcome', asyn
 
 test('a plugin is enabled by name, and bound and unbound by relay', async () => {
   const { control, calls } = answering(null);
-  await control.enablePlugin('writer', 'relay_file_sink', { opts: { path: 'out.txt' } });
+  await control.enablePlugin('writer', 'relay_file_output', { opts: { path: 'out.txt' } });
   await control.enablePlugin('feed', 'relay_websocket', {
     single: true,
     relay_id: 'my_echo',
@@ -48,7 +48,7 @@ test('a plugin is enabled by name, and bound and unbound by relay', async () => 
   assert.deepEqual(calls, [
     [
       'PluginManager.enable',
-      ['writer', { opts: { path: 'out.txt' }, provider: 'relay_file_sink' }],
+      ['writer', { opts: { path: 'out.txt' }, provider: 'relay_file_output' }],
     ],
     [
       'PluginManager.enable',

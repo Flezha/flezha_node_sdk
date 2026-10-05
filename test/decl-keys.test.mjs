@@ -75,7 +75,7 @@ function fullyDeclaredFlow() {
         .keyBy((input) => input.symbol)
         .into(dynamic)
         .keyed()
-        .sink();
+        .output();
     },
   });
 }
@@ -89,7 +89,7 @@ function fullyDeclaredStatic() {
   });
   return defineRelay({
     factoryId: 'node_decl_static',
-    channels: (c) => c.input('in').into(statik).sink(),
+    channels: (c) => c.input('in').into(statik).output(),
   });
 }
 
@@ -166,7 +166,7 @@ function goldenLines(topology) {
 /**
  * The DERIVED declaration rendered in the golden's columns, one line per
  * channel. The consumers, the kind after the wiring rule, the `named` override
- * and the sink are all the core's answer to the record this builder submitted.
+ * and the output are all the core's answer to the record this builder submitted.
  */
 function topologyLines(topology, spec) {
   return validate(spec).channels.map((channel) =>
@@ -193,7 +193,7 @@ function hybridChannel() {
   return defineRelay({
     factoryId: 'hybrid_channel',
     channels: (c) => {
-      c.input('input').into(producer).sink('hybrid_indicator', bytes).into(consumer);
+      c.input('input').into(producer).output('hybrid_indicator', bytes).into(consumer);
     },
   });
 }
@@ -208,7 +208,7 @@ function commitBlockChain() {
     factoryId: 'commit_block_chain',
     steps: {},
     channels: (c) => {
-      c.input('in').into(commitA).keyed().sink('mid', bytes).into(blockB);
+      c.input('in').into(commitA).keyed().output('mid', bytes).into(blockB);
     },
   });
 }

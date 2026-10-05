@@ -2,7 +2,7 @@
 // under the same factory ids, tasklet names, channel names and output bytes.
 //
 // Entry payloads and plugin frames are UTF-8 text on the wire, the same as the
-// reference: every entry names the text codec, and a sink naming none sends a
+// reference: every entry names the text codec, and an output naming none sends a
 // string as its UTF-8 bytes. An inter-tasklet hop between two Node
 // tasklets carries MessagePack, which no one else reads.
 
@@ -25,7 +25,7 @@ const DoNothing = defineTasklet({
 export const doNothing = defineRelay({
   factoryId: 'do_nothing',
   channels: (c) => {
-    c.input('input', { codec: 'text' }).into(DoNothing).sink('echo');
+    c.input('input', { codec: 'text' }).into(DoNothing).output('echo');
   },
 });
 
@@ -35,7 +35,7 @@ export const doNothing = defineRelay({
 export const benchEcho = defineRelay({
   factoryId: 'bench_echo',
   channels: (c) => {
-    c.input('input', { codec: 'text' }).onFull('drop_nothing').into(DoNothing).sink('echo');
+    c.input('input', { codec: 'text' }).onFull('drop_nothing').into(DoNothing).output('echo');
   },
 });
 
@@ -54,7 +54,7 @@ const CompleteFlow = defineTasklet({
 export const completeFlow = defineRelay({
   factoryId: 'complete_flow',
   channels: (c) => {
-    c.input('input', { codec: 'text' }).into(CompleteFlow).sink('complete_flow_out');
+    c.input('input', { codec: 'text' }).into(CompleteFlow).output('complete_flow_out');
   },
 });
 
@@ -93,7 +93,7 @@ const CompareFilter = defineTasklet({
 export const compareFilter = defineRelay({
   factoryId: 'compare_filter',
   channels: (c) => {
-    c.input('input', { codec: 'text' }).into(CompareFilter).sink('sink');
+    c.input('input', { codec: 'text' }).into(CompareFilter).output('sink');
   },
 });
 
@@ -131,14 +131,14 @@ export const staticCell = defineRelay({
       .into(StaticEntry)
       .named('hop')
       .into(StaticDownstream)
-      .sink('kafka');
+      .output('kafka');
   },
 });
 
 const MacroStaticEntry = staticEntry('macro_static_entry_tasklet');
 const MacroStaticDownstream = passThrough('macro_static_downstream_tasklet');
 
-// The reference pipeline sugar leaves the hop unnamed and lets the sink name
+// The reference pipeline sugar leaves the hop unnamed and lets the output name
 // the producing channel.
 export const sugarStaticCell = defineRelay({
   factoryId: 'sugar_static_cell',
@@ -146,7 +146,7 @@ export const sugarStaticCell = defineRelay({
     c.input('input', { codec: 'text' })
       .into(MacroStaticEntry)
       .into(MacroStaticDownstream)
-      .sink('test_kafka');
+      .output('test_kafka');
   },
 });
 
@@ -160,7 +160,7 @@ export const mixedRelay = defineRelay({
       .into(MixedMacroEntry)
       .named('hop')
       .into(MixedHandDownstream)
-      .sink('kafka');
+      .output('kafka');
   },
 });
 
@@ -171,14 +171,14 @@ export const mixedRelay = defineRelay({
 
 export const sugarDoNothing = defineRelay({
   factoryId: 'sugar_do_nothing',
-  sink: 'sugar_do_nothing_echo',
+  output: 'sugar_do_nothing_echo',
   codec: 'text',
   run: (input, ctx) => ctx.emit(input),
 });
 
 export const sugarStoreInput = defineRelay({
   factoryId: 'sugar_store_input',
-  sink: 'sugar_store_sink',
+  output: 'sugar_store_sink',
   codec: 'text',
   initState: () => ({ text_inputs: [] }),
   applyChange: (state, change) => {
@@ -192,7 +192,7 @@ export const sugarStoreInput = defineRelay({
 
 export const sugarNamedInput = defineRelay({
   factoryId: 'sugar_named_input',
-  sink: 'sugar_named_input_sink',
+  output: 'sugar_named_input_sink',
   input: 'prices',
   codec: 'text',
   run: (input, ctx) => ctx.emit(input),
@@ -202,7 +202,7 @@ export const sugarSteps = defineRelay({
   factoryId: 'sugar_steps',
   steps: {},
   durable: fixtureDurable(),
-  sink: 'sugar_steps_placed',
+  output: 'sugar_steps_placed',
   input: 'order',
   codec: 'text',
   run: (input, ctx) => ctx.emit(input),
@@ -214,12 +214,12 @@ export const sugarStepsPerInput = defineRelay({
   factoryId: 'sugar_steps_per_input',
   steps: { each: 'per_input' },
   durable: fixtureDurable(),
-  sink: 'sugar_steps_per_input_out',
+  output: 'sugar_steps_per_input_out',
   codec: 'text',
   run: (input, ctx) => ctx.emit(input),
 });
 
-// No sink: the entry feeds a tasklet that only keeps state.
+// No output: the entry feeds a tasklet that only keeps state.
 export const sugarStateOnly = defineRelay({
   factoryId: 'sugar_state_only',
   input: 'ticks',
@@ -272,7 +272,7 @@ export const hybridChannel = defineRelay({
         // in-process fan-out already recorded — the reference's isolation.
         (edge) => edge.named('hybrid_indicator').into(HybridConsumer),
         (edge) =>
-          edge.sink((value) => {
+          edge.output((value) => {
             if (value === HYBRID_SENTINEL) {
               throw new Error('hybrid_indicators: serializer rejected sentinel 0xDEADBEEF');
             }
@@ -306,7 +306,7 @@ export const mergedInput = defineRelay({
       .keyBy((value) => value.symbol)
       .into(MergeLabel)
       .keyed()
-      .sink('merged');
+      .output('merged');
   },
 });
 
@@ -327,7 +327,7 @@ export const transformChain = defineRelay({
       .keyBy(prefix)
       .into(TransformLabel)
       .keyed()
-      .sink('transformed');
+      .output('transformed');
   },
 });
 
@@ -358,7 +358,7 @@ export const cellStress = defineRelay({
       .into(StressC)
       .named('c_to_d')
       .into(StressD)
-      .sink('echo');
+      .output('echo');
   },
 });
 
@@ -378,7 +378,7 @@ const PoisonProbe = defineTasklet({
 export const poisonProbe = defineRelay({
   factoryId: 'poison_probe',
   channels: (c) => {
-    c.input('input', { codec: 'text' }).retryBackoffMs(25).into(PoisonProbe).sink('out');
+    c.input('input', { codec: 'text' }).retryBackoffMs(25).into(PoisonProbe).output('out');
   },
 });
 
@@ -407,7 +407,7 @@ const WedgeProbe = defineTasklet({
 export const wedgeProbe = defineRelay({
   factoryId: 'wedge_probe',
   channels: (c) => {
-    c.input('input', { codec: 'text' }).into(WedgeProbe).sink('out');
+    c.input('input', { codec: 'text' }).into(WedgeProbe).output('out');
   },
 });
 
@@ -442,7 +442,7 @@ export const candle = defineRelay({
   factoryId: 'candle',
   flow: { exactly: { effectively_once: { correctionMs: 600_000 } } },
   channels: (c) => {
-    c.input('input', { codec: 'text' }).into(Candle).keyed().sink('sink');
+    c.input('input', { codec: 'text' }).into(Candle).keyed().output('sink');
   },
 });
 
@@ -476,7 +476,7 @@ const SessionTimeout = defineTasklet({
 export const sessionTimeout = defineRelay({
   factoryId: 'session_timeout',
   channels: (c) => {
-    c.input('input', { codec: 'text' }).into(SessionTimeout).sink('kafka');
+    c.input('input', { codec: 'text' }).into(SessionTimeout).output('kafka');
   },
 });
 
@@ -503,7 +503,7 @@ const boundedMailbox = (policy) =>
       c.input(`${policy}_input`, { codec: 'text' })
         .onFull(policy)
         .into(boundedMailboxTasklet(`${policy}_test_tasklet`))
-        .sink(`${policy}_echo`);
+        .output(`${policy}_echo`);
     },
   });
 
@@ -534,7 +534,7 @@ const PartitionPass = defineTasklet({
 export const partitionPass = defineRelay({
   factoryId: 'partition_pass',
   channels: (c) => {
-    c.input('in', { codec: 'text' }).keyBy(prefix).into(PartitionPass).keyed().sink('input');
+    c.input('in', { codec: 'text' }).keyBy(prefix).into(PartitionPass).keyed().output('input');
   },
 });
 
@@ -564,13 +564,13 @@ export const dynamicCell = defineRelay({
       .filter((input) => input !== 'drop')
       .keyBy(prefix)
       .into(DynamicCell)
-      .sink('kafka');
+      .output('kafka');
   },
 });
 
 // -- call_response ----------------------------------------------------------
 //
-// Relays an outside caller calls and whose sink output answers it: from the
+// Relays an outside caller calls and whose output answers it: from the
 // first tasklet, from a downstream one, and from whichever of two filtered
 // paths the input took. `call_turn` is the steps
 // one, in fixtures_steps.mjs.
@@ -578,7 +578,7 @@ export const dynamicCell = defineRelay({
 export const callEcho = defineRelay({
   factoryId: 'call_echo',
   channels: (c) => {
-    c.input('in', { codec: 'text' }).into(passThrough('call_echo')).sink();
+    c.input('in', { codec: 'text' }).into(passThrough('call_echo')).output();
   },
 });
 
@@ -590,7 +590,7 @@ const CallAnswer = defineTasklet({
 export const callDownstream = defineRelay({
   factoryId: 'call_downstream',
   channels: (c) => {
-    c.input('in', { codec: 'text' }).into(passThrough('call_parse')).into(CallAnswer).sink();
+    c.input('in', { codec: 'text' }).into(passThrough('call_parse')).into(CallAnswer).output();
   },
 });
 
@@ -611,18 +611,18 @@ export const callSplit = defineRelay({
     admitted
       .filter((input) => !input.startsWith('no'))
       .into(CallAccept)
-      .sink();
+      .output();
     admitted
       .filter((input) => input.startsWith('no'))
       .into(CallRefuse)
-      .sink();
+      .output();
   },
 });
 
 // -- parts ------------------------------------------------------------------
 //
 // For an input `n` the tasklet sends the parts `1` .. `n` and then emits
-// `done:<n>` on its sink `answer`, in a flow relay and in a
+// `done:<n>` on its output `answer`, in a flow relay and in a
 // `per_input` steps one. `retry:<n>` sends its parts and then fails
 // retryably the first time this process sees it, so the retry's parts number
 // from 0 again under the next attempt.
@@ -648,7 +648,7 @@ export const partEcho = defineRelay({
     c.input('in', { codec: 'text' })
       .retryBackoffMs(25)
       .into(defineTasklet({ name: 'part_echo', run: sendParts }))
-      .sink('answer');
+      .output('answer');
   },
 });
 
@@ -661,6 +661,6 @@ export const partEchoSteps = defineRelay({
     c.input('in', { codec: 'text' })
       .retryBackoffMs(25)
       .into(defineTasklet({ name: 'part_echo_turn', run: sendParts }))
-      .sink('answer');
+      .output('answer');
   },
 });

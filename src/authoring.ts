@@ -59,7 +59,7 @@ export type ChannelKind = 'entry' | 'inter_task' | 'plugin';
  *
  * A chain is one fluent sequence declared off a channel handle, in the order
  * the author called it; the core reads the consumers, the channel kind, the
- * sink and the name off them. Closures never enter the record — they stay on
+ * output and the name off them. Closures never enter the record — they stay on
  * the edge held under the chain that declared them, and `validate` attaches
  * them to the consumers the core derived from that same chain.
  */
@@ -97,8 +97,8 @@ export interface ChannelSpec {
   retryBackoffMs?: number;
   keyed: boolean;
   /**
-   * The channel's name once a plugin end, a sink or a call, is attached;
-   * absent means none. The core's answer names no sink for a call.
+   * The channel's name once a plugin end, an output or a call, is attached;
+   * absent means none. The core's answer names no output for a call.
    */
   sink?: string;
   /**
@@ -107,9 +107,9 @@ export interface ChannelSpec {
    */
   decode?: (bytes: Uint8Array) => unknown;
   /**
-   * The plugin sink's payload encoder: its own, its codec's, or the default
+   * The plugin output's payload encoder: its own, its codec's, or the default
    * that sends bytes as they are, a string as UTF-8 and anything else as JSON.
-   * It belongs to the sink frame alone: an inter-tasklet frame is decoded
+   * It belongs to the output frame alone: an inter-tasklet frame is decoded
    * with the class codec, so encoding one with this hands the consuming
    * tasklet bytes it cannot read.
    */
@@ -465,14 +465,14 @@ class EdgeStream<T> implements Stream<T> {
     });
   }
 
-  sink(
+  output(
     nameOrEncode?: string | ((value: T) => Uint8Array) | CodecOptions,
     encodeOrOptions?: ((value: T) => Uint8Array) | CodecOptions,
     options?: CodecOptions,
   ): Stream<T> {
     // A string first names the channel; a function is the serializer and an
     // object names a codec, in whichever position follows. Telling them apart
-    // here is what keeps the shorter forms from spelling `sink(undefined, x)`.
+    // here is what keeps the shorter forms from spelling `output(undefined, x)`.
     const name = typeof nameOrEncode === 'string' ? nameOrEncode : undefined;
     const rest = name === undefined ? [nameOrEncode, encodeOrOptions] : [encodeOrOptions, options];
     return this.attachSink(name, rest);
@@ -491,17 +491,17 @@ class EdgeStream<T> implements Stream<T> {
   }
 
   /**
-   * Attach a sink, which leaves as a plugin output; the core refuses a second
+   * Attach an output, which leaves as a plugin output; the core refuses a second
    * end on a channel.
    */
   private attachSink(name: string | undefined, rest: unknown[]): Stream<T> {
     const channel = this.plugChannel();
-    // A chain of its own: the sink terminates the channel rather than this
+    // A chain of its own: the output terminates the channel rather than this
     // handle, so `.into(...)` still chains after it and the value reaches both
-    // the consumer mailboxes and the sink. Terminality is the absence of
+    // the consumer mailboxes and the output. Terminality is the absence of
     // further wiring, not a different method.
     channel.chains.push([name === undefined ? { link: 'sink' } : { link: 'sink', name }]);
-    // The sink names the channel: `sink('x')` IS the name, and `sink()` leaves
+    // The output names the channel: `output('x')` IS the name, and `output()` leaves
     // it derived. One string, which is what the core answers back.
     if (name !== undefined) channel.name = name;
     const [serialize, codec] = this.builder.channelCodec<(value: unknown) => Uint8Array>(
@@ -519,9 +519,9 @@ class EdgeStream<T> implements Stream<T> {
   private plugChannel(): ChannelSpec {
     if (this.from.source === 'entry') {
       // Not a topology rule the core states: a record whose entry channel
-      // carries a sink derives a plugin channel with no producer, and there is
+      // carries an output derives a plugin channel with no producer, and there is
       // nothing in it that says which end fed the plugin.
-      throw flezhaError('topology.sink_on_entry', { channel: this.from.channel.name });
+      throw flezhaError('topology.output_on_entry', { channel: this.from.channel.name });
     }
     return this.channel();
   }

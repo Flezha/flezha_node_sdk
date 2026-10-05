@@ -19,8 +19,8 @@ import { loadNative, type CoreOutput, type Native } from './native.js';
 import { ACTIVATION_SCHEMA_VERSION } from './runner.js';
 import type { ClassSpec } from './authoring.js';
 
-/** One value a graph released on a declared sink. */
-export interface SinkOutput {
+/** One value a graph released on a declared output. */
+export interface LocalOutput {
   channel: string;
   payload: Buffer;
   /** What a deployed run would have put on the wire, `flz.*` stamps included. */
@@ -33,7 +33,7 @@ const OUTPUT_POLL_MS = 50;
 /** One relay graph running in this process. */
 export class LocalRelay {
   readonly #native: Native;
-  readonly #sinks = new Map<string, (output: SinkOutput) => void>();
+  readonly #sinks = new Map<string, (output: LocalOutput) => void>();
   #dispatchId: number | null = null;
   #draining: Promise<void> | null = null;
   #closed = false;
@@ -74,11 +74,11 @@ export class LocalRelay {
   }
 
   /**
-   * Deliver every value released on the sink `channel` to `callback`, in
-   * release order. A sink channel takes the producing tasklet's name
+   * Deliver every value released on the output `channel` to `callback`, in
+   * release order. An output channel takes the producing tasklet's name
    * unless the declaration `named` it.
    */
-  onSink(channel: string, callback: (output: SinkOutput) => void): this {
+  onOutput(channel: string, callback: (output: LocalOutput) => void): this {
     // Registered with the core first: a channel the declaration does not
     // carry is refused there, naming it, rather than silently accepted.
     this.#native.localOnSink(channel);
@@ -155,7 +155,7 @@ export class LocalRelay {
 
   #deliver(output: CoreOutput): void {
     if (output.target !== 'plugin' || output.pluginChannel === undefined) {
-      // The core queues what a sink released and nothing else; an edge output
+      // The core queues what an output released and nothing else; an edge output
       // is an in-process mailbox push that never leaves.
       throw new Error(`local mode released a ${output.target} output`);
     }

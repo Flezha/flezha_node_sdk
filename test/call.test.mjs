@@ -103,7 +103,7 @@ test('a call to a named instance records its target and create true', () => {
   ]);
 });
 
-test('a call on an entry channel is refused as a sink on one is', () => {
+test('a call on an entry channel is refused as an output on one is', () => {
   assert.throws(
     () =>
       defineRelay({
@@ -114,7 +114,7 @@ test('a call on an entry channel is refused as a sink on one is', () => {
       }),
     (error) =>
       error instanceof FlezhaError &&
-      error.code === 'topology.sink_on_entry' &&
+      error.code === 'topology.output_on_entry' &&
       error.details.channel === 'in',
   );
 });

@@ -16,7 +16,7 @@
  * same reason: they are unsigned 64-bit in the core, and a `number` loses
  * precision above 2^53 — which is inside the range the core uses.
  *
- * The payload formats a channel names on `input` and `sink` are here too, as
+ * The payload formats a channel names on `input` and `output` are here too, as
  * `channelDecoder` and `channelEncoder`.
  */
 
@@ -96,7 +96,7 @@ export const msgpack: Codec<unknown> = {
 };
 
 /**
- * The payload formats a channel names on `input` and `sink`. A payload between
+ * The payload formats a channel names on `input` and `output`. A payload between
  * two tasklets names none: it stays in the MessagePack above.
  */
 export const CHANNEL_CODECS: readonly ChannelCodec[] = ['bytes', 'text', 'json', 'msgpack'];
@@ -126,7 +126,7 @@ export function channelDecoder(
 }
 
 /**
- * How `sink` writes a channel's payload: the named codec, or, when the channel
+ * How `output` writes a channel's payload: the named codec, or, when the channel
  * names none, bytes as they are, a string as UTF-8 and anything else as JSON.
  */
 export function channelEncoder(
@@ -152,7 +152,7 @@ export function channelEncoder(
 }
 
 /**
- * Bytes as they are, a string as UTF-8 and anything else as JSON: what a sink
+ * Bytes as they are, a string as UTF-8 and anything else as JSON: what an output
  * naming no codec sends, and what a steps completion carries. `owner` is
  * what a refusal names.
  */

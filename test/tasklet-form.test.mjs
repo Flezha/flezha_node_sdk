@@ -32,12 +32,12 @@ after(() => native.contextFree());
 
 const utf8 = (bytes) => Buffer.from(bytes).toString('utf8');
 
-/** One relay wiring `tasklet` from `in` to the sink `out`. */
+/** One relay wiring `tasklet` from `in` to the output `out`. */
 const piped = (factoryId, tasklet, settings = {}) =>
   defineRelay({
     factoryId,
     ...settings,
-    channels: (c) => c.input('in').into(tasklet).sink('out'),
+    channels: (c) => c.input('in').into(tasklet).output('out'),
   });
 
 /** The effects `spec` answers for `items`, as its first tasklet's single cell. */
@@ -119,7 +119,7 @@ const keyedInto = (tasklet) =>
         .input('in')
         .keyBy((value) => String(value))
         .into(tasklet)
-        .sink('out'),
+        .output('out'),
   });
 
 const emitting = { run: (input, ctx) => ctx.emit(input) };
@@ -272,7 +272,7 @@ test('a retired hook a definition inherits is refused as well', () => {
 
 test('a retired field on a short form is refused, naming it', () => {
   const error = refusal(() =>
-    defineRelay({ factoryId: 'old_short', sink: 'out', dynamicCells: {}, ...emitting }),
+    defineRelay({ factoryId: 'old_short', output: 'out', dynamicCells: {}, ...emitting }),
   );
   assert.equal(error.code, 'topology.unknown_field');
   assert.ok(error.details.fields.includes('`dynamicCells`'), error.message);
@@ -370,7 +370,7 @@ test("a steps short form's emitted value reaches its sink", async () => {
   const spec = defineRelay({
     factoryId: 'place',
     steps: {},
-    sink: 'placed',
+    output: 'placed',
     input: 'order',
     codec: 'text',
     run: (order, ctx) => ctx.emit(`placed ${order}`),
@@ -383,7 +383,8 @@ test("a steps short form's emitted value reaches its sink", async () => {
 });
 
 test('a short form emits only through its context', async () => {
-  const shortForm = (factoryId, run) => defineRelay({ factoryId, sink: 'out', codec: 'text', run });
+  const shortForm = (factoryId, run) =>
+    defineRelay({ factoryId, output: 'out', codec: 'text', run });
   const hello = [{ ...inputItem(''), payload: Buffer.from('hello') }];
   const [emitted] = await effectsOf(
     shortForm('upcase', (line, ctx) => ctx.emit(line.toUpperCase())),
@@ -442,7 +443,7 @@ test("a tasklet's durable identity is its declared name", () => {
   const short = defineRelay({
     factoryId: 'order_executor',
     steps: {},
-    sink: 'out',
+    output: 'out',
     ...emitting,
   });
   assert.deepEqual(
@@ -460,7 +461,7 @@ test("a tasklet's durable identity is its declared name", () => {
 // A short form's fields are read as a tasklet's are, along the prototype chain.
 class InheritedShortForm {
   factoryId = 'inherited';
-  sink = 'out';
+  output = 'out';
   run(value, ctx) {
     ctx.emit({ value, state: ctx.state });
   }
@@ -471,7 +472,7 @@ class InheritedShortForm {
 
 class InheritedHook {
   factoryId = 'inherited_hook';
-  sink = 'out';
+  output = 'out';
   run = (value, ctx) => ctx.emit(ctx.state);
   initState() {
     return { n: 1 };

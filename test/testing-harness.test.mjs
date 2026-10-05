@@ -178,7 +178,7 @@ test('a reserved metadata key is refused naming the key', async () => {
 });
 
 test('a string and an object output are reported exactly as emitted', async () => {
-  // The harness reads its sink back as MessagePack, so a string output is the
+  // The harness reads its output back as MessagePack, so a string output is the
   // string rather than the bytes a plugin would receive.
   const Emitter = defineTasklet({
     name: 'emitter',

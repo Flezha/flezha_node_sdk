@@ -54,7 +54,7 @@ export const callPricing = defineRelay({
           if (!input.startsWith('silent')) ctx.emit(`price:${input}`);
         }),
       )
-      .sink('quotes');
+      .output('quotes');
   },
 });
 
@@ -66,7 +66,7 @@ export const callOrders = defineRelay({
       .named('order')
       .call('pricing', { ...CALL, answerChannel: 'quotes' })
       .into(step('order_priced', (response, ctx) => ctx.emit(render(response))))
-      .sink('priced');
+      .output('priced');
   },
 });
 
@@ -86,7 +86,7 @@ export const callAgent = defineRelay({
           ctx.emit(`answer:${input}`);
         }),
       )
-      .sink();
+      .output();
   },
 });
 
@@ -119,7 +119,7 @@ export const callGateway = defineRelay({
       .keyBy(sessionOf)
       .into(outcomeLog('gateway_log'))
       .keyed()
-      .sink('gateway_out');
+      .output('gateway_out');
   },
 });
 
@@ -139,6 +139,6 @@ export const callToolSession = defineRelay({
       .call('pricing', CALL)
       .map((outcome) => ({ outcome }))
       .into(ToolTurn);
-    tool.filter(isOutcome).into(outcomeLog('tool_log')).sink('tool_out');
+    tool.filter(isOutcome).into(outcomeLog('tool_log')).output('tool_out');
   },
 });

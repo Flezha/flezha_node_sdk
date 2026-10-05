@@ -48,7 +48,7 @@ export interface DerivedChannel {
   index: number;
   /** The last `named` override, else the name the builder wrote. */
   name: string;
-  /** The declared kind after the wiring rule: a sink with no consumer is `plugin`. */
+  /** The declared kind after the wiring rule: an output with no consumer is `plugin`. */
   kind: ChannelKind;
   producer: number | null;
   consumers: DerivedEdge[];

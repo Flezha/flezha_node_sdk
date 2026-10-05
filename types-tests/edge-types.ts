@@ -67,7 +67,7 @@ const Count = defineTasklet({
 export const wellTyped = defineRelay({
   factoryId: 'well_typed',
   channels: (c) => {
-    c.input<Trade>('trades').into(Ohlc).into(Publish).sink();
+    c.input<Trade>('trades').into(Ohlc).into(Publish).output();
   },
 });
 
@@ -94,15 +94,15 @@ export const refusals = defineRelay({
     // @ts-expect-error keyBy answers a string, never the raw value
     c.input<Trade>('e').keyBy((trade) => trade.price).into(Ohlc);
 
-    // A sink encoder is applied to the edge's own value.
+    // An output encoder is applied to the edge's own value.
     // @ts-expect-error the edge carries a string here, not a Trade
-    c.input<Trade>('f').into(Ohlc).into(Publish).sink((value: Trade) => Buffer.from(value.symbol));
+    c.input<Trade>('f').into(Ohlc).into(Publish).output((value: Trade) => Buffer.from(value.symbol));
 
     // A named codec types the stream it opens.
     c.input('k', { codec: 'text' }).map((line) => line.toUpperCase());
     c.input('l', { codec: 'bytes' }).map((raw) => raw.byteLength);
-    c.input<Trade>('m', { codec: 'json' }).into(Ohlc).into(Publish).sink('n', { codec: 'text' });
-    c.input<Trade>('o', { codec: 'msgpack' }).into(Ohlc).sink({ codec: 'json' });
+    c.input<Trade>('m', { codec: 'json' }).into(Ohlc).into(Publish).output('n', { codec: 'text' });
+    c.input<Trade>('o', { codec: 'msgpack' }).into(Ohlc).output({ codec: 'json' });
 
     // @ts-expect-error a text entry carries a string, not bytes
     c.input('p', { codec: 'text' }).map((line) => line.byteLength);
@@ -189,7 +189,7 @@ export const moreRefusals = defineRelay({
 // `channels` body, with the class settings the full form takes.
 export const shortForm = defineRelay({
   factoryId: 'short_form',
-  sink: 'out',
+  output: 'out',
   codec: 'text',
   run: (line: string, ctx: Ctx<string>) => ctx.emit(line.toUpperCase()),
 });
@@ -254,8 +254,8 @@ export const remoteEffectivelyOnce = defineRelay({
 // @ts-expect-error retry is the edge's `retryMax`, never a class setting
 defineRelay({ factoryId: 'retried', steps: {}, retryAttempts: 0, channels: () => {} });
 
-// @ts-expect-error a tasklet carries no sink; the short form is a relay
-defineTasklet({ name: 'sinking', sink: 'out', run: quiet });
+// @ts-expect-error a tasklet carries no output; the short form is a relay
+defineTasklet({ name: 'sinking', output: 'out', run: quiet });
 
 // @ts-expect-error a tasklet's body is `run`
 defineTasklet({ name: 'old', handle: quiet });
@@ -276,7 +276,7 @@ defineTasklet({ name: 'async_returning', run: async (trade: Trade) => trade });
 defineTasklet({ name: 'by_reference', run: upper });
 
 // @ts-expect-error a short form's `run` is a tasklet's
-defineRelay({ factoryId: 'returning_short', sink: 'out', run: upper });
+defineRelay({ factoryId: 'returning_short', output: 'out', run: upper });
 
 // @ts-expect-error `onTimer` returns nothing either
 defineTasklet({ name: 'returning_timer', run: quiet, onTimer: (firing) => firing.scheduledAt });

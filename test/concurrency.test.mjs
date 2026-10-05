@@ -52,7 +52,7 @@ const Spec = defineRelay({
       .keyBy((v) => v.key)
       .into(Accumulate)
       .keyed()
-      .sink(),
+      .output(),
 });
 
 const deps = () => depsFor(Spec);

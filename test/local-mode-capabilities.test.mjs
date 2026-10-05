@@ -10,7 +10,7 @@
 // proposal.
 //
 // What each test can assert is what a run with no controller can see. A
-// durable write reaches a null sink, a parked payload has nowhere to park, and
+// durable write reaches a null output, a parked payload has nowhere to park, and
 // a partition member's key range arrives with `AddRelay`, so the
 // assertions here are the output side of each capability, which is the half
 // the language layer produces.
@@ -27,12 +27,12 @@ const declared = manifest().fixtures;
 
 const utf8 = (bytes) => Buffer.from(bytes).toString('utf8');
 
-/** Run one class over `inputs` on `channel`, and return what `sink` released. */
+/** Run one class over `inputs` on `channel`, and return what `output` released. */
 async function release(relay, channel, sink, inputs, budgetMs = 20_000) {
   const released = [];
   const run = LocalRelay.start(relay);
   try {
-    run.onSink(sink, (output) => released.push(output));
+    run.onOutput(sink, (output) => released.push(output));
     for (const input of inputs) await run.feed(channel, input);
     await run.runUntilIdle(budgetMs);
   } finally {
@@ -65,7 +65,7 @@ test('shorthand: a short form is built and run with no controller', async () => 
   );
 });
 
-test('keyed_channels: a keyed sink stamps the key the class resolved', async () => {
+test('keyed_channels: a keyed output stamps the key the class resolved', async () => {
   // `partition_pass` is the manifest's only keyed-channel class. Partitioning
   // itself is the controller's (a member's key-group range arrives with
   // `AddRelay`), so what is asserted here is the half the language layer
@@ -89,10 +89,10 @@ test('keyed_channels: a keyed sink stamps the key the class resolved', async () 
 });
 
 test('dynamic_cell: the declared filter runs before keying and nothing else is lost', async () => {
-  // The class's sink is not keyed, so a released value carries no cell
+  // The class's output is not keyed, so a released value carries no cell
   // stamp and the per-key minting is not visible on this channel. It is
   // asserted above, on `partition_pass`, whose tasklet is dynamic too and
-  // whose sink IS keyed. What this class shows that that one does not is the
+  // whose output IS keyed. What this class shows that that one does not is the
   // declared filter: a value it rejects answers no key, so the core is never
   // asked to mint a Cell for it.
   declares('dynamic_cell', 'dynamic_cell');

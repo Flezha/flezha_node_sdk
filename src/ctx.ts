@@ -245,7 +245,9 @@ export class Invocation implements Ctx<unknown, unknown, unknown> {
 
   /** The producer of an inter-tasklet channel nothing consumes; the core reads no consumer there. */
   private handoffProducer(channel: ChannelSpec): number | undefined {
-    return channel.kind === 'inter_task' && channel.sink === undefined ? channel.producer : undefined;
+    return channel.kind === 'inter_task' && channel.sink === undefined
+      ? channel.producer
+      : undefined;
   }
 
   private stepsOutput(channel: ChannelSpec, consumer: number, value: unknown): NativeOutput {
@@ -263,7 +265,7 @@ export class Invocation implements Ctx<unknown, unknown, unknown> {
 
   part(value: unknown): void {
     // The core previews the tasklet's first output channel and refuses one that ends in no
-    // sink, so a channel with no plugin end sends no bytes.
+    // output, so a channel with no plugin end sends no bytes.
     const channel = this.input.outgoing[0];
     const payload =
       channel?.sink !== undefined ? Buffer.from(channel.sinkEncode!(value)) : new Uint8Array();
@@ -302,7 +304,7 @@ export class Invocation implements Ctx<unknown, unknown, unknown> {
 
   /**
    * The plugin frame, serialized once from the value as emitted: an edge's
-   * transforms belong to that edge, so they never reach the sink.
+   * transforms belong to that edge, so they never reach the output.
    */
   private pluginOutput(
     channel: ChannelSpec,
@@ -323,7 +325,7 @@ export class Invocation implements Ctx<unknown, unknown, unknown> {
       key,
       eventTime: undefined,
       metadata,
-      // A plugin output leaves only on a sink, and every `sink` sets its encoder.
+      // A plugin output leaves only on an output, and every `output` sets its encoder.
       payload: Buffer.from(channel.sinkEncode!(value)),
     };
   }
@@ -400,7 +402,7 @@ export class Invocation implements Ctx<unknown, unknown, unknown> {
     // The replay flag goes to the core, which sends nothing for a replayed
     // invocation: a spawn is an external side effect, where a timer is
     // internal state and is registered again. The payload is the spawned
-    // instance's first message on its entry channel, encoded as a sink
+    // instance's first message on its entry channel, encoded as an output
     // naming no codec sends a value, so a `text` or `json` entry reads it.
     const handle = this.input.bridge.spawnRequest(
       this.input.token,

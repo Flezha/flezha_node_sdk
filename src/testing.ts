@@ -113,7 +113,7 @@ export class TaskletTestHarness<TIn, TOut, TState, TChange> {
     this.time = options.now ?? 0n;
     // Wired by the production builder rather than by a hand-written topology
     // literal: one entry channel in, one plugin channel out. A field the
-    // declaration gains later reaches the harness for free. The sink names the
+    // declaration gains later reaches the harness for free. The output names the
     // MessagePack codec, so the emits the harness reads back are each value
     // exactly as the handler emitted it.
     this.spec = defineRelay({
@@ -122,7 +122,7 @@ export class TaskletTestHarness<TIn, TOut, TState, TChange> {
         c
           .input('harness_in')
           .into(tasklet as never)
-          .sink({ codec: 'msgpack' }),
+          .output({ codec: 'msgpack' }),
     });
     this.node = this.spec.tasklets[0] as TaskNode;
     this.outgoing = this.spec.channels.filter((channel) => channel.producer !== undefined);

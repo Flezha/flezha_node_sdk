@@ -8,7 +8,7 @@ export const Watch = defineTasklet({
   name: 'watch',
 
   run: (request, ctx) =>
-    // keyed by the user: a sink of an effectively-once relay needs a key
+    // keyed by the user: an output of an effectively-once relay needs a key
     ctx.emit(
       request.listens() ? { stream: request.user() } : { status: 404, body: 'no such route' },
       { key: request.user() },

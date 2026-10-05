@@ -68,7 +68,7 @@ const keyedUpsert = (factoryId, options = {}) =>
         .onFull('drop_nothing')
         .into(TierStore)
         .keyed()
-        .sink('sink');
+        .output('sink');
     },
   });
 
@@ -88,7 +88,7 @@ const tierStoreChannels = (c) => {
     .retryBackoffMs(300)
     .into(TierStore)
     .keyed()
-    .sink('sink');
+    .output('sink');
 };
 
 export const tierStore = defineRelay({
@@ -149,7 +149,7 @@ export const tierChain = defineRelay({
       .retryMax(1_000)
       .into(TierTally)
       .keyed()
-      .sink('sink');
+      .output('sink');
   },
 });
 
@@ -157,7 +157,7 @@ export const checkpointStore = defineRelay({
   factoryId: 'checkpoint_store',
   flow: { exactly: { effectively_once: { ack: 'checkpoint' } } },
   channels: (c) => {
-    c.input('input', { codec: 'text' }).into(CheckpointStore).keyed().sink('sink');
+    c.input('input', { codec: 'text' }).into(CheckpointStore).keyed().output('sink');
   },
 });
 
@@ -174,7 +174,7 @@ export const checkpointBatchedStore = defineRelay({
     },
   },
   channels: (c) => {
-    c.input('input', { codec: 'text' }).into(CheckpointStore).keyed().sink('sink');
+    c.input('input', { codec: 'text' }).into(CheckpointStore).keyed().output('sink');
   },
 });
 
@@ -211,7 +211,7 @@ export const benchCheckpoint = defineRelay({
       .onFull('drop_nothing')
       .into(BenchCheckpoint)
       .keyed()
-      .sink('sink');
+      .output('sink');
   },
 });
 
@@ -233,7 +233,7 @@ const StoreInput = defineTasklet({
 export const storeInput = defineRelay({
   factoryId: 'store_input',
   channels: (c) => {
-    c.input('input', { codec: 'text' }).into(StoreInput).sink('sink');
+    c.input('input', { codec: 'text' }).into(StoreInput).output('sink');
   },
 });
 
@@ -278,7 +278,7 @@ export const persistenceOffCounter = defineRelay({
 // -- sleeping_counter -------------------------------------------------------
 //
 // A flow relay that sleeps when idle: `key:delta` inputs fold into one running
-// total per key, and every input emits `key=total` on the `totals` sink. The
+// total per key, and every input emits `key=total` on the `totals` output. The
 // sleep e2e reads the total after a wake to prove the Cell came back with the
 // state it slept with.
 
@@ -299,7 +299,7 @@ export const sleepingCounter = defineRelay({
   factoryId: 'sleeping_counter',
   durable: fixtureDurable(),
   channels: (c) => {
-    c.input('input', { codec: 'text' }).keyBy(prefix).into(SleepingCounter).sink('totals');
+    c.input('input', { codec: 'text' }).keyBy(prefix).into(SleepingCounter).output('totals');
   },
 });
 
@@ -357,7 +357,7 @@ const ResumeProbe = defineTasklet({
 export const resumeProbe = defineRelay({
   factoryId: 'resume_probe',
   channels: (c) => {
-    c.input('input', { codec: 'text' }).into(ResumeProbe).sink('total');
+    c.input('input', { codec: 'text' }).into(ResumeProbe).output('total');
   },
 });
 
@@ -417,7 +417,7 @@ const evolvingCart = (factoryId, tasklet) =>
   defineRelay({
     factoryId,
     channels: (c) => {
-      c.input('input', { codec: 'text' }).into(tasklet).sink('total');
+      c.input('input', { codec: 'text' }).into(tasklet).output('total');
     },
   });
 

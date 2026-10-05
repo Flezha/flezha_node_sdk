@@ -25,7 +25,7 @@ await runner.run(); // connects to the controller
 //
 // const control = runner.control();
 // await control.startRelay('echo', { id: 'my_echo' });
-// await control.enablePlugin('writer', 'relay_file_sink', { opts: { path: 'echo-out.txt' } });
+// await control.enablePlugin('writer', 'relay_file_output', { opts: { path: 'echo-out.txt' } });
 // await control.bindPlugin('writer', 'my_echo', { hooks: [['on_output', {}]] });
 // await runner.send('my_echo', 'hello world', 'in', { msgId: 'hello-1' });
 //

@@ -30,7 +30,7 @@ export { Registry } from './dispatch.js';
 export { FORMAT_ID_MSGPACK, SDK_LANG_NODE, toHostClassDecl, validate } from './graph.js';
 export type { DerivedChannel, DerivedDecl, DerivedEdge } from './graph.js';
 export { LocalRelay } from './local.js';
-export type { SinkOutput } from './local.js';
+export type { LocalOutput } from './local.js';
 export { consoleLogger, setLogger } from './logger.js';
 export type { Logger, LogLevel } from './logger.js';
 export { loadNative, nativePackageName } from './native.js';

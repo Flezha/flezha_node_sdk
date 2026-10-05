@@ -25,7 +25,7 @@ export interface CallOptions {
   /** The callee's channel whose output answers; its first output for the request when absent. */
   answerChannel?: string;
   /**
-   * One codec for both directions: the request is written with it as `sink`
+   * One codec for both directions: the request is written with it as `output`
    * writes, the answer read with it as `input` reads. JSON when absent.
    */
   codec?: ChannelCodec;

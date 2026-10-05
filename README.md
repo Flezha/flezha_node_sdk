@@ -95,7 +95,7 @@ export default defineRelay({
       .keyBy((trade) => trade.symbol)
       .into(Ohlc)
       .keyed()
-      .sink('candles');
+      .output('candles');
   },
 });
 ```
@@ -118,7 +118,7 @@ a compile error.
 ## Class settings
 
 Every relay is declared with `defineRelay`, in the full form above or as
-the short form, one tasklet's fields and its `run` body with a `sink`. Both
+the short form, one tasklet's fields and its `run` body with an `output`. Both
 forms take the class settings:
 
 ```ts
@@ -127,7 +127,7 @@ export default defineRelay({
   steps: { each: 'per_input', onFailure: 'keep_progress' },
   durable: { local: { sleepAfter: 10_000 } },
   maxDurationMs: 600_000,
-  channels: (c) => c.input('order', { codec: 'text' }).into(Place).sink('placed'),
+  channels: (c) => c.input('order', { codec: 'text' }).into(Place).output('placed'),
 });
 ```
 
@@ -144,8 +144,8 @@ carry it is refused as `topology.unknown_field`, naming both.
 
 ## Answering and calling
 
-A channel ends in one `sink` or one `call(...)`. The first sink output an input
-causes answers the outside caller of that input, and still reaches the sink's
+A channel ends in one `output` or one `call(...)`. The first output an input
+causes answers the outside caller of that input, and still reaches the output's
 plugins and listeners. `call(target, { deadlineMs, answerChannel?, codec? })`
 sends each value, after the chain's transforms and key, to another relay:
 a string names an instance, and `{ factory, create?, channel? }` an instance of a

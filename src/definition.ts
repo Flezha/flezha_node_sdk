@@ -102,7 +102,11 @@ type ShortForm = ShortFormDefinition<unknown, unknown, unknown, unknown>;
 type AnyTaskletDefinition = TaskletDefinition<unknown, unknown, unknown, unknown>;
 
 /** The short form's own keys, which a full form wires in `channels` instead. */
-const SHORT_FORM_KEYS = ['sink', 'input', 'codec'] as const satisfies readonly (keyof ShortForm)[];
+const SHORT_FORM_KEYS = [
+  'output',
+  'input',
+  'codec',
+] as const satisfies readonly (keyof ShortForm)[];
 
 /**
  * A tasklet definition's fields but its `name`, which a short form writes as
@@ -252,7 +256,7 @@ interface EntryBuilder {
  * hand-written single-tasklet relay carries. `topology.short_form_with_topology`
  * is the one contract refusal (`authoring_contract.md` §5.2) raised here.
  *
- * `topology.sink_without_output` is not raised: a `.mjs` definition declares no output
+ * `topology.output_without_type` is not raised: a `.mjs` definition declares no output
  * type the SDK can read, a TypeScript one names it only in types erased before
  * the SDK runs, and no `run` returns output, so nothing here says whether a
  * short form emits. The Node manifest does not list `shorthand_typed_output`
@@ -317,7 +321,7 @@ function shortFormBody(definition: ShortForm): (builder: ChannelBuilder & EntryB
       fields,
     });
   }
-  const { factoryId, sink, input = 'input', codec } = definition;
+  const { factoryId, output: outputName, input = 'input', codec } = definition;
   // The tasklet's own fields, own or inherited; the relay's stay behind.
   const tasklet: Record<string, unknown> = {};
   for (const name of fieldNames(definition)) {
@@ -327,7 +331,7 @@ function shortFormBody(definition: ShortForm): (builder: ChannelBuilder & EntryB
   // cell's state path, so growing into the full form keeps the state.
   const node = defineTasklet({ ...tasklet, name: factoryId } as AnyTaskletDefinition);
   return (builder) => {
-    const output = builder.input(input, codec === undefined ? undefined : { codec }).into(node);
-    if (sink !== undefined) output.sink(sink);
+    const edge = builder.input(input, codec === undefined ? undefined : { codec }).into(node);
+    if (outputName !== undefined) edge.output(outputName);
   };
 }

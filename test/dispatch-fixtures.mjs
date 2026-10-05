@@ -62,7 +62,7 @@ export async function handleOnce(bridge, body, item = {}) {
       c
         .input('in')
         .into(defineTasklet({ name: 'once', run: body }))
-        .sink('out'),
+        .output('out'),
   });
   const work = activationFor('once')({ token: 7n, items: [inputItem('p', item)] });
   const result = await answer(work, { ...depsFor(spec), bridge });
@@ -94,7 +94,7 @@ export const inputItem = (value, overrides = {}) => ({
   ...overrides,
 });
 
-/** A plugin frame read back as the JSON a sink naming no codec sends. */
+/** A plugin frame read back as the JSON an output naming no codec sends. */
 export const jsonOf = (bytes) => JSON.parse(Buffer.from(bytes).toString('utf8'));
 
 /** The FlezhaError that building and submitting `build()` throws. */

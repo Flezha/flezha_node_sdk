@@ -58,7 +58,7 @@ test("each item's parts carry the token, the item's index and the sink's encodin
   bridge.part = (token, item, payload) => seen.push(`${token}/${item}/${utf8(payload)}`);
   const spec = defineRelay({
     factoryId: 'part_flow',
-    channels: (c) => c.input('in').into(Parts(seen)).sink('answer'),
+    channels: (c) => c.input('in').into(Parts(seen)).output('answer'),
   });
   const { effects } = await run(spec, [inputItem(2), inputItem(1)], bridge);
 
@@ -80,7 +80,7 @@ test('a timer handler sends a part under its own item', async () => {
   const bridge = partBridge();
   const spec = defineRelay({
     factoryId: 'part_timer',
-    channels: (c) => c.input('in').into(Parts([])).sink('answer'),
+    channels: (c) => c.input('in').into(Parts([])).output('answer'),
   });
   await run(
     spec,
@@ -96,7 +96,7 @@ test('a per_input steps stage sends its parts as a flow tasklet does', async () 
   const spec = defineRelay({
     factoryId: 'part_steps',
     steps: { each: 'per_input' },
-    channels: (c) => c.input('in').into(Parts(seen)).sink('answer'),
+    channels: (c) => c.input('in').into(Parts(seen)).output('answer'),
   });
   const { effects } = await run(spec, [inputItem(2)], bridge);
 
@@ -107,15 +107,15 @@ test('a per_input steps stage sends its parts as a flow tasklet does', async () 
 test('a refused part fails the invocation as any throw does', async () => {
   const details = JSON.stringify({ tasklet: 'parts', relay: 'op-1', channel: 'answer' });
   const refusal = () =>
-    FlezhaError.fromDocument(loadNative().errorDocument('part.no_sink', details));
+    FlezhaError.fromDocument(loadNative().errorDocument('part.no_output', details));
   const spec = defineRelay({
     factoryId: 'part_refused',
-    channels: (c) => c.input('in').into(Parts([])).sink('answer'),
+    channels: (c) => c.input('in').into(Parts([])).output('answer'),
   });
   const { effects } = await run(spec, [inputItem(1)], partBridge(refusal));
 
   assert.equal(effects[0].verdict, 'retryable');
-  assert.match(effects[0].message, /part\.no_sink/);
+  assert.match(effects[0].message, /part\.no_output/);
   assert.equal(effects[0].outputs, undefined, 'a failed item ships no output');
 });
 

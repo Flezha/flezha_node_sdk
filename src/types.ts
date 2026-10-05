@@ -11,9 +11,9 @@ import type { Codec } from './codec.js';
 import type { SpawnHandle } from './ctx.js';
 
 export type OverflowPolicy = 'drop_nothing' | 'drop_newest' | 'drop_oldest';
-/** A payload format a channel names on `input` and `sink`. */
+/** A payload format a channel names on `input` and `output`. */
 export type ChannelCodec = 'bytes' | 'text' | 'json' | 'msgpack';
-/** The options `input` and `sink` take to name a channel's codec. */
+/** The options `input` and `output` take to name a channel's codec. */
 export interface CodecOptions {
   codec: ChannelCodec;
 }
@@ -90,9 +90,9 @@ export interface Ctx<TOut = never, TState = void, TChange = never> {
    * own output channel and is encoded as `emit(value)` would encode it there.
    * It never waits: a part that cannot leave at once is dropped, and a replayed
    * input sends none. A listener receives it, numbered from 0 within each
-   * attempt; a sink never does, and nothing about it is durable. Throws a
-   * `FlezhaError` with code `part.no_sink` when the output channel does not end
-   * in a sink (a call end is not one), and `part.outside_invocation`
+   * attempt; an output never does, and nothing about it is durable. Throws a
+   * `FlezhaError` with code `part.no_output` when the output channel does not end
+   * in an output (a call end is not one), and `part.outside_invocation`
    * through a context kept past its invocation.
    */
   part(value: TOut): void;
@@ -109,7 +109,7 @@ export interface Ctx<TOut = never, TState = void, TChange = never> {
 
   /**
    * End the instance this tasklet runs in, with `result` as the
-   * result its completion reports, encoded as a sink naming no codec encodes a
+   * result its completion reports, encoded as an output naming no codec encodes a
    * value: bytes as they are, a string as UTF-8 and anything else as JSON;
    * `undefined` or `null` carries no result. The rest of the iteration still
    * runs and commits; once that commit is durable the instance ends instead of
@@ -138,7 +138,7 @@ export interface Ctx<TOut = never, TState = void, TChange = never> {
    * most one instance, or the id on replay, passes its own `id`.
    *
    * `payload` is an ordinary message on the instance's first entry channel,
-   * encoded as a sink naming no codec sends a value: bytes as they are, a
+   * encoded as an output naming no codec sends a value: bytes as they are, a
    * string as UTF-8, anything else as JSON, which a `text` or `json` entry
    * reads.
    */
@@ -252,7 +252,7 @@ export interface Stream<T> {
   branch(arms: Array<(edge: Stream<T>) => void>): Stream<T>;
   /**
    * Terminate this edge's channel on the plugin layer, and return the handle:
-   * `.sink(...).into(...)` wires a consumer behind the sink, so one emit
+   * `.output(...).into(...)` wires a consumer behind the output, so one emit
    * reaches both. A channel with no consumer behind it is the plugin-bound
    * terminal — terminality is the absence of further wiring, not a different
    * method.
@@ -262,20 +262,20 @@ export interface Stream<T> {
    * derived. A function in the first position is the serializer.
    *
    * With neither a serializer nor a `{ codec }`, bytes are sent as they are, a
-   * string as UTF-8 and any other value as JSON, so a sink needs neither for a
+   * string as UTF-8 and any other value as JSON, so an output needs neither for a
    * string, bytes or a JSON value.
    */
-  sink(name: string, encode?: (value: T) => Uint8Array): Stream<T>;
-  sink(name: string, options: CodecOptions): Stream<T>;
-  sink(encode: (value: T) => Uint8Array): Stream<T>;
-  sink(options: CodecOptions): Stream<T>;
-  sink(): Stream<T>;
+  output(name: string, encode?: (value: T) => Uint8Array): Stream<T>;
+  output(name: string, options: CodecOptions): Stream<T>;
+  output(encode: (value: T) => Uint8Array): Stream<T>;
+  output(options: CodecOptions): Stream<T>;
+  output(): Stream<T>;
   /**
    * End this edge's chain in a call to another relay: each value that
    * reaches it, after this chain's transforms and key, is one request. The
    * call waits for nothing: its outcome arrives later as a `Response` on the
    * entry channel this answers, `<this channel>.response`, which must feed a
-   * tasklet (the calling one included). A channel ends in one sink or one
+   * tasklet (the calling one included). A channel ends in one output or one
    * call; an entry channel ends in none.
    */
   call<A = unknown>(target: CallTarget, options: CallOptions): Stream<Response<T, A>>;
@@ -414,7 +414,7 @@ export type RelayDefinition = RelaySettings & {
  * The §5 short form, taken by `defineRelay`: one tasklet's fields and its
  * `run` body in place of a `channels` body, with the class settings the full
  * form takes. It generates an entry channel into a tasklet named `factoryId`,
- * and that tasklet's output into the `sink` plugin channel when one is written.
+ * and that tasklet's output into the `output` plugin channel when one is written.
  */
 export type ShortFormDefinition<TIn, TOut, TState, TChange> = Omit<
   TaskletDefinition<TIn, TOut, TState, TChange>,
@@ -422,8 +422,8 @@ export type ShortFormDefinition<TIn, TOut, TState, TChange> = Omit<
 > &
   RelaySettings & {
     factoryId: string;
-    /** The plugin sink the tasklet's output reaches. Absent declares none. */
-    sink?: string;
+    /** The plugin output the tasklet's output reaches. Absent declares none. */
+    output?: string;
     /** The generated entry channel's name. Defaults to `input`. */
     input?: string;
     /** The generated entry channel's codec, as `c.input(name, { codec })` takes it. */

@@ -40,7 +40,7 @@ const Kept = defineTasklet({
 
 const KeptRelay = defineRelay({
   factoryId: 'kept_relay',
-  channels: (c) => c.input('input').into(Kept).sink('out', { codec: 'msgpack' }),
+  channels: (c) => c.input('input').into(Kept).output('out', { codec: 'msgpack' }),
 });
 
 const activation = activationFor('kept_relay');
