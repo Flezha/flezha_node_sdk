@@ -44,6 +44,11 @@ export interface SpawnOptions {
   ifRunning?: IfRunning;
 }
 
+export interface EffectOptions<T> {
+  /** Encodes the result where it is kept, and decodes it as the call returns it. */
+  codec?: Codec<T>;
+}
+
 /** A timer firing. `now` is the SCHEDULED time, never the wall clock. */
 export interface TimerFiring {
   kind: TimerKind;
@@ -143,6 +148,33 @@ export interface Ctx<TOut = never, TState = void, TChange = never> {
    * reads.
    */
   spawnSteps(factoryId: string, payload: unknown, options?: SpawnOptions): SpawnHandle;
+
+  /**
+   * Run `fn`, a call to anything outside the instance (a model, a tool, a
+   * service), and keep its result: when this invocation runs again (a crash
+   * re-run, a replay, a wake, a move), the call resolves to the kept result and
+   * `fn` does not run.
+   *
+   * The result is kept, synced on the controller, before this resolves. A crash
+   * between `fn` finishing and that point runs `fn` again, so give the outside
+   * service `stableId()` as an idempotency key where it takes one. `name` names
+   * the call: a non-empty string of at most 255 bytes, counted per invocation,
+   * so a call of another name added before this one leaves its kept result
+   * where it was. One call runs at a time; a concurrent one is refused.
+   *
+   * The result is encoded as an output naming no codec encodes a value (bytes as
+   * they are, a string as UTF-8, anything else as JSON) and read back as JSON,
+   * else text, else bytes; `options.codec` encodes and decodes it instead. The
+   * call resolves to the result as it reads back, on a first run and a re-run
+   * alike.
+   *
+   * An invocation that took no input-log offset (local mode, a relay with no
+   * input log) runs `fn` each time and keeps nothing. `fn`'s own error rejects
+   * unchanged and nothing is kept. Rejects with a `FlezhaError` coded
+   * `effect.bad_name`, `effect.nested`, `effect.outside_invocation`,
+   * `effect.too_large` or `effect.not_recorded` (the only one retried).
+   */
+  effect<T>(name: string, fn: () => T | Promise<T>, options?: EffectOptions<T>): Promise<T>;
 }
 
 /** Static cell mode: a fixed key set, plus the fan-out an input belongs to. */

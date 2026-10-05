@@ -287,3 +287,33 @@ test('the core refuses a part whose channel ends in no output', async () => {
   }
   assert.deepEqual(refused, ['part.no_output']);
 });
+
+test('local mode runs an effect function each time and keeps nothing', async () => {
+  let calls = 0;
+  const Asks = defineTasklet({
+    name: 'effect_asks',
+    run: async (question, ctx) => {
+      ctx.emit(await ctx.effect('model', () => ({ answer: question, call: (calls += 1) })));
+    },
+  });
+  const released = [];
+  const run = LocalRelay.start(
+    defineRelay({
+      factoryId: 'effect_local_node',
+      channels: (c) => c.input('in', { codec: 'text' }).into(Asks).output('out', { codec: 'json' }),
+    }),
+  );
+  try {
+    run.onOutput('out', (output) => released.push(JSON.parse(utf8(output.payload))));
+    await run.feed('in', 'local-q');
+    await run.feed('in', 'local-q');
+    await run.runUntilIdle(20_000);
+  } finally {
+    await run.close();
+  }
+  assert.equal(calls, 2, 'nothing re-runs a local input, so nothing is kept');
+  assert.deepEqual(released, [
+    { answer: 'local-q', call: 1 },
+    { answer: 'local-q', call: 2 },
+  ]);
+});

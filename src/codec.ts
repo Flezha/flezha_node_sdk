@@ -162,6 +162,24 @@ export function plainPayload(value: unknown, owner: string): Uint8Array {
   return jsonPayload(owner, value);
 }
 
+/**
+ * What `plainPayload` wrote, read back: JSON, else UTF-8 text, else the bytes.
+ * A string that reads as JSON comes back as that JSON value.
+ */
+export function plainValue(bytes: Uint8Array): unknown {
+  let text: string;
+  try {
+    text = utf8.decode(bytes);
+  } catch {
+    return plainView(bytes);
+  }
+  try {
+    return JSON.parse(text);
+  } catch {
+    return text;
+  }
+}
+
 function utf8Text(bytes: Uint8Array, channel: NamedChannel): string {
   try {
     return utf8.decode(bytes);

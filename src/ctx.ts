@@ -8,21 +8,23 @@
  * completion carries it.
  */
 
-import { encodeValue, plainPayload } from './codec.js';
+import { encodeValue, plainPayload, plainValue, type Codec } from './codec.js';
 import { applyTransforms, runsInSteps, recordsEffects } from './authoring.js';
 import type { ChannelSpec, ClassSpec, ConsumerEdge, TaskNode } from './authoring.js';
 import type {
   Native,
+  NativeEffectStart,
   NativeItemEffect,
   NativeMeta,
   NativeOutput,
   NativeTimerOp,
 } from './native.js';
-import { flezhaError } from './errors.js';
+import { flezhaError, isFlezhaError } from './errors.js';
 import { cellIdentity, stableId } from './identity.js';
 import { readOnlyState } from './state.js';
 import type {
   Ctx,
+  EffectOptions,
   EmitOptions,
   SpawnOptions,
   SpawnOutcome,
@@ -33,8 +35,17 @@ import type {
 /** Metadata keys the runtime owns. A handler that sets one is refused. */
 const RESERVED_PREFIX = 'flz.';
 
-/** The addon entries a spawn and a part reach. */
-export type CoreBridge = Pick<Native, 'spawnRequest' | 'spawnTryResult' | 'spawnWait' | 'part'>;
+/** The addon entries a spawn, a part and an effect reach. */
+export type CoreBridge = Pick<
+  Native,
+  | 'spawnRequest'
+  | 'spawnTryResult'
+  | 'spawnWait'
+  | 'part'
+  | 'effectBegin'
+  | 'effectEnd'
+  | 'effectRelease'
+>;
 
 /** The item index of an invocation that runs no work item; the core refuses its part. */
 export const NO_ITEM = 0xffff_ffff;
@@ -416,8 +427,39 @@ export class Invocation implements Ctx<unknown, unknown, unknown> {
     return new SpawnHandle(this.input.bridge, handle);
   }
 
+  async effect<T>(name: string, fn: () => T | Promise<T>, options?: EffectOptions<T>): Promise<T> {
+    const { bridge, token, item } = this.input;
+    const codec = options?.codec;
+    let start: NativeEffectStart;
+    try {
+      start = bridge.effectBegin(token, item, name);
+    } catch (error) {
+      throw effectRefused(error);
+    }
+    if (start.status === 'kept') return effectDecode(start.result as Uint8Array, codec);
+    let encoded: Uint8Array;
+    try {
+      const value = await fn();
+      encoded = codec ? Buffer.from(codec.encode(value)) : plainPayload(value, `effect '${name}'`);
+    } catch (error) {
+      bridge.effectRelease(token, item);
+      throw error;
+    }
+    if (start.status === 'unrecorded') {
+      bridge.effectRelease(token, item);
+      return effectDecode(encoded, codec);
+    }
+    let first: Uint8Array | null;
+    try {
+      first = await bridge.effectEnd(token, item, encoded);
+    } catch (error) {
+      throw effectRefused(error);
+    }
+    return effectDecode(first ?? encoded, codec);
+  }
+
   /** The effect record for this item, as the core folds it. */
-  effect(consumedOffset: bigint | undefined): NativeItemEffect {
+  effectRecord(consumedOffset: bigint | undefined): NativeItemEffect {
     return {
       verdict: 'ok',
       changes: this.changes,
@@ -429,4 +471,24 @@ export class Invocation implements Ctx<unknown, unknown, unknown> {
       complete: this.completion,
     };
   }
+}
+
+/**
+ * An `effect.*` refusal is non-retryable, but for `effect.not_recorded`: a
+ * call that could not be kept is the one worth running again.
+ */
+function effectRefused(error: unknown): unknown {
+  if (
+    isFlezhaError(error) &&
+    error.code.startsWith('effect.') &&
+    error.code !== 'effect.not_recorded'
+  ) {
+    (error as { nonRetryable?: boolean }).nonRetryable = true;
+  }
+  return error;
+}
+
+/** A kept result as it reads back: through `codec`, or as `plainPayload` wrote it. */
+function effectDecode<T>(body: Uint8Array, codec: Codec<T> | undefined): T {
+  return codec ? codec.decode(body) : (plainValue(body) as T);
 }

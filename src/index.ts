@@ -49,6 +49,7 @@ export type {
   Ctx,
   Durable,
   Each,
+  EffectOptions,
   EmitOptions,
   Exactly,
   FlowSettings,

@@ -10,6 +10,8 @@
 // the core derives that channel's journal codec from the channel's kind, so no
 // fixture declares one.
 
+import { appendFileSync } from 'node:fs';
+
 import { defineRelay, defineTasklet } from '@flezha/sdk';
 
 import { fixtureDurable, prefix } from './fixture_support.mjs';
@@ -140,6 +142,45 @@ export const syncDurableSteps = defineRelay({
   steps: {},
   durable: 'remote',
   channels: commitBlockChain,
+});
+
+// -- effect_block_steps -----------------------------------------------------
+//
+// The one tasklet calls an outside function through `ctx.effect`, then blocks
+// until released. The input names a file the function appends one line to per
+// run, so a SIGKILL after the effect and a resume on a released runner shows
+// whether the function ran again.
+
+const countRun = (path) => {
+  appendFileSync(path, 'ran\n');
+  return 'answer';
+};
+
+const EffectBlock = statelessStep('effect_block', async (input, ctx) => {
+  await ctx.effect('model', () => countRun(input));
+  await blockUntilReleased();
+});
+
+export const effectBlockSteps = defineRelay({
+  factoryId: 'effect_block_steps',
+  steps: {},
+  durable: fixtureDurable(),
+  channels: (c) => {
+    c.input('in', { codec: 'text' }).into(EffectBlock);
+  },
+});
+
+// `effect_flow`: the same call in a flow relay at the default tier, which
+// keeps no input log, so nothing re-runs an input and nothing is kept.
+const EffectOnce = statelessStep('effect_once', async (input, ctx) => {
+  await ctx.effect('model', () => countRun(input));
+});
+
+export const effectFlow = defineRelay({
+  factoryId: 'effect_flow',
+  channels: (c) => {
+    c.input('in', { codec: 'text' }).into(EffectOnce);
+  },
 });
 
 // -- optout_commit_block ----------------------------------------------------

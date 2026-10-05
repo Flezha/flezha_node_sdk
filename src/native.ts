@@ -163,6 +163,12 @@ export interface NativeExport {
   blocking: boolean;
 }
 
+/** What a begun `ctx.effect` does next: `kept` carries the result to return. */
+export interface NativeEffectStart {
+  status: 'kept' | 'run' | 'unrecorded';
+  result?: Buffer;
+}
+
 /** One diagnostic from a native thread. */
 export interface NativeLogLine {
   level: number;
@@ -222,6 +228,15 @@ export interface Native {
   spawnTryResult(handle: bigint): string | null;
   /** Send a part of work item `item` of the live activation `token`. Never waits. */
   part(token: bigint, item: number, payload: Uint8Array): void;
+  /** Begin `ctx.effect(name)` in work item `item` of the live activation `token`. Never waits. */
+  effectBegin(token: bigint, item: number, name: string): NativeEffectStart;
+  /**
+   * Keep a `run` begin's encoded result, waiting for the controller: `null` to
+   * return the call's own result, or the result kept first.
+   */
+  effectEnd(token: bigint, item: number, payload: Uint8Array): Promise<Buffer | null>;
+  /** End a begun effect without keeping anything. Never waits. */
+  effectRelease(token: bigint, item: number): void;
   spawnWait(handle: bigint, timeoutMs: number): Promise<string | null>;
   adminCall(verb: string, args: string): Promise<string>;
   /**

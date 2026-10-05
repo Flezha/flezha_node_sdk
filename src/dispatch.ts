@@ -287,7 +287,7 @@ async function runWork(
         },
       );
 
-      effects.push(ctx.effect(item.consumedOffset));
+      effects.push(ctx.effectRecord(item.consumedOffset));
     } catch (error) {
       // The stack is a host diagnostic, not a record: the verdict below
       // travels to the dead-letter entry and the controller's log.
@@ -495,7 +495,7 @@ async function compensate(
     { now: 0n, replay: false, item: NO_ITEM },
     async (ctx) => (definition.compensate as (o: unknown[], c: unknown) => unknown)(outputs, ctx),
   );
-  return { token: activation.token, outcome: 'work', effects: [ctx.effect(undefined)] };
+  return { token: activation.token, outcome: 'work', effects: [ctx.effectRecord(undefined)] };
 }
 
 /**

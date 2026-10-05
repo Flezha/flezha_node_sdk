@@ -19,6 +19,7 @@ import { Invocation, type CoreBridge } from './ctx.js';
 import { invocation } from './determinism.js';
 import { flezhaError } from './errors.js';
 import { foldRestore, rawState, type RestoreBody } from './state.js';
+import type { NativeEffectStart } from './native.js';
 import type { Tasklet, TimerKind, TimerFiring } from './types.js';
 
 /** The recorded change log did not rebuild the state the handler produced. */
@@ -39,9 +40,43 @@ export class ReplayMismatch extends Error {
   }
 }
 
+/**
+ * A replayed input made an outside call its live run kept through `ctx.effect`
+ * some other way: its function ran again, or the kept result was never asked for.
+ */
+export class EffectReplayMismatch extends Error {
+  constructor(
+    readonly tasklet: string,
+    readonly effect: string,
+    what: string,
+  ) {
+    super(
+      `${tasklet}: on the replay, effect '${effect}' ${what}. A re-run reads an outside ` +
+        `call's result only through ctx.effect, with the same name in the same order.`,
+    );
+    this.name = 'EffectReplayMismatch';
+  }
+}
+
 function replacer(_key: string, value: unknown): unknown {
   return typeof value === 'bigint' ? `${value}n` : value;
 }
+
+/** The longest effect name, in bytes, as the core refuses it. */
+const MAX_EFFECT_NAME = 255;
+
+/**
+ * One input's effect results, by name in call order, and the invocation's count
+ * of each name and the call whose function is running.
+ */
+interface Effects {
+  kept: Map<string, Uint8Array[]>;
+  replaying: boolean;
+  ordinals: Map<string, number>;
+  running?: { name: string; ordinal: number };
+}
+
+const liveEffects = (): Effects => ({ kept: new Map(), replaying: false, ordinals: new Map() });
 
 const BASE32 = 'abcdefghijklmnopqrstuvwxyz234567';
 
@@ -50,7 +85,10 @@ const BASE32 = 'abcdefghijklmnopqrstuvwxyz234567';
  * under the id it gave, or under one shaped like a generated id, counted
  * rather than drawn so a test reads the same ids every run.
  */
-function resolvedSpawns(): CoreBridge {
+function resolvedSpawns(): Pick<
+  CoreBridge,
+  'spawnRequest' | 'spawnTryResult' | 'spawnWait' | 'part'
+> {
   const answers: string[] = [];
   const read = (handle: bigint): string | null => answers[Number(handle) - 1] ?? null;
   return {
@@ -86,6 +124,11 @@ export interface RestorePayload {
   fromVersion?: number;
 }
 
+export interface InputOptions {
+  /** Replay the next live input, in order: its `ctx.effect` calls are served what it kept. */
+  replay?: boolean;
+}
+
 /** One invocation's recorded effects. */
 export interface Invoked<TOut, TChange> {
   emits: TOut[];
@@ -94,6 +137,12 @@ export interface Invoked<TOut, TChange> {
   checkpoint: boolean;
 }
 
+/**
+ * A `ctx.effect` keeps its result on a live `input`; the n-th
+ * `input(value, { replay: true })` replays the n-th live input and is served
+ * what it kept, and throws `EffectReplayMismatch` when a function runs there
+ * or a kept result is never asked for.
+ */
 export class TaskletTestHarness<TIn, TOut, TState, TChange> {
   private state: TState;
   private time: bigint;
@@ -102,7 +151,18 @@ export class TaskletTestHarness<TIn, TOut, TState, TChange> {
   private readonly spec: ClassSpec;
   private readonly node: TaskNode;
   private readonly outgoing: ChannelSpec[];
-  private readonly spawns = resolvedSpawns();
+  private readonly bridge: CoreBridge = {
+    ...resolvedSpawns(),
+    effectBegin: (_token, _item, name) => this.effectBegin(name),
+    effectEnd: async (_token, _item, payload) => this.effectEnd(payload),
+    effectRelease: () => {
+      this.effects.running = undefined;
+    },
+  };
+  /** Each live input's effect results, in order, and how many replays ran. */
+  private readonly keptEffects: Array<Map<string, Uint8Array[]>> = [];
+  private replays = 0;
+  private effects = liveEffects();
 
   private constructor(
     private readonly tasklet: Tasklet<TIn, TOut, TState, TChange>,
@@ -165,7 +225,7 @@ export class TaskletTestHarness<TIn, TOut, TState, TChange> {
     return new TaskletTestHarness(tasklet, options, state);
   }
 
-  private context(now: bigint): Invocation {
+  private context(now: bigint, replay = false): Invocation {
     return new Invocation({
       spec: this.spec,
       node: this.node,
@@ -174,11 +234,11 @@ export class TaskletTestHarness<TIn, TOut, TState, TChange> {
       cellKey: this.options.cellKey,
       changeSeq: BigInt(this.log.length),
       now,
-      replay: false,
+      replay,
       state: this.state,
       token: 0n,
       item: 0,
-      bridge: this.spawns,
+      bridge: this.bridge,
     });
   }
 
@@ -208,10 +268,53 @@ export class TaskletTestHarness<TIn, TOut, TState, TChange> {
    * that reads an ambient clock is reported here rather than only in
    * production.
    */
-  async input(value: TIn): Promise<Invoked<TOut, TChange>> {
-    const ctx = this.context(this.time);
+  async input(value: TIn, options: InputOptions = {}): Promise<Invoked<TOut, TChange>> {
+    if (options.replay) {
+      const kept = this.keptEffects[this.replays++] ?? new Map();
+      this.effects = { ...liveEffects(), kept, replaying: true };
+    } else {
+      this.effects = liveEffects();
+      this.keptEffects.push(this.effects.kept);
+    }
+    const ctx = this.context(this.time, options.replay);
     await invocation.run({ tasklet: this.tasklet.name }, () => ctx.handle(value));
+    if (options.replay) {
+      for (const [name, results] of this.effects.kept) {
+        if (results.length > (this.effects.ordinals.get(name) ?? 0)) {
+          throw new EffectReplayMismatch(this.tasklet.name, name, 'was never asked for');
+        }
+      }
+    }
     return this.collect(ctx);
+  }
+
+  /** The core's answer to a begun `ctx.effect`, over this input's results. */
+  private effectBegin(name: string): NativeEffectStart {
+    if (!name || Buffer.byteLength(name, 'utf8') > MAX_EFFECT_NAME) {
+      throw flezhaError('effect.bad_name', { name: JSON.stringify(name) });
+    }
+    const effects = this.effects;
+    if (effects.running) throw flezhaError('effect.nested', { name });
+    const ordinal = effects.ordinals.get(name) ?? 0;
+    effects.ordinals.set(name, ordinal + 1);
+    const result = effects.kept.get(name)?.[ordinal];
+    if (result) return { status: 'kept', result: Buffer.from(result) };
+    if (effects.replaying) {
+      throw new EffectReplayMismatch(this.tasklet.name, name, 'ran its function');
+    }
+    effects.running = { name, ordinal };
+    return { status: 'run' };
+  }
+
+  /** Keep a live input's result, as the controller does. */
+  private effectEnd(payload: Uint8Array): null {
+    const { kept, running } = this.effects;
+    if (!running) throw new Error('an end follows a begin that runs');
+    const results = kept.get(running.name) ?? [];
+    results[running.ordinal] = Uint8Array.from(payload);
+    kept.set(running.name, results);
+    this.effects.running = undefined;
+    return null;
   }
 
   /** Fire a timer. `ctx.now()` inside the callback is the scheduled time. */
