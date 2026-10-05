@@ -20,7 +20,6 @@ the session's answer as it is written, and each user has a daily token budget.
 | `runner.mjs` | the runner: this process joins the `agents` namespace and registers the `agent` and `gateway` factories |
 | `agent_relay.mjs` | a session, a steps relay: one turn per message, and a failed turn fails alone |
 | `reply.mjs` | answers a message with the demo model, sends the answer as it grows, and keeps the conversation |
-| `deliver.mjs` | hands the finished answer to whoever called |
 | `demo_model.mjs` | the demo model |
 | `gateway_relay.mjs` | the HTTP side, a flow relay: it carries the HTTP plugin, answers every request, and calls the session a message is for |
 | `request.mjs` | one HTTP request, as the plugin hands it to the gateway, and the two routes the gateway knows |

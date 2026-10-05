@@ -1,6 +1,5 @@
 import { defineRelay } from '@flezha/sdk';
 
-import { Deliver } from './deliver.mjs';
 import { Reply } from './reply.mjs';
 
 /**
@@ -16,9 +15,7 @@ export default defineRelay({
   channels: (c) => {
     c.input('turn', { codec: 'text' }) // entry 1: `flz relay call`
       .into(Reply)
-      .sink('answer') // to whoever listens; the chain goes on
-      .into(Deliver)
-      .response(); // to whoever called
+      .sink('answer'); // to whoever called, and whoever listens
     c.input('message') // entry 2: the gateway, into the same Reply
       .map((message) => message.text)
       .into(Reply);

@@ -221,9 +221,6 @@ function specOf(row) {
           case 'sink':
             stream = arg === '' ? stream.sink() : stream.sink(arg);
             break;
-          case 'response':
-            stream = stream.response();
-            break;
           case 'call':
           case 'call_unread':
           case 'call_factory':

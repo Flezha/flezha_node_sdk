@@ -54,7 +54,7 @@ export const callPricing = defineRelay({
           if (!input.startsWith('silent')) ctx.emit(`price:${input}`);
         }),
       )
-      .response();
+      .sink('quotes');
   },
 });
 
@@ -64,7 +64,7 @@ export const callOrders = defineRelay({
     c.input('in', { codec: 'text' })
       .into(step('order_ask', (input, ctx) => ctx.emit(input)))
       .named('order')
-      .call('pricing', CALL)
+      .call('pricing', { ...CALL, answerChannel: 'quotes' })
       .into(step('order_priced', (response, ctx) => ctx.emit(render(response))))
       .sink('priced');
   },
@@ -86,7 +86,7 @@ export const callAgent = defineRelay({
           ctx.emit(`answer:${input}`);
         }),
       )
-      .response();
+      .sink();
   },
 });
 

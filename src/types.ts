@@ -92,7 +92,7 @@ export interface Ctx<TOut = never, TState = void, TChange = never> {
    * input sends none. A listener receives it, numbered from 0 within each
    * attempt; a sink never does, and nothing about it is durable. Throws a
    * `FlezhaError` with code `part.no_sink` when the output channel does not end
-   * in a sink (a `response()` end is not one), and `part.outside_invocation`
+   * in a sink (a call end is not one), and `part.outside_invocation`
    * through a context kept past its invocation.
    */
   part(value: TOut): void;
@@ -271,23 +271,12 @@ export interface Stream<T> {
   sink(options: CodecOptions): Stream<T>;
   sink(): Stream<T>;
   /**
-   * Terminate this edge's channel on the answer to the outside call its input
-   * carried: each value emitted on it answers that caller and reaches no
-   * plugin. It takes no name, so the channel keeps the one it would have
-   * without it, and returns the handle, so consumers may follow it exactly as
-   * after `sink`. A channel ends in one sink or one response.
-   *
-   * It encodes as `sink` does: a serializer, a `{ codec }`, or neither.
-   */
-  response(encode?: (value: T) => Uint8Array): Stream<T>;
-  response(options: CodecOptions): Stream<T>;
-  /**
    * End this edge's chain in a call to another relay: each value that
    * reaches it, after this chain's transforms and key, is one request. The
    * call waits for nothing: its outcome arrives later as a `Response` on the
    * entry channel this answers, `<this channel>.response`, which must feed a
-   * tasklet (the calling one included). A channel ends in one sink, one
-   * response or one call; an entry channel ends in none.
+   * tasklet (the calling one included). A channel ends in one sink or one
+   * call; an entry channel ends in none.
    */
   call<A = unknown>(target: CallTarget, options: CallOptions): Stream<Response<T, A>>;
 }

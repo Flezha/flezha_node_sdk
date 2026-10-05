@@ -22,6 +22,8 @@ export type CallTarget =
 export interface CallOptions {
   /** How long the caller waits at most, in milliseconds; `call.timeout` after it. */
   deadlineMs: number;
+  /** The callee's channel whose output answers; its first output for the request when absent. */
+  answerChannel?: string;
   /**
    * One codec for both directions: the request is written with it as `sink`
    * writes, the answer read with it as `input` reads. JSON when absent.
@@ -49,18 +51,20 @@ export interface CallLink {
   deadline_ms: number;
   create: boolean;
   channel?: string;
+  answer_channel?: string;
   response: string;
 }
 
 /** The link a `call` records, its Response channel named `response`. */
-export function callLink(target: CallTarget, deadlineMs: number, response: string): CallLink {
+export function callLink(target: CallTarget, options: CallOptions, response: string): CallLink {
   const to = typeof target === 'string' ? { target } : target;
   return {
     link: 'call',
     ...('target' in to ? { target: to.target } : { factory: to.factory }),
-    deadline_ms: deadlineMs,
+    deadline_ms: options.deadlineMs,
     create: 'create' in to ? to.create !== false : true,
     ...(to.channel === undefined ? {} : { channel: to.channel }),
+    ...(options.answerChannel === undefined ? {} : { answer_channel: options.answerChannel }),
     response,
   };
 }

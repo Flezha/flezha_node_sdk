@@ -570,15 +570,15 @@ export const dynamicCell = defineRelay({
 
 // -- call_response ----------------------------------------------------------
 //
-// Relays an outside caller calls and whose graph answers it through
-// `response()`: from the first tasklet, from a downstream one, and from
-// whichever of two filtered paths the input took. `call_turn` is the steps
+// Relays an outside caller calls and whose sink output answers it: from the
+// first tasklet, from a downstream one, and from whichever of two filtered
+// paths the input took. `call_turn` is the steps
 // one, in fixtures_steps.mjs.
 
 export const callEcho = defineRelay({
   factoryId: 'call_echo',
   channels: (c) => {
-    c.input('in', { codec: 'text' }).into(passThrough('call_echo')).response();
+    c.input('in', { codec: 'text' }).into(passThrough('call_echo')).sink();
   },
 });
 
@@ -590,7 +590,7 @@ const CallAnswer = defineTasklet({
 export const callDownstream = defineRelay({
   factoryId: 'call_downstream',
   channels: (c) => {
-    c.input('in', { codec: 'text' }).into(passThrough('call_parse')).into(CallAnswer).response();
+    c.input('in', { codec: 'text' }).into(passThrough('call_parse')).into(CallAnswer).sink();
   },
 });
 
@@ -611,11 +611,11 @@ export const callSplit = defineRelay({
     admitted
       .filter((input) => !input.startsWith('no'))
       .into(CallAccept)
-      .response();
+      .sink();
     admitted
       .filter((input) => input.startsWith('no'))
       .into(CallRefuse)
-      .response();
+      .sink();
   },
 });
 

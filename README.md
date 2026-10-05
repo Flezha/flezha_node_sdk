@@ -144,13 +144,15 @@ carry it is refused as `topology.unknown_field`, naming both.
 
 ## Answering and calling
 
-A channel ends in one `sink`, one `response()` or one `call(...)`. `response()`
-answers the outside caller whose input caused the value. `call(target, { deadlineMs, codec? })`
+A channel ends in one `sink` or one `call(...)`. The first sink output an input
+causes answers the outside caller of that input, and still reaches the sink's
+plugins and listeners. `call(target, { deadlineMs, answerChannel?, codec? })`
 sends each value, after the chain's transforms and key, to another relay:
 a string names an instance, and `{ factory, create?, channel? }` an instance of a
 factory, the one the chain's `keyBy` names (`create: false` refuses to start it,
-`channel` picks its entry channel). One codec writes the request and reads the
-answer, JSON when none is named.
+`channel` picks its entry channel). `answerChannel` names the callee's channel
+whose output answers. One codec writes the request and reads the answer, JSON
+when none is named.
 
 The call waits for nothing. Its outcome arrives later as a `Response` on a new
 entry channel, `<channel>.response`, which must feed a tasklet, the calling one

@@ -275,7 +275,6 @@ test('the core refuses a part whose channel ends in no sink', async () => {
   const Drain = defineTasklet({ name: 'drain', run: () => {} });
   const graphs = {
     local_part_to_tasklet_node: (c) => c.input('in', { codec: 'text' }).into(Refused).into(Drain),
-    local_part_to_response_node: (c) => c.input('in', { codec: 'text' }).into(Refused).response(),
   };
   for (const [factoryId, channels] of Object.entries(graphs)) {
     const run = LocalRelay.start(defineRelay({ factoryId, channels }));
@@ -286,5 +285,5 @@ test('the core refuses a part whose channel ends in no sink', async () => {
       await run.close();
     }
   }
-  assert.deepEqual(refused, ['part.no_sink', 'part.no_sink']);
+  assert.deepEqual(refused, ['part.no_sink']);
 });

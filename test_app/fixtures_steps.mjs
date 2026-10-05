@@ -932,14 +932,14 @@ export const benchLoopSteps = defineRelay({
   },
 });
 
-// call_turn: a durable per-input loop whose turn answers the outside call
-// through `response()`.
+// call_turn: a durable per-input loop whose turn's sink output answers the
+// outside call.
 export const callTurn = defineRelay({
   factoryId: 'call_turn',
   ...loopKnobs,
   channels: (c) => {
     c.input('in', { codec: 'text' })
       .into(statelessStep('call_turn', (input, ctx) => ctx.emit(input)))
-      .response();
+      .sink();
   },
 });

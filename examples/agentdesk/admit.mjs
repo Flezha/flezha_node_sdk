@@ -18,6 +18,7 @@ export const Admit = defineTasklet({
             status: 429,
             body: `${user} has used ${verdict.spent} of today's ${DAILY_TOKENS} tokens`,
           },
+      { key: user },
     );
   },
 });

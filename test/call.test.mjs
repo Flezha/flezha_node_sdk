@@ -40,7 +40,10 @@ function caller(codec) {
         .filter((line) => !line.startsWith('drop'))
         .flatMap((line) => [line, `${line}!`])
         .keyBy((line) => line.split(':')[0])
-        .call({ factory: 'agent', create: false, channel: 'turn' }, { deadlineMs: 60_000, codec })
+        .call(
+          { factory: 'agent', create: false, channel: 'turn' },
+          { deadlineMs: 60_000, answerChannel: 'reply', codec },
+        )
         .map((response) => `answered ${response.request}=${response.value}@${response.target}`)
         .into(Asker);
     },
@@ -60,6 +63,7 @@ test('call closes its chain with the call link and declares <channel>.response',
       deadline_ms: 60_000,
       create: false,
       channel: 'turn',
+      answer_channel: 'reply',
       response: 'ask.response',
     },
   ]);

@@ -68,14 +68,10 @@ export type Link =
   | { link: 'key' }
   | { link: 'named'; name: string }
   | { link: 'sink'; name?: string }
-  | { link: 'response' }
   | { link: 'into'; tasklet: number }
   | { link: 'merge'; tasklet: number; group: number }
   | { link: 'branch'; arms: number }
   | CallLink;
-
-/** The links that end a channel on the plugin layer. */
-type PlugEnd = Extract<Link, { link: 'sink' | 'response' }>;
 
 /** The links that close a chain onto a consumer edge. */
 type EdgeLink = Extract<Link, { link: 'into' | 'merge' }>;
@@ -101,8 +97,8 @@ export interface ChannelSpec {
   retryBackoffMs?: number;
   keyed: boolean;
   /**
-   * The channel's name once a plugin end, a sink, a response or a call, is
-   * attached; absent means none. The core's answer names no sink for the last two.
+   * The channel's name once a plugin end, a sink or a call, is attached;
+   * absent means none. The core's answer names no sink for a call.
    */
   sink?: string;
   /**
@@ -479,11 +475,7 @@ class EdgeStream<T> implements Stream<T> {
     // here is what keeps the shorter forms from spelling `sink(undefined, x)`.
     const name = typeof nameOrEncode === 'string' ? nameOrEncode : undefined;
     const rest = name === undefined ? [nameOrEncode, encodeOrOptions] : [encodeOrOptions, options];
-    return this.plugEnd(name === undefined ? { link: 'sink' } : { link: 'sink', name }, name, rest);
-  }
-
-  response(encodeOrOptions?: ((value: T) => Uint8Array) | CodecOptions): Stream<T> {
-    return this.plugEnd({ link: 'response' }, undefined, [encodeOrOptions]);
+    return this.attachSink(name, rest);
   }
 
   call<A = unknown>(target: CallTarget, options: CallOptions): Stream<Response<T, A>> {
@@ -491,7 +483,7 @@ class EdgeStream<T> implements Stream<T> {
     const [, codec] = this.builder.channelCodec(channel, [options]);
     const [encode, decode] = callCodec(codec, channel);
     // The call closes this handle's chain: its transforms and key are the end's.
-    this.record(channel, callLink(target, options.deadlineMs, `${channel.name}.response`));
+    this.record(channel, callLink(target, options, `${channel.name}.response`));
     channel.callEnd = { transforms: this.pending.transforms, keyBy: this.pending.keyBy };
     channel.sink ??= channel.name;
     channel.sinkEncode ??= encode;
@@ -499,16 +491,16 @@ class EdgeStream<T> implements Stream<T> {
   }
 
   /**
-   * Attach a plugin end, a sink or a response: both leave as a plugin output
-   * encoded the same way, and the core refuses a second end on a channel.
+   * Attach a sink, which leaves as a plugin output; the core refuses a second
+   * end on a channel.
    */
-  private plugEnd(end: PlugEnd, name: string | undefined, rest: unknown[]): Stream<T> {
+  private attachSink(name: string | undefined, rest: unknown[]): Stream<T> {
     const channel = this.plugChannel();
     // A chain of its own: the sink terminates the channel rather than this
     // handle, so `.into(...)` still chains after it and the value reaches both
     // the consumer mailboxes and the sink. Terminality is the absence of
     // further wiring, not a different method.
-    channel.chains.push([end]);
+    channel.chains.push([name === undefined ? { link: 'sink' } : { link: 'sink', name }]);
     // The sink names the channel: `sink('x')` IS the name, and `sink()` leaves
     // it derived. One string, which is what the core answers back.
     if (name !== undefined) channel.name = name;

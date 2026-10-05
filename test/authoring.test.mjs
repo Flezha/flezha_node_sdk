@@ -523,44 +523,16 @@ test('sink(...) returns the handle, so a consumer wires behind it', () => {
   );
 });
 
-test('response() records its link and ends the channel as a sink would, keeping the name', () => {
-  const terminal = defineRelay({
-    factoryId: 'answers',
-    channels: (c) => {
-      c.input('in').into(echo('producer')).response();
-    },
-  });
-  const hybrid = defineRelay({
-    factoryId: 'answers_and_feeds',
-    channels: (c) => {
-      c.input('in').into(echo('producer')).response().into(echo('consumer'));
-    },
-  });
-  const channelsOf = (spec) =>
-    validate(spec).channels.map((channel) => [
-      channel.name,
-      channel.kind,
-      channel.consumers.map((edge) => edge.tasklet),
-      channel.sink,
-    ]);
-  assert.deepEqual(toHostClassDecl(terminal).channels[1].chains, [[{ link: 'response' }]]);
-  // A response is a plugin end but not a sink: the core names no sink for it.
-  assert.deepEqual(channelsOf(terminal), [
-    ['in', 'entry', [0], null],
-    ['producer', 'plugin', [], null],
-  ]);
-  assert.deepEqual(channelsOf(hybrid), [
-    ['in', 'entry', [0], null],
-    ['producer', 'inter_task', [1], null],
-  ]);
-});
-
-test('a sink beside a response on one channel is refused as ending twice', () => {
+test('a sink beside a call on one channel is refused as ending twice', () => {
   const error = refusal(() =>
     defineRelay({
       factoryId: 'ends_twice',
       channels: (c) => {
-        c.input('in').into(echo('producer')).sink('out').response();
+        c.input('in')
+          .into(echo('producer'))
+          .sink('out')
+          .call('pricing', { deadlineMs: 500 })
+          .into(echo('reader'));
       },
     }),
   );
