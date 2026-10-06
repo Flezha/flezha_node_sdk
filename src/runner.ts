@@ -12,6 +12,7 @@ import { isAbsolute } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
 import type { ClassSpec } from './authoring.js';
+import { plainPayload } from './codec.js';
 import { Control } from './control.js';
 import { envPositive } from './env.js';
 import { flezhaError, isFlezhaError } from './errors.js';
@@ -225,6 +226,23 @@ export class Runner {
       local,
     );
     return JSON.parse(answer) as SendVerdict | null;
+  }
+
+  /**
+   * Call the entry channel `channel` of `relayId` with `value`, through the
+   * controller under the same role check as `send`, and answer what the relay
+   * answers: a JSON value, a string for text, bytes for the binary formats, or
+   * `{ accepted: true }` from a channel that answers nothing. `value` is
+   * encoded as an output naming no codec encodes it.
+   */
+  async call(relayId: string, channel: string, value: unknown): Promise<unknown> {
+    const native = this.native ?? loadNative();
+    const payload = Buffer.from(plainPayload(value, `a call to '${relayId}'`)).toString('base64');
+    const args = [relayId, channel, payload, { payload: 'base64' }];
+    const reply = JSON.parse(await native.adminCall('Relay.call_channel', JSON.stringify(args)));
+    if (reply.accepted === true) return { accepted: true };
+    const binary = reply.answer_codec !== 'json' && reply.answer_codec !== 'text';
+    return binary ? new Uint8Array(Buffer.from(reply.answer, 'base64')) : reply.answer;
   }
 
   /** The ids of the relay instances bound on this runner now, read without the controller. */

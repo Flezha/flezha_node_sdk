@@ -168,6 +168,35 @@ gateway
   .into(Outcome); // Outcome's input is Response<string, string>
 ```
 
+## A relay's API
+
+Every entry channel is part of its relay's API, with its codec and the output
+that answers it. `description` says what the channel is for, and `schema` gives
+a `json` channel's input as a JSON Schema object; with zod, pass
+`z.toJSONSchema(Order)`.
+
+```ts
+c.input<Order>('place', {
+  description: 'Places an order',
+  schema: {
+    type: 'object',
+    properties: { pair: { type: 'string' }, amount: { type: 'number' } },
+    required: ['pair', 'amount'],
+  },
+})
+  .into(Place)
+  .output('placed');
+```
+
+Application code calls a channel by value with `runner.call`, beside
+`runner.send`. The value is encoded as an output with no codec encodes it, and
+the answer is a JSON value, a string for text, bytes for the binary codecs, or
+`{ accepted: true }` from a channel no output answers:
+
+```ts
+const placed = await runner.call('orders-eu', 'place', { pair: 'EUR/USD', amount: 1000 });
+```
+
 ## Licence
 
 Apache-2.0. See the repository for the full text and third-party notices.

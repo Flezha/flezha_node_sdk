@@ -17,6 +17,13 @@ export type ChannelCodec = 'bytes' | 'text' | 'json' | 'msgpack';
 export interface CodecOptions {
   codec: ChannelCodec;
 }
+/** What an entry channel announces in its relay's API. */
+export interface EntryOptions {
+  /** What the channel is for. */
+  description?: string;
+  /** The JSON Schema of a `json` channel's input, such as `z.toJSONSchema(T)` answers. */
+  schema?: Record<string, unknown>;
+}
 export type TimerKind = 'event_time' | 'processing_time';
 export type BeyondWindowPolicy = 'process_as_arrival' | 'drop';
 /** How a steps run loops: one pass, one pass per input, or each pass seeding the next. */
@@ -341,12 +348,16 @@ export interface ChannelBuilder {
   /**
    * Declare a controller-fed entry channel carrying values of type `T`.
    * `{ codec }` names the payload's format instead of a decoder; with neither,
-   * the payload is read as JSON.
+   * the payload is read as JSON. `description` and `schema` are announced in
+   * the relay's API.
    */
-  input(name: string, options: { codec: 'text' }): Stream<string>;
-  input(name: string, options: { codec: 'bytes' }): Stream<Uint8Array>;
-  input<T = unknown>(name: string, options: { codec: 'json' | 'msgpack' }): Stream<T>;
-  input<T>(name: string, decode?: (bytes: Uint8Array) => T): Stream<T>;
+  input(name: string, options: EntryOptions & { codec: 'text' }): Stream<string>;
+  input(name: string, options: EntryOptions & { codec: 'bytes' }): Stream<Uint8Array>;
+  input<T = unknown>(
+    name: string,
+    options: EntryOptions & { codec?: 'json' | 'msgpack' },
+  ): Stream<T>;
+  input<T>(name: string, decode?: (bytes: Uint8Array) => T, options?: EntryOptions): Stream<T>;
   /** Start a merge of several streams into one tasklet. */
   merge<I = unknown>(): Merge<I>;
   /**

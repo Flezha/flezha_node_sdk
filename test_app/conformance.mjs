@@ -133,11 +133,13 @@ function callStep(stream, verb, arg, wireBack) {
 
 /**
  * What a row states before its graph is built: the class settings its
- * `class.run(<tree>)` and `class.durable(<tree>)` write, and each tasklet's
- * mailbox capacity, which are definition fields here, not fluent calls.
+ * `class.run(<tree>)` and `class.durable(<tree>)` write, each tasklet's
+ * mailbox capacity and each entry's `schema(<json>)`, which are definition
+ * fields and `input` options here, not fluent calls.
  */
 function preScan(steps) {
   const mailbox = new Map();
+  const schemas = new Map();
   const settings = {};
   for (const step of steps) {
     const [head, rest] = splitHead(step);
@@ -145,8 +147,9 @@ function preScan(steps) {
     const [verb, arg] = call(rest);
     if (head === 'class') Object.assign(settings, classSetting(verb, arg));
     else if (verb === 'mailbox') mailbox.set(head, Number(arg));
+    else if (verb === 'schema') schemas.set(head, JSON.parse(arg));
   }
-  return { mailbox, settings };
+  return { mailbox, schemas, settings };
 }
 
 /**
@@ -172,7 +175,7 @@ function specOf(row) {
     .split(';')
     .map((step) => step.trim())
     .filter(Boolean);
-  const { mailbox, settings } = preScan(steps);
+  const { mailbox, schemas, settings } = preScan(steps);
   const tasklets = new Map();
   const taskletFor = (role) => {
     if (!tasklets.has(role)) tasklets.set(role, palette(role, mailbox.get(role)));
@@ -243,7 +246,8 @@ function specOf(row) {
       if (rest === undefined) {
         const [verb, arg] = call(step);
         if (verb === 'entry') {
-          handles.set(arg, c.input(arg));
+          const schema = schemas.get(arg);
+          handles.set(arg, c.input(arg, schema === undefined ? undefined : { schema }));
           continue;
         }
         if (verb === 'branch') {
@@ -265,7 +269,7 @@ function specOf(row) {
         throw new Error(`the fixture spells a step this interpreter does not map: ${step}`);
       }
       // The class settings and the mailbox capacity were read by `preScan`.
-      if (head === 'class' || call(rest)[0] === 'mailbox') continue;
+      if (head === 'class' || ['mailbox', 'schema'].includes(call(rest)[0])) continue;
       chain(head, rest);
     }
   };

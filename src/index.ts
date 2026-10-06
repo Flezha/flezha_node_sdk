@@ -46,6 +46,7 @@ export type {
   ClassSettings,
   ChannelCodec,
   CodecOptions,
+  EntryOptions,
   Ctx,
   Durable,
   Each,

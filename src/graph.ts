@@ -156,6 +156,9 @@ function channelJson(channel: ChannelSpec): Record<string, unknown> {
     retry_backoff_ms: channel.retryBackoffMs,
     overflow: channel.overflow,
     keyed: channel.keyed,
+    codec: channel.codec,
+    schema: channel.schema,
+    description: channel.description,
   });
 }
 

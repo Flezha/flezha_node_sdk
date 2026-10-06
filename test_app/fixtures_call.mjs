@@ -142,3 +142,24 @@ export const callToolSession = defineRelay({
     tool.filter(isOutcome).into(outcomeLog('tool_log')).output('tool_out');
   },
 });
+
+/**
+ * The relay_api fixture: `place` is a described JSON entry answering through
+ * `placed`, `audit` a text entry no output answers.
+ */
+export const orders = defineRelay({
+  factoryId: 'orders',
+  channels: (c) => {
+    c.input('place', {
+      description: 'Places an order',
+      schema: {
+        type: 'object',
+        properties: { pair: { type: 'string' }, amount: { type: 'number' } },
+        required: ['pair', 'amount'],
+      },
+    })
+      .into(step('place', ({ pair, amount }, ctx) => ctx.emit({ pair, amount, status: 'placed' })))
+      .output('placed');
+    c.input('audit', { codec: 'text' }).into(step('audit', () => {}));
+  },
+});

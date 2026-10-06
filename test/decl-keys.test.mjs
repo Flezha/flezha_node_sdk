@@ -69,7 +69,7 @@ function fullyDeclaredFlow() {
     maxDurationMs: 120_000,
     channels: (c) => {
       c.compactAfterBytes(1_048_576);
-      c.input('in')
+      c.input('in', { description: 'every key', schema: { type: 'object' } })
         .retryMax(3)
         .retryBackoffMs(300)
         .keyBy((input) => input.symbol)

@@ -126,6 +126,48 @@ test('a send hands its options to the core and reads the answer', async () => {
   assert.deepEqual(verdict, { to: 'prices#p1', verdict: 'absorbed' });
 });
 
+test('a call sends the value as an output would and decodes each answer', async () => {
+  const replies = [
+    { answer: { status: 'placed' }, answer_codec: 'json' },
+    { answer: 'ok', answer_codec: 'text' },
+    { answer: Buffer.from([1, 2]).toString('base64'), answer_codec: 'bytes' },
+    { accepted: true },
+  ];
+  const calls = [];
+  const runner = runnerOver({
+    adminCall: async (verb, args) => {
+      calls.push([verb, JSON.parse(args)]);
+      return JSON.stringify(replies.shift());
+    },
+  });
+  assert.deepEqual(await runner.call('orders', 'place', { pair: 'EUR/USD' }), {
+    status: 'placed',
+  });
+  assert.equal(await runner.call('orders', 'note', 'hé'), 'ok');
+  assert.deepEqual(await runner.call('orders', 'raw', new Uint8Array([7])), new Uint8Array([1, 2]));
+  assert.deepEqual(await runner.call('orders', 'audit', 'x'), { accepted: true });
+  const base64 = (text) => Buffer.from(text).toString('base64');
+  assert.deepEqual(calls, [
+    [
+      'Relay.call_channel',
+      ['orders', 'place', base64('{"pair":"EUR/USD"}'), { payload: 'base64' }],
+    ],
+    ['Relay.call_channel', ['orders', 'note', base64('hé'), { payload: 'base64' }]],
+    ['Relay.call_channel', ['orders', 'raw', 'Bw==', { payload: 'base64' }]],
+    ['Relay.call_channel', ['orders', 'audit', base64('x'), { payload: 'base64' }]],
+  ]);
+});
+
+test('a refused call rejects with the controller code', async () => {
+  const refusal = FlezhaError.fromDocument(
+    JSON.stringify({
+      error: { code: 'api.channel_unknown', class: 'not_found', message: 'no channel plce' },
+    }),
+  );
+  const { native } = answering(refusal);
+  await assert.rejects(runnerOver(native).call('orders', 'plce', {}), refusal);
+});
+
 // Through the real addon: no runner holds `elsewhere`, so the core refuses it.
 test('the core refuses a local send to a relay held elsewhere, or with an id', async () => {
   const native = loadNative();

@@ -232,14 +232,14 @@ test('the reference call rows refuse or derive as the fixture states', async () 
   }
 });
 
-test('the relay_call fixtures the manifest lists are declared and pass the core', async () => {
+test('the relay_call and relay_api fixtures the manifest lists are declared and pass the core', async () => {
   const { manifest } = await import('./test-app.mjs');
   const fixtures = Object.values(await testAppModule('fixtures_call.mjs')).filter(
     (spec) => typeof spec === 'object' && spec.factoryId,
   );
   assert.deepEqual(
     fixtures.map((spec) => spec.factoryId).sort(),
-    [...manifest().fixtures.relay_call].sort(),
+    [...manifest().fixtures.relay_call, ...manifest().fixtures.relay_api].sort(),
   );
   for (const spec of fixtures) validate(spec);
 });

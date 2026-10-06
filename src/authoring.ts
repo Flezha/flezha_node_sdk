@@ -24,6 +24,7 @@ import {
   type ChannelBuilder,
   type ChannelCodec,
   type CodecOptions,
+  type EntryOptions,
   type Merge,
   type RelayDefinition,
   type OverflowPolicy,
@@ -116,6 +117,11 @@ export interface ChannelSpec {
   sinkEncode?: (value: unknown) => Uint8Array;
   /** A `call(...)` end's chain: applied to each value before it becomes a request. */
   callEnd?: Omit<ConsumerEdge, 'tasklet'>;
+  /** The format the relay's API announces: an entry's input, an output's value. */
+  codec?: ChannelCodec | 'custom';
+  /** An entry's JSON Schema and description, announced in the relay's API. */
+  schema?: Record<string, unknown>;
+  description?: string;
 }
 
 /** Everything the graph knows about one declared class. */
@@ -169,9 +175,11 @@ class Builder implements ChannelBuilder {
 
   input<T>(
     name: string,
-    decodeOrOptions?: ((bytes: Uint8Array) => T) | CodecOptions,
-    options?: CodecOptions,
+    decodeOrOptions?: ((bytes: Uint8Array) => T) | (EntryOptions & Partial<CodecOptions>),
+    options?: EntryOptions & Partial<CodecOptions>,
   ): Stream<T> {
+    const entry = [decodeOrOptions, options].find((arg) => typeof arg === 'object') as
+      EntryOptions | undefined;
     const channel: ChannelSpec = {
       index: this.channels.length,
       name,
@@ -187,6 +195,9 @@ class Builder implements ChannelBuilder {
       options,
     ]);
     channel.decode = decode ?? channelDecoder(codec, channel);
+    channel.codec = decode === undefined ? (codec ?? 'json') : 'custom';
+    channel.schema = entry?.schema;
+    channel.description = entry?.description;
     this.channels.push(channel);
     return new EdgeStream<T>(this, { source: 'entry', channel }, { transforms: [] });
   }
@@ -511,6 +522,7 @@ class EdgeStream<T> implements Stream<T> {
     if (channel.sink === undefined) {
       channel.sink = channel.name;
       channel.sinkEncode = serialize ?? channelEncoder(codec, channel);
+      channel.codec = serialize === undefined ? (codec ?? 'json') : 'custom';
     }
     return this;
   }
