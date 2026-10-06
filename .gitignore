@@ -8,3 +8,6 @@ native/target/
 # controller, and the contract set the fixture tests resolve against.
 .core/
 contract/
+
+# The starter is a project of its own and commits its lock; this repository does not.
+/examples/starter/package-lock.json
