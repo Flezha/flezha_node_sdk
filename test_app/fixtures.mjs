@@ -400,6 +400,9 @@ const WedgeProbe = defineTasklet({
       wedgeAborted = true;
       throw new Error('wedge_probe: killing the dispatch holding this activation');
     }
+    // Emits two seconds late, so the relay can be stopped or moved while the
+    // activation still runs.
+    if (input === 'slow') await new Promise((resolve) => setTimeout(resolve, 2_000));
     ctx.emit(`ok:${input}`);
   },
 });
