@@ -43,11 +43,7 @@ export function ascendTo(from, marker) {
 }
 
 function candidates(root, configured) {
-  return [
-    configured || null,
-    ascendTo(root, MANIFEST),
-    resolve(root, 'contract'),
-  ];
+  return [configured || null, ascendTo(root, MANIFEST), resolve(root, 'contract')];
 }
 
 /** Where the contract set is for a package at `root`, given `$FLEZHA_CONTRACT_DIR`. */
