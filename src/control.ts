@@ -114,9 +114,13 @@ export class Control {
     return this.call('PluginManager.list');
   }
 
-  /** One cell's live state, and the change sequence it was read at. */
-  async cellState(relayId: string, cellKey: string): Promise<unknown> {
-    return this.call('Relay.cell_state', relayId, cellKey);
+  /**
+   * A relay's live state, and the change sequence it was read at. `cell` is
+   * `<tasklet>[/<cell_key>]`: a tasklet's Cells, or one of them; absent, every
+   * Cell of the relay.
+   */
+  async cellState(relayId: string, cell?: string): Promise<unknown> {
+    return this.call('Relay.cell_state', relayId, cell);
   }
 
   /**
