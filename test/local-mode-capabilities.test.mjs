@@ -74,15 +74,21 @@ test('keyed_channels: a keyed output stamps the key the class resolved', async (
 
   const released = await release(fixtures.partitionPass, 'in', 'input', ['a:1', 'b:1', 'a:2']);
 
-  assert.deepEqual(
-    released.map((output) => utf8(output.payload)),
-    ['a:1', 'b:1', 'a:2'],
-  );
-  assert.deepEqual(
-    released.map((output) => output.metadata['flz.key']),
-    ['a', 'b', 'a'],
-    'each release carries the key its own value resolved to',
-  );
+  // Keys a and b are separate Cells that may run concurrently: only the order
+  // within one key is promised, not the order across keys.
+  const pairs = released.map((output) => [output.metadata['flz.key'], utf8(output.payload)]);
+  const ofKey = (key) => pairs.filter(([k]) => k === key).map(([, payload]) => payload);
+
+  assert.equal(pairs.length, 3, 'each value is released once');
+  assert.deepEqual(ofKey('a'), ['a:1', 'a:2'], 'one key releases in arrival order');
+  assert.deepEqual(ofKey('b'), ['b:1']);
+  for (const [key, payload] of pairs) {
+    assert.equal(
+      key,
+      payload.split(':')[0],
+      'each release carries the key its own value resolved to',
+    );
+  }
   for (const stamp of ['flz.cell', 'flz.seq']) {
     assert.ok(stamp in released[0].metadata, `a keyed sink carries ${stamp}`);
   }
