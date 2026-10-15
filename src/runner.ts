@@ -30,7 +30,7 @@ import { WorkerPool } from './workers.js';
  * creation and compared with the native binary's, so a skewed pair fails
  * naming both versions before any controller connection is attempted.
  */
-export const ACTIVATION_SCHEMA_VERSION = 3;
+export const ACTIVATION_SCHEMA_VERSION = 4;
 
 /**
  * How long a drain has after end of file on standard input before the process

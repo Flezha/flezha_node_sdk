@@ -57,7 +57,8 @@ export type NativeActivationKind =
   | 'apply_state'
   | 'migration_serialize'
   | 'key_request'
-  | 'compensate_run';
+  | 'compensate_run'
+  | 'leave';
 
 export interface NativeActivation {
   token: bigint;
@@ -73,6 +74,7 @@ export interface NativeActivation {
   stateJson?: Buffer;
   keyRequest?: NativeKeyRequest;
   outputs?: Buffer[];
+  wholeRelay?: boolean;
 }
 
 /**

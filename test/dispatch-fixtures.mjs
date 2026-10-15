@@ -116,3 +116,27 @@ export function codesOf(error) {
 
 /** An `assert.throws` / `assert.rejects` matcher for a FlezhaError with `code`. */
 export const coded = (code) => (error) => error instanceof FlezhaError && error.code === code;
+
+/** A keyed running total, one cell per value. */
+export const Counter = defineTasklet({
+  name: 'counter',
+  initState: () => ({ total: 0 }),
+  applyChange: (state, change) => {
+    state.total += change.by;
+  },
+  run: (input, ctx) => {
+    ctx.change({ by: input });
+    ctx.emit(ctx.state.total);
+  },
+});
+
+export const Counters = defineRelay({
+  factoryId: 'counters',
+  channels: (c) => {
+    c.input('in')
+      .keyBy((value) => String(value))
+      .into(Counter)
+      .keyed()
+      .output('out');
+  },
+});

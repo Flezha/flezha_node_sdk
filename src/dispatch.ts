@@ -56,6 +56,12 @@ export class RegisteredClass {
     return { table, key: `${node.index}\0${activation.cellKey ?? ''}` };
   }
 
+  /** Drop a cell that left this runner, or with `wholeRelay` every cell of its relay. */
+  forget(activation: NativeActivation, node: TaskNode): void {
+    if (activation.wholeRelay) this.relays.delete(activation.relay);
+    else this.relays.get(activation.relay)?.delete(`${node.index}\0${activation.cellKey ?? ''}`);
+  }
+
   /** The cell's live state, created from the declaration on first touch. */
   stateOf(node: TaskNode, address: CellAddress, cellKey: string | undefined): unknown {
     const { table, key } = address;
@@ -181,6 +187,9 @@ export async function answer(
         return prepare(activation, registered);
       case 'compensate_run':
         return await compensate(activation, registered, node, address, deps);
+      case 'leave':
+        registered.forget(activation, node);
+        return { token: activation.token, outcome: 'state_applied' };
       default:
         return failed(activation.token, `unknown activation kind \`${activation.kind}\``, true);
     }

@@ -19,7 +19,14 @@ import { Registry, answer, dispatch } from '../dist/esm/dispatch.js';
 import { cellIdentity } from '../dist/esm/identity.js';
 import { createRunner, importModule, loadRegistry, specsFrom } from '../dist/esm/runner.js';
 
-import { activationFor, depsFor, inputItem, jsonOf } from './dispatch-fixtures.mjs';
+import {
+  Counter,
+  Counters as Spec,
+  activationFor,
+  depsFor,
+  inputItem,
+  jsonOf,
+} from './dispatch-fixtures.mjs';
 import { testAppModule } from './test-app.mjs';
 
 // The handout-contract tests below answer against the core itself, so the
@@ -58,29 +65,6 @@ async function said(run) {
   }
   return lines.join('\n');
 }
-
-const Counter = defineTasklet({
-  name: 'counter',
-  initState: () => ({ total: 0 }),
-  applyChange: (state, change) => {
-    state.total += change.by;
-  },
-  run: (input, ctx) => {
-    ctx.change({ by: input });
-    ctx.emit(ctx.state.total);
-  },
-});
-
-const Spec = defineRelay({
-  factoryId: 'counters',
-  channels: (c) => {
-    c.input('in')
-      .keyBy((value) => String(value))
-      .into(Counter)
-      .keyed()
-      .output('out');
-  },
-});
 
 const fixture = () => depsFor(Spec);
 const activation = activationFor('counters');
