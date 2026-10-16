@@ -346,7 +346,7 @@ test('a steps class declares its run and its wall-clock stop beside its tasklets
     factoryId: 'saga',
     steps: { each: 'chained', onFailure: 'keep_progress' },
     maxDurationMs: 60_000,
-    channels: (c) => c.input('in').into(echo('p')),
+    channels: (c) => c.input('in').into(echo('p')).named('carry'),
   });
   validate(spec);
   const decl = toHostClassDecl(spec);
