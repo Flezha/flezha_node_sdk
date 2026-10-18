@@ -29,5 +29,5 @@ await runner.run(); // connects to the controller
 // await control.bindPlugin('writer', 'my_echo', { hooks: [['on_output', {}]] });
 // await runner.send('my_echo', 'hello world', 'in', { msgId: 'hello-1' });
 //
-// docs/topics/core/sending_and_calling.md covers sending. An enforced
+// docs/public/topics/core/sending_and_calling.md covers sending. An enforced
 // controller refuses all of it until `flz role bind runner@default app default`.
