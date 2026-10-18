@@ -33,7 +33,12 @@ import type {
 } from './types.js';
 
 /** Metadata keys the runtime owns. A handler that sets one is refused. */
-const RESERVED_PREFIX = 'flz.';
+export const RESERVED_PREFIX = 'flz.';
+
+/** The identity stamps a keyed plugin output carries when no effect record does. */
+export const CELL_STAMP = 'flz.cell';
+export const SEQ_STAMP = 'flz.seq';
+export const KEY_STAMP = 'flz.key';
 
 /** The addon entries a spawn, a part and an effect reach. */
 export type CoreBridge = Pick<
@@ -357,9 +362,9 @@ export class Invocation implements Ctx<unknown, unknown, unknown> {
     if (channel.keyed && !recordsEffects(this.input.spec)) {
       const cell = `${this.input.relay}/${this.input.node.name}/${this.input.cellKey ?? ''}`;
       metadata.push(
-        { key: 'flz.cell', value: cell },
-        { key: 'flz.seq', value: `${this.input.changeSeq}.${this.emitOrdinal}` },
-        { key: 'flz.key', value: key ?? '' },
+        { key: CELL_STAMP, value: cell },
+        { key: SEQ_STAMP, value: `${this.input.changeSeq}.${this.emitOrdinal}` },
+        { key: KEY_STAMP, value: key ?? '' },
       );
     }
     this.emitOrdinal += 1;
