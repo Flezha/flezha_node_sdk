@@ -11,7 +11,9 @@
  * State is held in memory and nothing is durable. Durability, plugins,
  * placement and migration, the dead-letter queue, observability export,
  * authz and multi-runner scale all need a controller; the run says so on
- * stderr every time it starts. `docs/quickstart.md` walks through it.
+ * stderr every time it starts. The "Local mode" section of
+ * https://github.com/flezha/flezha/blob/main/docs/topics/core/running_and_testing.md#local-mode
+ * walks through it.
  */
 import { Registry, dispatch, dispatchDeps } from './dispatch.js';
 import { toHostClassDecl, validate } from './graph.js';
