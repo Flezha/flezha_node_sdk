@@ -1159,6 +1159,40 @@ test('a factory changed after start is served, then refused as unregistered', as
   assert.equal(refused.nonRetryable, true);
 });
 
+test('an unregister the core refuses for one relay leaves the whole module registered', async () => {
+  const dir = tempDir('flezha-late-refused-');
+  const module = join(dir, 'pair.mjs');
+  writeFileSync(
+    module,
+    `import { defineRelay } from '${new URL('../dist/esm/index.js', import.meta.url).pathname}';\n` +
+      `export const idle = defineRelay({ factoryId: 'pair_idle', output: 'out', run: (i) => i });\n` +
+      `export const live = defineRelay({ factoryId: 'pair_live', output: 'out', run: (i) => i });\n`,
+  );
+  const declared = [];
+  const runner = createRunner('late_refused_ns');
+  runner.registry = new Registry();
+  runner.native = {
+    declareClass(bytes) {
+      declared.push(JSON.parse(Buffer.from(bytes).toString()).factory_id);
+    },
+    async undeclareClass(factoryId) {
+      if (factoryId === 'pair_live') {
+        throw Object.assign(new Error('in use'), { code: 'runtime.relay_type_in_use' });
+      }
+      declared.splice(declared.indexOf(factoryId), 1);
+    },
+  };
+  await runner.registerFactory(module);
+
+  await assert.rejects(
+    () => runner.unregisterFactory(module),
+    (error) => error.code === 'runtime.relay_type_in_use',
+  );
+  assert.deepEqual(declared.sort(), ['pair_idle', 'pair_live']);
+  assert.ok(runner.registry.get('pair_idle'), 'the idle relay is still served');
+  assert.deepEqual(runner.specifiers, [module]);
+});
+
 test('an identity part over its length is refused naming it', () => {
   assert.throws(
     () => cellIdentity('op', 't'.repeat(256), ''),

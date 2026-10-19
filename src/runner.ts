@@ -127,27 +127,39 @@ export class Runner {
     if (this.native && this.registry) {
       for (const spec of specs) {
         validate(spec);
-        this.registry.add(spec);
-        this.native.declareClass(Buffer.from(JSON.stringify(toHostClassDecl(spec))));
+        this.declare(spec);
       }
       await this.pool?.tell({ type: 'declare', specifier });
     }
     this.specifiers.push(specifier);
   }
 
+  private declare(spec: ClassSpec): void {
+    this.registry?.add(spec);
+    this.native?.declareClass(Buffer.from(JSON.stringify(toHostClassDecl(spec))));
+  }
+
   /**
    * Undo a registration — the inverse of {@link registerFactory}, taking what
    * it took. After `run()` the core refuses a relay with live instances on
    * this runner; otherwise every dispatch loop stops serving the module's
-   * relays and the controller learns of it.
+   * relays and the controller learns of it. A refusal leaves the whole module
+   * registered.
    */
   async unregisterFactory(specifier: string): Promise<void> {
     const at = this.specifiers.indexOf(specifier);
     if (at < 0) throw flezhaError('runtime.class_not_registered', { factory: specifier });
     if (this.native && this.registry) {
-      for (const spec of specsFrom(specifier, await importModule(specifier))) {
-        await this.native.undeclareClass(spec.factoryId);
-        this.registry.remove(spec.factoryId);
+      const removed: ClassSpec[] = [];
+      try {
+        for (const spec of specsFrom(specifier, await importModule(specifier))) {
+          await this.native.undeclareClass(spec.factoryId);
+          this.registry.remove(spec.factoryId);
+          removed.push(spec);
+        }
+      } catch (refused) {
+        removed.forEach((spec) => this.declare(spec));
+        throw refused;
       }
       await this.pool?.tell({ type: 'remove', specifier });
     }
