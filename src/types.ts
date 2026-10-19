@@ -138,8 +138,9 @@ export interface Ctx<TOut = never, TState = void, TChange = never> {
    * Ask the controller for a steps instance of `factoryId` with `payload` as
    * its first input, or as one more input of the running instance an `id` names
    * under `ifRunning: 'deliver'`. Returns the handle at once: a failure comes out
-   * of its reads, never out of this call. `ifRunning` without an `id` throws a
-   * `TypeError` and sends nothing. A replayed invocation sends nothing and its
+   * of its reads, never out of this call. `ifRunning` without an `id` throws the
+   * core's `FlezhaError` coded `spawn.if_running_without_id` and sends nothing.
+   * A replayed invocation sends nothing and its
    * handle answers `skipped_on_replay`. Read the handle inside this invocation
    * or not at all.
    *

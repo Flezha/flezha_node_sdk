@@ -25,8 +25,9 @@ export function depsFor(...specs) {
  * The addon's three spawn entries, answering the JSON the core does.
  * `answerFor(request)` is what a read of that request's handle answers, `null`
  * while pending; by default a spawn under the id it named, or a generated one.
- * As in the core, a handle's first answer is what every later read answers,
- * and no read waits. Every request and every read (`try` or `wait`) is recorded.
+ * As in the core, a policy without an id is refused at the call, a handle's
+ * first answer is what every later read answers, and no read waits. Every
+ * request and every read (`try` or `wait`) is recorded.
  */
 export function spawnBridge(
   answerFor = (request) => ({ id: request.id || 'worker-k7m2qzxw4pd3fn2a', outcome: 'spawned' }),
@@ -35,8 +36,19 @@ export function spawnBridge(
   const bridge = {
     requests: [],
     reads: [],
-    spawnRequest: (token, factoryId, id, payload, ifRunning, replay, offset) =>
-      BigInt(bridge.requests.push({ token, factoryId, id, payload, ifRunning, replay, offset })),
+    spawnRequest: (token, factoryId, id, payload, ifRunning, replay, offset) => {
+      if (!id && ifRunning) {
+        const refusal = {
+          code: 'spawn.if_running_without_id',
+          message: 'needs an id',
+          details: {},
+        };
+        throw FlezhaError.fromDocument(JSON.stringify({ error: refusal }));
+      }
+      return BigInt(
+        bridge.requests.push({ token, factoryId, id, payload, ifRunning, replay, offset }),
+      );
+    },
     spawnTryResult: (handle) => read('try', handle),
     spawnWait: async (handle) => read('wait', handle),
   };

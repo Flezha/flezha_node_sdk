@@ -178,10 +178,9 @@ export async function answer(
       case 'snapshot_request':
         return snapshot(activation, node, registered.stateOf(node, address, activation.cellKey));
       case 'live_state_read':
-      case 'migration_serialize':
         return {
           token: activation.token,
-          outcome: activation.kind === 'live_state_read' ? 'state_json' : 'migration_state',
+          outcome: 'state_json',
           json: toStateJson(registered.stateOf(node, address, activation.cellKey)),
         };
       case 'apply_state':

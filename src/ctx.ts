@@ -55,9 +55,6 @@ export type CoreBridge = Pick<
 /** The item index of an invocation that runs no work item; the core refuses its part. */
 export const NO_ITEM = 0xffff_ffff;
 
-/** The core ends a read at the request's own deadline, so a read this long always answers. */
-const WAIT_MS = 0xffff_ffff;
-
 /** What the core answers a resolved read with; a failed one is thrown as a `FlezhaError`. */
 type SpawnAnswer = { id: string; outcome: SpawnOutcome };
 
@@ -86,7 +83,7 @@ export class SpawnHandle {
   async wait(): Promise<SpawnResult> {
     let json: string | null = null;
     while (json === null) {
-      json = await this.#bridge.spawnWait(this.#handle, WAIT_MS);
+      json = await this.#bridge.spawnWait(this.#handle);
     }
     return resultOf(json);
   }
@@ -409,12 +406,6 @@ export class Invocation implements Ctx<unknown, unknown, unknown> {
 
   spawnSteps(factoryId: string, payload: unknown, options: SpawnOptions = {}): SpawnHandle {
     const { id, ifRunning } = options;
-    if (ifRunning !== undefined && !id) {
-      throw new TypeError(
-        `${this.input.node.name}: spawnSteps was given ifRunning without an id; a spawn ` +
-          'without an id always starts a new instance, so pass an id or leave ifRunning out',
-      );
-    }
     // The replay flag goes to the core, which sends nothing for a replayed
     // invocation: a spawn is an external side effect, where a timer is
     // internal state and is registered again. The payload is the spawned

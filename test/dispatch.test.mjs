@@ -166,7 +166,7 @@ test('a migration handover round-trips through the JSON form', async () => {
     }),
     deps,
   );
-  const serialized = await answer(activation({ kind: 'migration_serialize' }), deps);
+  const serialized = await answer(activation({ kind: 'live_state_read' }), deps);
 
   const receiving = fixture();
   const applied = await answer(
@@ -204,7 +204,7 @@ test('the JSON handover carries a bigint and a byte array without narrowing', as
     source,
   );
   const serialized = await answer(
-    activation({ factory: 'wide_op', cellKey: undefined, kind: 'migration_serialize' }),
+    activation({ factory: 'wide_op', cellKey: undefined, kind: 'live_state_read' }),
     source,
   );
 

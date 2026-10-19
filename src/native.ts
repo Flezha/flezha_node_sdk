@@ -55,7 +55,6 @@ export type NativeActivationKind =
   | 'snapshot_request'
   | 'live_state_read'
   | 'apply_state'
-  | 'migration_serialize'
   | 'key_request'
   | 'compensate_run'
   | 'leave';
@@ -138,14 +137,7 @@ export interface NativePrepareAnswer {
 }
 
 export type NativeOutcome =
-  | 'work'
-  | 'restored'
-  | 'snapshot'
-  | 'state_json'
-  | 'state_applied'
-  | 'migration_state'
-  | 'prepared'
-  | 'failed';
+  'work' | 'restored' | 'snapshot' | 'state_json' | 'state_applied' | 'prepared' | 'failed';
 
 export interface NativeActivationResult {
   token: bigint;
@@ -241,7 +233,7 @@ export interface Native {
   effectEnd(token: bigint, item: number, payload: Uint8Array): Promise<Buffer | null>;
   /** End a begun effect without keeping anything. Never waits. */
   effectRelease(token: bigint, item: number): void;
-  spawnWait(handle: bigint, timeoutMs: number): Promise<string | null>;
+  spawnWait(handle: bigint): Promise<string | null>;
   adminCall(verb: string, args: string): Promise<string>;
   /**
    * Send one message, through the controller or locally, answering as JSON:

@@ -116,14 +116,14 @@ test('the error policy is sent, and a running id is thrown by both reads', async
   assert.deepEqual(bridge.reads, ['wait', 'try']);
 });
 
-test('ifRunning without an id throws a TypeError naming both, and sends nothing', async () => {
+test("ifRunning without an id throws the core's refusal, and sends nothing", async () => {
   const bridge = spawnBridge();
   let thrown;
   await handled(bridge, (input, ctx) => {
     thrown = caught(() => ctx.spawnSteps('worker', input, { ifRunning: 'deliver' }));
   });
-  assert.ok(thrown instanceof TypeError, String(thrown));
-  assert.match(thrown.message, /ifRunning without an id/);
+  assert.ok(thrown instanceof FlezhaError, String(thrown));
+  assert.equal(thrown.code, 'spawn.if_running_without_id');
   assert.deepEqual(bridge.requests, []);
 });
 

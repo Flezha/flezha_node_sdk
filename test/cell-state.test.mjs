@@ -85,13 +85,13 @@ test('a restore and an applied state reach only their own relay', async () => {
   assert.deepEqual(await cells.read('order_c'), { seen: [] });
 });
 
-test("a snapshot and a migration serialize read their own relay's cell", async () => {
+test("a snapshot and a live state read read their own relay's cell", async () => {
   const cells = relayOf(depsFor(KeptRelay));
   await cells.work('order_a', 'a');
   await cells.work('order_b', 'b');
 
   const snapshot = await cells.ask('snapshot_request', 'order_b');
-  const migrated = await cells.ask('migration_serialize', 'order_b');
+  const migrated = await cells.ask('live_state_read', 'order_b');
 
   assert.deepEqual(decodeValue(snapshot.state), { seen: ['b'] });
   assert.deepEqual(jsonOf(migrated.json), { seen: ['b'] });
