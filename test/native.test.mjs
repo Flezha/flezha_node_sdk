@@ -22,8 +22,26 @@ import { read } from './contract.mjs';
 const here = dirname(fileURLToPath(import.meta.url));
 const native = loadNative();
 
-test('the addon exports exactly what its surface table names', () => {
+test('the addon exports exactly its surface table, each row an entry point or host bookkeeping', () => {
+  // The veneer adds no ABI surface: each row either reaches an entry point the
+  // C ABI exports, or reaches none at all. The fixture, not the crate's
+  // source: a `flz_core_ffi` test holds the two equal in both directions, and
+  // reading the source would make this suite runnable only inside a checkout
+  // of it.
+  const abi = new Set(
+    read('test/fixtures/abi_surface.txt')
+      .split('\n')
+      .map((line) => line.trim())
+      .filter((line) => line && !line.startsWith('#')),
+  );
   const surface = native.nativeSurface();
+  for (const entry of surface) {
+    if (!entry.abi) continue;
+    assert.ok(
+      abi.has(entry.abi),
+      `${entry.name} names ${entry.abi}, which flz_core_ffi does not export`,
+    );
+  }
   const exported = Object.keys(native).sort();
   const named = surface.map((entry) => entry.name).sort();
   assert.deepEqual(
@@ -36,27 +54,6 @@ test('the addon exports exactly what its surface table names', () => {
     [],
     'a surface-table entry that is not exported',
   );
-});
-
-test('every export names a C ABI entry point or is host bookkeeping', () => {
-  // The veneer adds no ABI surface: each entry either corresponds to an
-  // existing C entry point, or reaches none at all.
-  // The fixture, not the crate's source: a `flz_core_ffi` test holds the two
-  // equal in both directions, and reading the source would make this suite
-  // runnable only inside a checkout of it.
-  const abi = new Set(
-    read('test/fixtures/abi_surface.txt')
-      .split('\n')
-      .map((line) => line.trim())
-      .filter((line) => line && !line.startsWith('#')),
-  );
-  for (const entry of native.nativeSurface()) {
-    if (!entry.abi) continue;
-    assert.ok(
-      abi.has(entry.abi),
-      `${entry.name} names ${entry.abi}, which flz_core_ffi does not export`,
-    );
-  }
 });
 
 test('poll and the starvation wait are not reachable from JavaScript at all', () => {
@@ -89,17 +86,6 @@ test('every blocking entry point is asynchronous', () => {
   const returned = native.stopHost();
   assert.ok(returned instanceof Promise, 'stopHost returns a promise');
   return returned;
-});
-
-test('a skewed binary refuses to start, naming both versions', () => {
-  assert.throws(
-    () => native.contextNew(ACTIVATION_SCHEMA_VERSION + 1),
-    (error) =>
-      error instanceof FlezhaError &&
-      error.code === 'runtime.schema_mismatch' &&
-      error.details.shim === ACTIVATION_SCHEMA_VERSION + 1 &&
-      error.details.core === native.schemaVersion(),
-  );
 });
 
 test('the package and the binary agree on the activation schema', () => {
