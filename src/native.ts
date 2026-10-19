@@ -163,6 +163,16 @@ export interface NativeEffectStart {
   result?: Buffer;
 }
 
+/** A `Response` payload as the core reads it: exactly one of `value` and `error` is set. */
+export interface NativeResponse {
+  target: string;
+  created: boolean;
+  request: Buffer;
+  value?: Buffer;
+  /** The JSON error document the call ended in. */
+  error?: string;
+}
+
 /** One diagnostic from a native thread. */
 export interface NativeLogLine {
   level: number;
@@ -255,6 +265,8 @@ export interface Native {
   lastError(): string | null;
   /** The JSON error document of `code`, its message rendered from `detailsJson`. */
   errorDocument(code: string, detailsJson: string): string;
+  /** Read a `Response` channel payload with the core's decoder. Never waits. */
+  responseDecode(payload: Uint8Array): NativeResponse;
   setLogCallback(callback: ((line: NativeLogLine) => void) | null): void;
   setHostDrainedCallback(callback: (() => void) | null): void;
   watchStdinEof(): void;

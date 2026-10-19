@@ -4,7 +4,8 @@
  */
 
 import { channelDecoder, channelEncoder } from './codec.js';
-import { FlezhaError, type ErrorFields } from './errors.js';
+import { FlezhaError } from './errors.js';
+import { loadNative } from './native.js';
 import type { ChannelCodec } from './types.js';
 
 /**
@@ -69,15 +70,6 @@ export function callLink(target: CallTarget, options: CallOptions, response: str
   };
 }
 
-/** The envelope the controller writes on a Response channel for each outcome. */
-interface Envelope {
-  target: string;
-  created: boolean;
-  request: string;
-  value?: string;
-  error?: ErrorFields;
-}
-
 /** The request encoder and the Response channel's decoder for one call's codec. */
 export function callCodec(
   codec: ChannelCodec | undefined,
@@ -85,23 +77,12 @@ export function callCodec(
 ): [(value: unknown) => Uint8Array, (bytes: Uint8Array) => Response<unknown, unknown>] {
   const decode = channelDecoder(codec ?? 'json', channel);
   const decodeResponse = (bytes: Uint8Array): Response<unknown, unknown> => {
-    const envelope = JSON.parse(Buffer.from(bytes).toString('utf8')) as Envelope;
-    const head = {
-      request: decode(Buffer.from(envelope.request, 'base64')),
-      target: envelope.target,
-      created: envelope.created === true,
-    };
-    if (envelope.error !== undefined) {
-      const error = FlezhaError.fromDocument(JSON.stringify({ error: envelope.error }));
-      if (error === null) {
-        throw new TypeError('Response channel: the envelope carries no error document');
-      }
-      return { ...head, ok: false, error };
+    const parts = loadNative().responseDecode(bytes);
+    const head = { request: decode(parts.request), target: parts.target, created: parts.created };
+    if (parts.error !== undefined) {
+      return { ...head, ok: false, error: FlezhaError.fromDocument(parts.error) as FlezhaError };
     }
-    if (typeof envelope.value !== 'string') {
-      throw new TypeError('Response channel: the envelope carries neither a value nor an error');
-    }
-    return { ...head, ok: true, value: decode(Buffer.from(envelope.value, 'base64')) };
+    return { ...head, ok: true, value: decode(parts.value as Buffer) };
   };
   return [channelEncoder(codec ?? 'json', channel), decodeResponse];
 }

@@ -119,30 +119,21 @@ test('a call on an entry channel is refused as an output on one is', () => {
   );
 });
 
-test('every envelope case of the shared fixture decodes to its expected fields', () => {
+test('an error case and a malformed payload read through the core', () => {
   const decode = caller('bytes').channels[2].decode;
   const { cases } = JSON.parse(
     readFileSync(member('test/fixtures/call_response_envelope.json'), 'utf8'),
   );
-  assert.ok(cases.length > 0);
-  for (const { name, payload, expect } of cases) {
-    const response = decode(Buffer.from(payload, 'utf8'));
-    const got = {
-      target: response.target,
-      created: response.created,
-      request: b64(response.request),
-      ok: response.ok,
-    };
-    if (response.ok) got.value = b64(response.value);
-    else {
-      assert.ok(response.error instanceof FlezhaError, name);
-      got.error_code = response.error.code;
-      got.error_class = response.error.class;
-      // The one error type prefixes its message with the code.
-      got.error_message = response.error.message.slice(`${response.error.code}: `.length);
-    }
-    assert.deepEqual(got, expect, name);
-  }
+  const { payload, expect } = cases.find(({ name }) => name === 'error_timeout');
+  const response = decode(Buffer.from(payload, 'utf8'));
+  assert.deepEqual(
+    [response.target, response.created, b64(response.request), response.error.code],
+    [expect.target, expect.created, expect.request, expect.error_code],
+  );
+  assert.throws(
+    () => decode(Buffer.from('{"target":"t","created":false}')),
+    (error) => error instanceof FlezhaError && error.code === 'call.malformed_response',
+  );
 });
 
 test('the call codec decodes a text request and a JSON answer', () => {
