@@ -18,7 +18,6 @@
 
 import type { ChannelKind, ChannelSpec, ClassSpec, ConsumerEdge, TaskNode } from './authoring.js';
 import { loadNative, type Native } from './native.js';
-import { flezhaError } from './errors.js';
 
 /** The Node SDK's byte in the core's `sdk_lang` allocation table. */
 export const SDK_LANG_NODE = 4;
@@ -62,56 +61,10 @@ export interface DerivedDecl {
   ack_granularity: 'per_input' | 'checkpoint';
 }
 
-/**
- * The nodes some chain reaches through a `key` link. The cell mode is the
- * wiring's, so one tasklet can be keyed in one relay and single in another.
- */
-function keyedConsumers(spec: ClassSpec): Set<number> {
-  const keyed = new Set<number>();
-  for (const channel of spec.channels) {
-    for (const chain of channel.chains) {
-      let key = false;
-      for (const link of chain) {
-        if (link.link === 'key') key = true;
-        else if (key && (link.link === 'into' || link.link === 'merge')) keyed.add(link.tasklet);
-      }
-    }
-  }
-  return keyed;
-}
-
-function cellMode(node: TaskNode, keyed: Set<number>): 'single' | 'static' | 'dynamic' {
-  if (node.tasklet.definition.cells) return 'static';
-  return keyed.has(node.index) ? 'dynamic' : 'single';
-}
-
 function clockOf(node: TaskNode): 'wall' | 'logical' | 'event_time' {
   const def = node.tasklet.definition;
   if (def.eventTime) return 'event_time';
   return def.logicalClock ? 'logical' : 'wall';
-}
-
-/**
- * The defect the record cannot carry: a migration is a host closure the
- * declaration never names, so the core has nothing to read.
- */
-function checkSchema(node: TaskNode): void {
-  const def = node.tasklet.definition;
-  if (def.minReadableSchemaVersion === undefined) return;
-
-  const floor = def.minReadableSchemaVersion;
-  const version = def.schemaVersion ?? 1;
-  if (floor > version) {
-    throw flezhaError('topology.schema_floor_above_version', {
-      tasklet: node.name,
-      floor,
-      version,
-    });
-  }
-  if (floor < version && !def.migrateState && !def.migrateChange) {
-    // A floor with no migration fails at the first old record instead of at startup.
-    throw flezhaError('topology.schema_floor_without_migration', { tasklet: node.name, floor });
-  }
 }
 
 /**
@@ -122,7 +75,6 @@ function checkSchema(node: TaskNode): void {
  * so the name this host addresses a channel by is the one the core registered.
  */
 export function validate(spec: ClassSpec, native: Native = loadNative()): DerivedDecl {
-  for (const node of spec.tasklets) checkSchema(node);
   const answer = native.checkClass(Buffer.from(JSON.stringify(toHostClassDecl(spec))));
   const derived = JSON.parse(answer.toString('utf8')) as DerivedDecl;
   for (const channel of derived.channels) {
@@ -162,24 +114,24 @@ function channelJson(channel: ChannelSpec): Record<string, unknown> {
   });
 }
 
-function taskletJson(spec: ClassSpec, node: TaskNode, keyed: Set<number>): Record<string, unknown> {
+function taskletJson(spec: ClassSpec, node: TaskNode): Record<string, unknown> {
   const def = node.tasklet.definition;
   return compact({
     name: node.name,
-    cell_mode: cellMode(node, keyed),
     cell_keys: def.cells?.keys ?? [],
     idle_ttl_ms: def.idleTtlSeconds === undefined ? undefined : def.idleTtlSeconds * 1000,
     max_cells: def.maxCells,
     cells_for_overridden: def.cells?.cellsFor !== undefined,
     compensate_overridden: def.compensate !== undefined,
     clock: clockOf(node),
-    mailbox_capacity: def.mailboxCapacity ?? 1024,
+    mailbox_capacity: def.mailboxCapacity,
     // A tasklet that folds no change has the empty Change type, so a logical
     // clock over it would never advance; a class that keeps nothing has it
     // for every tasklet.
     change_is_nochange: spec.durable === false || def.applyChange === undefined,
     schema_version: def.schemaVersion ?? 1,
     min_readable_schema_version: def.minReadableSchemaVersion,
+    migrates: def.migrateState !== undefined || def.migrateChange !== undefined,
   });
 }
 
@@ -189,7 +141,6 @@ function taskletJson(spec: ClassSpec, node: TaskNode, keyed: Set<number>): Recor
  * reads: a key the core learns that Node cannot spell fails that test.
  */
 export function toHostClassDecl(spec: ClassSpec): Record<string, unknown> {
-  const keyed = keyedConsumers(spec);
   return compact({
     factory_id: spec.factoryId,
     description: spec.description,
@@ -201,6 +152,6 @@ export function toHostClassDecl(spec: ClassSpec): Record<string, unknown> {
     change_format_id: FORMAT_ID_MSGPACK,
     compact_after_bytes: spec.compactAfterBytes,
     channels: spec.channels.map(channelJson),
-    tasklets: spec.tasklets.map((node) => taskletJson(spec, node, keyed)),
+    tasklets: spec.tasklets.map((node) => taskletJson(spec, node)),
   });
 }

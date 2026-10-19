@@ -102,7 +102,6 @@ test('keyBy declares a dynamic consumer and the key reaches the channel', () => 
   });
   validate(spec);
   const decl = toHostClassDecl(spec);
-  assert.equal(decl.tasklets[0].cell_mode, 'dynamic');
   assert.equal(decl.tasklets[0].idle_ttl_ms, 60_000);
   assert.equal(decl.tasklets[0].max_cells, 100);
   assert.equal(decl.channels[1].keyed, true);

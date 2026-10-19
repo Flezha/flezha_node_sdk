@@ -289,7 +289,7 @@ const Customers = defineTasklet({
   run: (order, ctx) => ctx.change({ by: order.amount }),
 });
 
-test('keyBy alone makes a tasklet dynamic, with a cell per key', async () => {
+test('keyBy alone routes a cell per key', async () => {
   const spec = defineRelay({
     factoryId: 'orders',
     channels: (c) =>
@@ -298,7 +298,6 @@ test('keyBy alone makes a tasklet dynamic, with a cell per key', async () => {
         .keyBy((order) => order.customer)
         .into(Customers),
   });
-  assert.equal(declared(spec)[0].cell_mode, 'dynamic');
 
   const deps = depsFor(spec);
   const cellOf = activationFor('orders');
@@ -315,39 +314,6 @@ test('keyBy alone makes a tasklet dynamic, with a cell per key', async () => {
     totals.push(jsonOf(read.json).total);
   }
   assert.deepEqual(totals, [8, 4]);
-});
-
-test('a keyed merge makes its tasklet dynamic', () => {
-  const spec = defineRelay({
-    factoryId: 'detector',
-    channels: (c) =>
-      c
-        .merge()
-        .from(c.input('a'), (value) => value)
-        .from(c.input('b'), (value) => value)
-        .keyBy((value) => value.symbol)
-        .into(Customers),
-  });
-  assert.equal(declared(spec)[0].cell_mode, 'dynamic');
-});
-
-test('one definition takes its mode from each wiring', () => {
-  const keyed = defineRelay({
-    factoryId: 'keyed_orders',
-    channels: (c) =>
-      c
-        .input('orders')
-        .keyBy((order) => order.customer)
-        .into(Customers),
-  });
-  const single = defineRelay({
-    factoryId: 'all_orders',
-    channels: (c) => c.input('orders').into(Customers),
-  });
-  assert.deepEqual(
-    [declared(keyed)[0].cell_mode, declared(single)[0].cell_mode],
-    ['dynamic', 'single'],
-  );
 });
 
 test('a static key set fed by keyBy is refused as topology.key_by_on_unkeyable_target', () => {

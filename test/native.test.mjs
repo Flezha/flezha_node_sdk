@@ -16,6 +16,7 @@ import {
   loadNative,
   toHostClassDecl,
 } from '../dist/esm/index.js';
+import { envPositive } from '../dist/esm/env.js';
 
 import { read } from './contract.mjs';
 
@@ -160,6 +161,20 @@ test('the monotonic clock advances', () => {
   const first = native.monotonicNanos();
   assert.equal(typeof first, 'bigint');
   assert.ok(native.monotonicNanos() >= first);
+});
+
+test('a knob is parsed by the core, which answers unset for text that is no count', () => {
+  const name = 'FLZ_TEST_KNOB';
+  for (const [raw, expected] of [
+    ['5', 5],
+    ['0', 7],
+    ['lots', 7],
+    [undefined, 7],
+  ]) {
+    if (raw === undefined) delete process.env[name];
+    else process.env[name] = raw;
+    assert.equal(envPositive(name, 7), expected, String(raw));
+  }
 });
 
 test('both module systems import the package and expose the same surface', () => {

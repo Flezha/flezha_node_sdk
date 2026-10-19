@@ -258,6 +258,8 @@ export interface Native {
   /** The ids of the relay instances bound on this runner. */
   relays(): string[];
   monotonicNanos(): bigint;
+  /** A knob's text parsed by the core's rule for `kind`; `null` when it is no value of that kind. */
+  knob(kind: string, raw: string): number | null;
   lastError(): string | null;
   /** The JSON error document of `code`, its message rendered from `detailsJson`. */
   errorDocument(code: string, detailsJson: string): string;
