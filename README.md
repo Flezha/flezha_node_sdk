@@ -11,9 +11,14 @@ passes the full conformance run in CI exactly as tier 1 does, with every capabil
 present, and is permanently supported; it is not yet run by the maintainer in a live
 deployment, so a defect specific to it is likely to be found by its users first.
 
+## Install
+
 ```bash
 npm install @flezha/sdk
 ```
+
+`@flezha/sdk` 0.1.0 is not on npm yet. Until it is, build it from a checkout as
+[`examples/echo`](examples/echo/README.md#building-from-a-checkout) shows.
 
 TypeScript-first, usable from plain JavaScript with no build step, and importable
 from both module systems: `import` from an ECMAScript module and `require` from
@@ -25,7 +30,7 @@ Node **20 or newer**. The binding targets N-API version 9, which every release i
 that window speaks. N-API is ABI-stable across Node versions, so one binary per
 platform serves every supported release and upgrading Node needs no rebuild.
 
-## The native binary
+## The native library
 
 The binary is not in this package. It ships as a per-platform package resolved
 through `optionalDependencies`, so installing fetches one binary rather than
@@ -39,19 +44,21 @@ five and needs no Rust toolchain:
 | macOS arm64         | `@flezha/sdk-darwin-arm64`    |
 | Windows x64         | `@flezha/sdk-win32-x64-msvc`  |
 
-On any other platform, or where npm resolved no platform package, the SDK
-refuses at the first load naming the host it detected, the package it looked for
-and how to build the binary. It does not fall through to a loader error, and it
-has no bundled binary to fall back on: a source build is a checkout of the
-repository with a stable Rust toolchain.
+The five come from one table, `src/platforms.ts`, which the loader also
+resolves against. On any other platform, or where npm resolved no platform
+package, the SDK refuses at the first load naming the host it detected, the
+package it looked for and how to build the binary. It has no bundled binary to
+fall back on. A source build needs a stable Rust toolchain and this package,
+not a checkout of the core: `native/` is a wrapper crate whose one dependency is
+the core at a git tag.
 
 ```bash
-cargo build -p flz_core_ffi --features napi --release
-node sdk/node/scripts/install-native.mjs
+cargo build --manifest-path native/Cargo.toml --release
+node scripts/install-native.mjs
 ```
 
-`FLEZHA_NATIVE_BINARY` points the loader at an already-built addon from
-anywhere, and is consulted before the platform package.
+`npm run build:native` runs both. `FLEZHA_NATIVE_BINARY` points the loader at an
+already-built addon from anywhere, and is consulted before the platform package.
 
 One caution about installs: npm treats an optional dependency it cannot resolve
 as a non-event, so an install that fetched no binary succeeds and prints
@@ -142,60 +149,17 @@ sleeps after six idle hours. The core
 reads the tree when the class registers: a setting under a parent that does not
 carry it is refused as `topology.unknown_field`, naming both.
 
-## Answering and calling
+## Local mode, testing and the relay API
 
-A channel ends in one `output` or one `call(...)`. The first output an input
-causes answers the outside caller of that input, and still reaches the output's
-plugins and listeners. `call(target, { deadlineMs, answerChannel?, codec? })`
-sends each value, after the chain's transforms and key, to another relay:
-a string names an instance, and `{ factory, create?, channel? }` an instance of a
-factory, the one the chain's `keyBy` names (`create: false` refuses to start it,
-`channel` picks its entry channel). `answerChannel` names the callee's channel
-whose output answers. One codec writes the request and reads the answer, JSON
-when none is named.
-
-The call waits for nothing. Its outcome arrives later as a `Response` on a new
-entry channel, `<channel>.response`, which must feed a tasklet, the calling one
-included. A `Response` carries `request`, `ok`, then `value` or `error` (a
-`FlezhaError`; `call.timeout` once the deadline passes), `target` (the callee's
-instance id) and `created` (whether this call started it).
-
-```ts
-const gateway = c.input<string>('in', { codec: 'text' }).into(Account).named('gateway');
-gateway
-  .keyBy((line) => line.split(':')[0])
-  .call({ factory: 'agent' }, { deadlineMs: 30_000, codec: 'text' })
-  .into(Outcome); // Outcome's input is Response<string, string>
-```
-
-## A relay's API
-
-Every entry channel is part of its relay's API, with its codec and the output
-that answers it. `description` says what the channel is for, and `schema` gives
-a `json` channel's input as a JSON Schema object; with zod, pass
-`z.toJSONSchema(Order)`.
-
-```ts
-c.input<Order>('place', {
-  description: 'Places an order',
-  schema: {
-    type: 'object',
-    properties: { pair: { type: 'string' }, amount: { type: 'number' } },
-    required: ['pair', 'amount'],
-  },
-})
-  .into(Place)
-  .output('placed');
-```
-
-Application code calls a channel by value with `runner.call`, beside
-`runner.send`. The value is encoded as an output with no codec encodes it, and
-the answer is a JSON value, a string for text, bytes for the binary codecs, or
-`{ accepted: true }` from a channel no output answers:
-
-```ts
-const placed = await runner.call('orders-eu', 'place', { pair: 'EUR/USD', amount: 1000 });
-```
+- **Local mode**: `LocalRelay.start` runs a relay's declared graph in your own
+  process, with no controller. See
+  [Local mode](https://github.com/flezha/flezha/blob/main/docs/public/topics/core/running_and_testing.md#local-mode).
+- **Testing**: `TaskletTestHarness`, from `@flezha/sdk/testing`, drives one
+  tasklet and checks its replay. See
+  [Check a tasklet on its own](https://github.com/flezha/flezha/blob/main/docs/public/topics/core/running_and_testing.md#check-a-tasklet-on-its-own).
+- **The relay API**: a relay's entry channels, answering a caller, `call(...)`
+  to another relay, and `runner.send` and `runner.call` from application code.
+  See [Sending and calling](https://github.com/flezha/flezha/blob/main/docs/public/topics/core/sending_and_calling.md).
 
 ## Licence
 
