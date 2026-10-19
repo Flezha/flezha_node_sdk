@@ -7,9 +7,6 @@
  * the answer as its own exception. Nothing here restates a rule the core
  * holds — a refusal added there reaches Node with no edit to this file.
  *
- * What is still refused here is what the record cannot carry: a closure the
- * declaration never names, which the core has nothing to judge.
- *
  * Static typing catches a wrong edge type before the program runs (a
  * `.into(tasklet)` whose producer's value the tasklet's declared input
  * does not accept is a compile error, pinned by the fixtures under

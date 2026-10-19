@@ -16,7 +16,6 @@ import {
   loadNative,
   toHostClassDecl,
 } from '../dist/esm/index.js';
-import { envPositive } from '../dist/esm/env.js';
 
 import { read } from './contract.mjs';
 
@@ -173,7 +172,7 @@ test('a knob is parsed by the core, which answers unset for text that is no coun
   ]) {
     if (raw === undefined) delete process.env[name];
     else process.env[name] = raw;
-    assert.equal(envPositive(name, 7), expected, String(raw));
+    assert.equal(native.knob('positive', process.env[name] ?? '') ?? 7, expected, String(raw));
   }
 });
 

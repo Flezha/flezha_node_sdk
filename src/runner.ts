@@ -14,7 +14,6 @@ import { pathToFileURL } from 'node:url';
 import type { ClassSpec } from './authoring.js';
 import { plainPayload } from './codec.js';
 import { Control } from './control.js';
-import { envPositive } from './env.js';
 import { flezhaError, isFlezhaError } from './errors.js';
 import { toHostClassDecl, validate } from './graph.js';
 import { installDeterminismWarnings, uninstallDeterminismWarnings } from './determinism.js';
@@ -102,7 +101,7 @@ export async function loadRegistry(specifiers: string[]): Promise<Registry> {
 
 export class Runner {
   private readonly specifiers: string[] = [];
-  private workerCount = envPositive('FLEZHA_NODE_WORKERS', 0);
+  private workerCount = loadNative().knob('positive', process.env.FLEZHA_NODE_WORKERS ?? '') ?? 0;
   private fetcherCount: number | undefined;
   private native: Native | null = null;
   private registry: Registry | null = null;
