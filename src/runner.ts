@@ -33,14 +33,6 @@ import { WorkerPool } from './workers.js';
 export const ACTIVATION_SCHEMA_VERSION = 4;
 
 /**
- * How long a drain has after end of file on standard input before the process
- * is terminated from a native thread. Comfortably past the poll timeout that
- * bounds how quickly a shutdown request is observed, so a healthy runner always
- * exits on its own first.
- */
-const STDIN_EOF_GRACE_MS = 5_000;
-
-/**
  * Import a handler module, naming the specifier and chaining the cause. A
  * `FlezhaError` passes through as thrown, because a graph built at module scope
  * refuses while its module is imported.
@@ -128,37 +120,38 @@ export class Runner {
    * Awaited, because registering imports a module. Before `run()` the import
    * happens here, so a module that fails to load or exports no relay
    * rejects at the line that registers it rather than inside `run()`; after
-   * `run()` it also declares every export against the running core and every
-   * worker.
+   * `run()` it also declares every export against the running core, which
+   * tells the controller, and every worker.
    */
   async registerFactory(specifier: string): Promise<void> {
     const specs = specsFrom(specifier, await importModule(specifier));
-    if (!this.native || !this.registry) {
-      this.specifiers.push(specifier);
-      return;
+    if (this.native && this.registry) {
+      for (const spec of specs) {
+        validate(spec);
+        this.registry.add(spec);
+        this.native.declareClass(Buffer.from(JSON.stringify(toHostClassDecl(spec))));
+      }
+      await this.pool?.tell({ type: 'declare', specifier });
     }
-    for (const spec of specs) {
-      validate(spec);
-      this.registry.add(spec);
-      this.native.declareClass(Buffer.from(JSON.stringify(toHostClassDecl(spec))));
-    }
-    await this.pool?.declare(specifier);
+    this.specifiers.push(specifier);
   }
 
   /**
-   * Undo a registration made before `run()` — the inverse of
-   * {@link registerFactory}, taking what it took.
-   *
-   * After `run()` it rejects: a started Node runner serves its declarations
-   * from a registry the dispatch loops and every worker already hold, and it
-   * cannot stop serving one. Rejecting says so rather than ignoring the call.
+   * Undo a registration — the inverse of {@link registerFactory}, taking what
+   * it took. After `run()` the core refuses a relay with live instances on
+   * this runner; otherwise every dispatch loop stops serving the module's
+   * relays and the controller learns of it.
    */
   async unregisterFactory(specifier: string): Promise<void> {
-    if (this.native || this.registry) {
-      throw flezhaError('runtime.factory_in_service', { module: specifier });
-    }
     const at = this.specifiers.indexOf(specifier);
     if (at < 0) throw flezhaError('runtime.class_not_registered', { factory: specifier });
+    if (this.native && this.registry) {
+      for (const spec of specsFrom(specifier, await importModule(specifier))) {
+        await this.native.undeclareClass(spec.factoryId);
+        this.registry.remove(spec.factoryId);
+      }
+      await this.pool?.tell({ type: 'remove', specifier });
+    }
     this.specifiers.splice(at, 1);
   }
 
@@ -337,7 +330,7 @@ export class Runner {
    */
   private observeShutdown(native: Native): void {
     if (!process.stdin.isTTY) {
-      native.watchStdinEof(STDIN_EOF_GRACE_MS);
+      native.watchStdinEof();
     }
   }
 

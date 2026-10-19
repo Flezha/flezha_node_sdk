@@ -93,6 +93,10 @@ export class Registry {
     return this.classes.get(factoryId);
   }
 
+  remove(factoryId: string): void {
+    this.classes.delete(factoryId);
+  }
+
   all(): RegisteredClass[] {
     return [...this.classes.values()];
   }

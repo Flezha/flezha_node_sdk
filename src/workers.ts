@@ -19,11 +19,11 @@ import { log } from './logger.js';
 import { runtimeDir } from './runtime-shim.js';
 
 /** What the parent sends a worker. */
-export type ToWorker = { type: 'declare'; specifier: string } | { type: 'stop' };
+export type ToWorker = { type: 'declare' | 'remove'; specifier: string } | { type: 'stop' };
 
 /** What a worker sends back. */
 export type FromWorker =
-  { type: 'ready' } | { type: 'declared' } | { type: 'failed'; message: string };
+  { type: 'ready' } | { type: 'changed' } | { type: 'failed'; message: string };
 
 interface Slot {
   worker: Worker;
@@ -91,15 +91,18 @@ export class WorkerPool {
     await ready;
   }
 
-  /** Declare one more class on every worker while the runner is up. */
-  async declare(specifier: string): Promise<void> {
-    this.specifiers.push(specifier);
+  /**
+   * Declare or remove a module's classes on every worker while the runner is
+   * up. The specifier list is the runner's own, so a replacement worker loads
+   * what the runner serves now.
+   */
+  async tell(change: Extract<ToWorker, { specifier: string }>): Promise<void> {
     await Promise.all(
       [...this.slots.values()].map(
         (slot) =>
           new Promise<void>((resolve, reject) => {
             const onMessage = (message: FromWorker) => {
-              if (message.type === 'declared') {
+              if (message.type === 'changed') {
                 slot.worker.off('message', onMessage);
                 resolve();
               } else if (message.type === 'failed') {
@@ -108,7 +111,7 @@ export class WorkerPool {
               }
             };
             slot.worker.on('message', onMessage);
-            slot.worker.postMessage({ type: 'declare', specifier } satisfies ToWorker);
+            slot.worker.postMessage(change satisfies ToWorker);
           }),
       ),
     );

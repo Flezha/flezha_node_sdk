@@ -1114,7 +1114,7 @@ test('unregisterFactory undoes a pre-run registration and names an unknown one',
   );
 });
 
-test('a post-start registerFactory declares against the core and the workers', async () => {
+test('a factory changed after start is served, then refused as unregistered', async () => {
   const dir = tempDir('flezha-late-');
   const module = join(dir, 'late.mjs');
   writeFileSync(
@@ -1126,23 +1126,37 @@ test('a post-start registerFactory declares against the core and the workers', a
   // A started runner is one that holds a core and a registry. Standing those in
   // is what lets the post-start branch run with no controller anywhere.
   const declared = [];
+  const undeclared = [];
   const runner = createRunner('late_ns');
   runner.registry = new Registry();
   runner.native = {
     declareClass(bytes) {
       declared.push(JSON.parse(Buffer.from(bytes).toString()).factory_id);
     },
+    async undeclareClass(factoryId) {
+      undeclared.push(factoryId);
+    },
   };
+  const deps = { registry: runner.registry, bridge: fixture().bridge };
+  const late = activationFor('late_form');
 
   await runner.registerFactory(module);
-
   assert.deepEqual(declared, ['late_form'], 'the class reached the core');
-  assert.ok(runner.registry.get('late_form'), 'and the registry the dispatch loops serve from');
-
-  await assert.rejects(
-    () => runner.unregisterFactory(module),
-    (error) => error.code === 'runtime.factory_in_service' && error.details.module === module,
+  const served = await answer(late({ cellKey: undefined, items: [inputItem('hi')] }), deps);
+  assert.deepEqual(
+    served.effects.map((effect) => effect.verdict),
+    ['ok'],
   );
+
+  await runner.unregisterFactory(module);
+  assert.deepEqual(undeclared, ['late_form'], 'the removal reached the core');
+  const refused = await answer(
+    late({ token: 2n, cellKey: undefined, items: [inputItem('hi')] }),
+    deps,
+  );
+  assert.equal(refused.outcome, 'failed');
+  assert.equal(refused.error, 'no class registered for factory `late_form`');
+  assert.equal(refused.nonRetryable, true);
 });
 
 test('an identity part over its length is refused naming it', () => {

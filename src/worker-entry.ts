@@ -15,7 +15,7 @@
 
 import { parentPort, workerData } from 'node:worker_threads';
 
-import { dispatch, dispatchDeps } from './dispatch.js';
+import { type Registry, dispatch, dispatchDeps } from './dispatch.js';
 import { validate } from './graph.js';
 import { LoopWatch } from './loop-watch.js';
 import { log } from './logger.js';
@@ -60,23 +60,28 @@ async function main(): Promise<void> {
       port.close();
       return;
     }
-    void (async () => {
-      try {
-        for (const spec of specsFrom(message.specifier, await importModule(message.specifier))) {
-          validate(spec);
-          registry.add(spec);
-        }
-        port.postMessage({ type: 'declared' } satisfies FromWorker);
-      } catch (error) {
-        port.postMessage({
-          type: 'failed',
-          message: String(error),
-        } satisfies FromWorker);
-      }
-    })();
+    void change(registry, message).then(
+      () => port.postMessage({ type: 'changed' } satisfies FromWorker),
+      (error) => port.postMessage({ type: 'failed', message: String(error) } satisfies FromWorker),
+    );
   });
 
   port.postMessage({ type: 'ready' } satisfies FromWorker);
+}
+
+/** Declare or remove a module's classes on this worker's registry. */
+async function change(
+  registry: Registry,
+  message: Extract<ToWorker, { specifier: string }>,
+): Promise<void> {
+  for (const spec of specsFrom(message.specifier, await importModule(message.specifier))) {
+    if (message.type === 'remove') {
+      registry.remove(spec.factoryId);
+    } else {
+      validate(spec);
+      registry.add(spec);
+    }
+  }
 }
 
 main().catch((error) => {

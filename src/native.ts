@@ -199,6 +199,8 @@ export interface Native {
   contextNew(shimSchemaVersion: number): void;
   contextFree(): void;
   declareClass(json: Buffer): void;
+  /** After start, waits for the runner's live-instance check. */
+  undeclareClass(factoryId: string): Promise<void>;
   /** Judge a declaration without registering it; answers the derived one. */
   checkClass(json: Buffer): Buffer;
   start(namespace: string): Promise<void>;
@@ -261,7 +263,7 @@ export interface Native {
   errorDocument(code: string, detailsJson: string): string;
   setLogCallback(callback: ((line: NativeLogLine) => void) | null): void;
   setHostDrainedCallback(callback: (() => void) | null): void;
-  watchStdinEof(graceMs: number): void;
+  watchStdinEof(): void;
   registerDispatch(callback: (activation: NativeActivation) => void): number;
   unregisterDispatch(id: number): void;
   dispatchLoopCount(): number;
