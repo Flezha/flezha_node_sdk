@@ -10,13 +10,14 @@
  *
  * State is held in memory and nothing is durable. Durability, plugins,
  * placement and migration, the dead-letter queue, observability export,
- * authz and multi-runner scale all need a controller; the run says so on
- * stderr every time it starts. The "Local mode" section of
+ * authz and multi-runner scale all need a controller; the run says so
+ * through the SDK's logger every time it starts. The "Local mode" section of
  * https://github.com/flezha/flezha/blob/main/docs/public/topics/core/running_and_testing.md#local-mode
  * walks through it.
  */
 import { Registry, dispatch, dispatchDeps } from './dispatch.js';
 import { toHostClassDecl, validate } from './graph.js';
+import { logNativeLine } from './logger.js';
 import { loadNative, type CoreOutput, type Native } from './native.js';
 import { ACTIVATION_SCHEMA_VERSION } from './runner.js';
 import type { ClassSpec } from './authoring.js';
@@ -51,6 +52,7 @@ export class LocalRelay {
   static start(spec: ClassSpec): LocalRelay {
     const native = loadNative();
     native.contextNew(ACTIVATION_SCHEMA_VERSION);
+    native.setLogCallback(logNativeLine);
     const run = new LocalRelay(native);
     try {
       // `validate` is what writes the derived channel names and consumer
@@ -69,6 +71,7 @@ export class LocalRelay {
       native.startHost();
       run.#draining = run.#drain();
     } catch (failure) {
+      native.setLogCallback(null);
       native.contextFree();
       throw failure;
     }
@@ -135,6 +138,7 @@ export class LocalRelay {
       if (this.#dispatchId !== null) {
         this.#native.unregisterDispatch(this.#dispatchId);
       }
+      this.#native.setLogCallback(null);
       this.#native.contextFree();
     }
   }

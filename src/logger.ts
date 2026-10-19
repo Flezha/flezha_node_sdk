@@ -55,10 +55,19 @@ export function log(): Logger {
   return active;
 }
 
-/** The native side's levels, as the addon's log callback reports them. */
+/**
+ * The native side's levels, as the addon's log callback reports them. A
+ * core notice of level 4 is the local-mode banner, logged at `error` so no
+ * level hides it.
+ */
 export function levelFromNative(level: number): LogLevel {
   if (level >= 3) return 'error';
   if (level === 2) return 'warn';
   if (level === 1) return 'info';
   return 'debug';
+}
+
+/** A line from the native side, the core's notices included, into the active logger. */
+export function logNativeLine(line: { level: number; message: string }): void {
+  log()[levelFromNative(line.level)](line.message);
 }

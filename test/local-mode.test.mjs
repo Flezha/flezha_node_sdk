@@ -10,11 +10,32 @@ import assert from 'node:assert/strict';
 import { dirname } from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
-import { LocalRelay, defineRelay, defineTasklet } from '../dist/esm/index.js';
+import { LocalRelay, defineRelay, defineTasklet, setLogger } from '../dist/esm/index.js';
 
 import { read } from './contract.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
+
+// Every line the SDK logs in this file, as `<level> <message>`: each run logs
+// the core's local-mode banner, asserted below.
+const logged = [];
+const capture = (level) => (message) => logged.push(`${level} ${message}`);
+setLogger({
+  debug: capture('debug'),
+  info: capture('info'),
+  warn: capture('warn'),
+  error: capture('error'),
+});
+
+/** Resolves once `wanted` has been logged; the addon delivers on the event loop. */
+async function loggedLine(wanted) {
+  for (const deadline = Date.now() + 10_000; Date.now() < deadline;) {
+    const line = logged.find((l) => l.startsWith(wanted));
+    if (line) return line;
+    await new Promise((resolve) => setImmediate(resolve));
+  }
+  assert.fail(`never logged: ${wanted}`);
+}
 const utf8 = (bytes) => Buffer.from(bytes).toString('utf8');
 const bytes = (text) => Buffer.from(text, 'utf8');
 
@@ -70,6 +91,16 @@ function scenario() {
   }
   return { lines, expected: totals };
 }
+
+test('the local-mode banner reaches the host logger at error, which no level hides', async () => {
+  logged.length = 0;
+  const run = LocalRelay.start(WordCount);
+  try {
+    await loggedLine('error LOCAL MODE: state is held in memory');
+  } finally {
+    await run.close();
+  }
+});
 
 test('a declared graph runs locally and releases the recorded output', async () => {
   const { lines, expected } = scenario();

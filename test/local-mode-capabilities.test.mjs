@@ -16,9 +16,9 @@
 // the language layer produces.
 
 import assert from 'node:assert/strict';
-import test from 'node:test';
+import test, { after } from 'node:test';
 
-import { LocalRelay } from '../dist/esm/index.js';
+import { LocalRelay, setLogger } from '../dist/esm/index.js';
 
 import { manifest, testAppModule } from './test-app.mjs';
 
@@ -26,6 +26,23 @@ const fixtures = await testAppModule('fixtures.mjs');
 const declared = manifest().fixtures;
 
 const utf8 = (bytes) => Buffer.from(bytes).toString('utf8');
+
+// Each run logs the core's local-mode banner, and nothing else may be logged.
+const logged = [];
+const capture = (level) => (message) => logged.push(`${level} ${message}`);
+setLogger({
+  debug: capture('debug'),
+  info: capture('info'),
+  warn: capture('warn'),
+  error: capture('error'),
+});
+after(() => {
+  const banner = 'error LOCAL MODE: ';
+  assert.deepEqual(
+    logged.filter((line) => !line.startsWith(banner)),
+    [],
+  );
+});
 
 /** Run one class over `inputs` on `channel`, and return what `output` released. */
 async function release(relay, channel, sink, inputs, budgetMs = 20_000) {

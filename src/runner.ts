@@ -19,7 +19,7 @@ import { flezhaError, isFlezhaError } from './errors.js';
 import { toHostClassDecl, validate } from './graph.js';
 import { installDeterminismWarnings, uninstallDeterminismWarnings } from './determinism.js';
 import { Registry, dispatch, dispatchDeps } from './dispatch.js';
-import { consoleLogger, levelFromNative, log, setLogger, type Logger } from './logger.js';
+import { consoleLogger, log, logNativeLine, setLogger, type Logger } from './logger.js';
 import { loadNative, type Native } from './native.js';
 import { LoopWatch } from './loop-watch.js';
 import { importSpecifier } from './runtime-shim.js';
@@ -257,7 +257,7 @@ export class Runner {
     // Before anything else: a binary built against a different activation
     // schema is refused here, with no controller connection attempted.
     native.contextNew(ACTIVATION_SCHEMA_VERSION);
-    native.setLogCallback((line) => log()[levelFromNative(line.level)](line.message));
+    native.setLogCallback(logNativeLine);
 
     installDeterminismWarnings();
     this.teardown.push(uninstallDeterminismWarnings);
