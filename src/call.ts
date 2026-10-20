@@ -70,6 +70,9 @@ export function callLink(target: CallTarget, options: CallOptions, response: str
   };
 }
 
+/** The last decoded Response's `[target, request, result]` lengths, `created` and `answered`. */
+const parts = new Uint32Array(5);
+
 /** The request encoder and the Response channel's decoder for one call's codec. */
 export function callCodec(
   codec: ChannelCodec | undefined,
@@ -77,12 +80,17 @@ export function callCodec(
 ): [(value: unknown) => Uint8Array, (bytes: Uint8Array) => Response<unknown, unknown>] {
   const decode = channelDecoder(codec ?? 'json', channel);
   const decodeResponse = (bytes: Uint8Array): Response<unknown, unknown> => {
-    const parts = loadNative().responseDecode(bytes);
-    const head = { request: decode(parts.request), target: parts.target, created: parts.created };
-    if (parts.error !== undefined) {
-      return { ...head, ok: false, error: FlezhaError.fromDocument(parts.error) as FlezhaError };
+    const data = Buffer.allocUnsafe(bytes.length);
+    loadNative().responseDecode(bytes, data, parts);
+    const [targetEnd, requestEnd] = [parts[0], parts[0] + parts[1]];
+    const [end, created] = [requestEnd + parts[2], parts[3] === 1];
+    const target = data.toString('utf8', 0, targetEnd);
+    const head = { request: decode(data.subarray(targetEnd, requestEnd)), target, created };
+    if (parts[4] === 0) {
+      const error = FlezhaError.fromDocument(data.toString('utf8', requestEnd, end));
+      return { ...head, ok: false, error: error as FlezhaError };
     }
-    return { ...head, ok: true, value: decode(parts.value as Buffer) };
+    return { ...head, ok: true, value: decode(data.subarray(requestEnd, end)) };
   };
   return [channelEncoder(codec ?? 'json', channel), decodeResponse];
 }
