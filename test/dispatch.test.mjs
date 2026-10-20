@@ -971,7 +971,7 @@ test('a keyed entry payload is decoded and transformed once', async () => {
         decoded.push(Buffer.from(bytes).toString());
         return decoded.at(-1);
       };
-      c.input('trades', { decode })
+      c.input('trades', decode)
         .flatMap((line) => line.split(','))
         .keyBy((trade) => trade.split(':')[0])
         .into(record('decoded_once_record'));
