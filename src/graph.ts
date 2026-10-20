@@ -77,6 +77,7 @@ export function validate(spec: ClassSpec, native: Native = loadNative()): Derive
   for (const channel of derived.channels) {
     const declared = spec.channels[channel.index] as ChannelSpec;
     declared.name = channel.name;
+    declared.derivedKind = channel.kind;
     // The runtime edges ARE the core's answer: it says which chains produced a
     // consumer and in what order, and the host attaches the closures that
     // chain declared.

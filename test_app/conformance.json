@@ -133,7 +133,8 @@
       "call_orders",
       "call_agent",
       "call_gateway",
-      "call_tool_session"
+      "call_tool_session",
+      "call_orders_steps"
     ],
     "parts": ["part_echo", "part_echo_steps"],
     "partitioned": ["partition_pass", "dynamic_cell", "keyed_loop_steps"],

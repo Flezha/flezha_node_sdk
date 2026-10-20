@@ -58,16 +58,23 @@ export const callPricing = defineRelay({
   },
 });
 
-export const callOrders = defineRelay({
-  factoryId: 'call_orders',
-  channels: (c) => {
-    c.input('in', { codec: 'text' })
-      .into(step('order_ask', (input, ctx) => ctx.emit(input)))
-      .named('order')
-      .call('pricing', { ...CALL, answerChannel: 'quotes' })
-      .into(step('order_priced', (response, ctx) => ctx.emit(render(response))))
-      .output('priced');
-  },
+const ordersGraph = (c) => {
+  c.input('in', { codec: 'text' })
+    .into(step('order_ask', (input, ctx) => ctx.emit(input)))
+    .named('order')
+    .call('pricing', { ...CALL, answerChannel: 'quotes' })
+    .into(step('order_priced', (response, ctx) => ctx.emit(render(response))))
+    .output('priced');
+};
+
+export const callOrders = defineRelay({ factoryId: 'call_orders', channels: ordersGraph });
+
+/** `call_orders` as a session: `order_ask`'s channel ends only in the call. */
+export const callOrdersSteps = defineRelay({
+  factoryId: 'call_orders_steps',
+  steps: { each: 'per_input' },
+  ...sessionKnobs,
+  channels: ordersGraph,
 });
 
 export const callAgent = defineRelay({

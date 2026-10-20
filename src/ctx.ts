@@ -207,11 +207,13 @@ export class Invocation implements Ctx<unknown, unknown, unknown> {
         : flezhaError('runtime.no_output_channel', { tasklet: this.input.node.name });
     }
     for (const channel of targets) {
-      // In steps a value rides the edge path to its first consumer, and an
-      // inter-tasklet terminal's value to the core as the pass's handoff (a
-      // chained loop's carry); a plugin-bound terminal releases nothing there.
+      // In steps a value rides the edge path to its first consumer, and a
+      // terminal the core derived inter-tasklet hands it to the core as the
+      // pass's handoff (a chained loop's carry); any other releases nothing.
       if (runsInSteps(this.input.spec)) {
-        const consumer = channel.consumers[0]?.tasklet ?? this.handoffProducer(channel);
+        const consumer =
+          channel.consumers[0]?.tasklet ??
+          (channel.derivedKind === 'inter_task' ? channel.producer : undefined);
         if (consumer !== undefined) this.outputs.push(this.stepsOutput(channel, consumer, value));
       } else {
         for (const edge of channel.consumers) {
@@ -241,13 +243,6 @@ export class Invocation implements Ctx<unknown, unknown, unknown> {
     return applyTransforms(end.transforms, value).map((request) =>
       this.pluginOutput(channel, request, options, end.keyBy?.(request)),
     );
-  }
-
-  /** The producer of an inter-tasklet channel nothing consumes; the core reads no consumer there. */
-  private handoffProducer(channel: ChannelSpec): number | undefined {
-    return channel.kind === 'inter_task' && channel.sink === undefined
-      ? channel.producer
-      : undefined;
   }
 
   private stepsOutput(channel: ChannelSpec, consumer: number, value: unknown): NativeOutput {

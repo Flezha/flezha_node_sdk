@@ -93,6 +93,8 @@ export interface ChannelSpec {
   chainEdges: Map<number, ConsumerEdge>;
   /** The consumer edges the core derived. Empty until `validate` runs. */
   consumers: ConsumerEdge[];
+  /** The kind the core derived, which `kind` (as declared) need not be. */
+  derivedKind?: ChannelKind;
   overflow: OverflowPolicy;
   retryMax?: number;
   retryBackoffMs?: number;

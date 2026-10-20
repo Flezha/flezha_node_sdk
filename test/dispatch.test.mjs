@@ -605,6 +605,26 @@ test("a steps terminal nothing consumes hands its value to the core as the pass'
   );
 });
 
+const CallEndSpec = defineRelay({
+  factoryId: 'steps_call_end',
+  steps: { each: 'per_input' },
+  channels: (c) => {
+    c.input('in')
+      .into(StepsProducer)
+      .named('ask')
+      .call('pricing', { deadlineMs: 1_000 })
+      .into(StepsProducer);
+  },
+});
+
+test('a steps terminal ending in a call hands the core no edge output', async () => {
+  const { effects } = await ran(CallEndSpec, { items: [inputItem(3)] });
+  assert.deepEqual(
+    effects[0].outputs.map((o) => [o.target, o.pluginChannel]),
+    [['plugin', 'ask']],
+  );
+});
+
 test("an edge payload is the encoder's own bytes, with nothing layered on top", async () => {
   const result = await answer(
     activationFor('steps_emit_stream')({ items: [inputItem(10)] }),
