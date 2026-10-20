@@ -227,8 +227,8 @@ test('the JSON handover carries a bigint and a byte array without narrowing', as
   assert.deepEqual([...state.blob], [9]);
 });
 
-/** The keys a prepare crossing on `channel` answers, one set per text payload. */
-async function keysAt(spec, channel, ...payloads) {
+/** What a prepare crossing on `channel` answers, one answer per text payload. */
+async function preparedAt(spec, channel, ...payloads) {
   const result = await answer(
     activationFor(spec.factoryId)({
       kind: 'key_request',
@@ -243,7 +243,13 @@ async function keysAt(spec, channel, ...payloads) {
     depsFor(spec),
   );
   assert.equal(result.outcome, 'prepared');
-  return result.prepared.map((answerFor) => answerFor.keys);
+  return result.prepared;
+}
+
+/** Every key a prepare crossing's values name, one list per text payload. */
+async function keysAt(spec, channel, ...payloads) {
+  const answers = await preparedAt(spec, channel, ...payloads);
+  return answers.map((answerFor) => answerFor.values.flatMap((value) => value.keys));
 }
 
 test('a prepare crossing answers one key per payload, in order', async () => {
@@ -304,7 +310,10 @@ test('one payload failing its prepare does not fail the others', async () => {
     }),
     depsFor(spec),
   );
-  assert.deepEqual(result.prepared[0], { keys: ['a'], eventTime: 5n });
+  assert.deepEqual(
+    [result.prepared[0].values.map((value) => value.keys), result.prepared[0].eventTime],
+    [[['a']], 5n],
+  );
   assert.match(result.prepared[1].error, /no event time/);
 });
 
@@ -925,17 +934,41 @@ test('a fan of none is a drop: the input is consumed and reaches no handler', as
   );
 });
 
-test('a fan followed by keyBy answers every key at the crossing, once each', async () => {
-  assert.deepEqual(await keysAt(fixtures.transformChain, 0, 'a:1,b:2,c:3,a:4'), [['A', 'B', 'C']]);
+test('a fan followed by keyBy answers every value with its key at the crossing', async () => {
+  assert.deepEqual(await keysAt(fixtures.transformChain, 0, 'a:1,b:2,c:3,a:4'), [
+    ['A', 'B', 'C', 'A'],
+  ]);
 });
 
-// The core hands the whole payload to every key the crossing answered.
-test('a cell handed a fanned payload runs only the values keyed to it', async () => {
-  const { effects } = await ranText(fixtures.transformChain, 'A', 'a:1,b:2,c:3,a:4');
-  assert.deepEqual(sunk(effects), ['A:1', 'A:4']);
+// The crossing decodes the payload and runs the chain once; each Cell runs its
+// own prepared values with neither the entry decoder nor the edge.
+test('a keyed entry payload is decoded and transformed once', async () => {
+  const decoded = [];
+  const spec = defineRelay({
+    factoryId: 'decoded_once',
+    channels: (c) => {
+      const decode = (bytes) => {
+        decoded.push(Buffer.from(bytes).toString());
+        return decoded.at(-1);
+      };
+      c.input('trades', { decode })
+        .flatMap((line) => line.split(','))
+        .keyBy((trade) => trade.split(':')[0])
+        .into(record('decoded_once_record'));
+    },
+  });
+  const [{ values }] = await preparedAt(spec, 0, 'a:1,a:2,b:3');
+  const handed = {};
+  for (const cell of ['a', 'b']) {
+    const mine = values.filter((value) => value.keys[0] === cell).map((value) => value.bytes);
+    const item = { form: 'prepared', values: mine };
+    handed[cell] = (await ranText(spec, cell, 'a:1,a:2,b:3', item)).handed;
+  }
+  assert.deepEqual(handed, { a: ['a:1', 'a:2'], b: ['b:3'] });
+  assert.deepEqual(decoded, ['a:1,a:2,b:3']);
 });
 
-test('a fan into a static consumer runs each value on the cells it names, and [] on none', async () => {
+test('a fan into a static consumer answers each value with the cells it names', async () => {
   const keys = ['a', 'b'];
   const cellsFor = (trade) => keys.filter((key) => trade.startsWith(`${key}:`));
   const spec = defineRelay({
@@ -946,10 +979,16 @@ test('a fan into a static consumer runs each value on the cells it names, and []
         .into(record('static_fan_record', { cells: { keys, cellsFor } }));
     },
   });
-  const payload = 'a:1,b:2,z:3,a:4';
-  assert.deepEqual((await ranText(spec, 'a', payload)).handed, ['a:1', 'a:4']);
-  assert.deepEqual((await ranText(spec, 'b', payload)).handed, ['b:2']);
-  assert.deepEqual(await keysAt(spec, 0, payload), [['a', 'b']]);
+  const [{ values }] = await preparedAt(spec, 0, 'a:1,b:2,z:3,a:4');
+  assert.deepEqual(
+    values.map((value) => [value.keys, decodeValue(value.bytes)]),
+    [
+      [['a'], 'a:1'],
+      [['b'], 'b:2'],
+      [[], 'z:3'],
+      [['a'], 'a:4'],
+    ],
+  );
 });
 
 test('a producer releases one frame per fanned value, and an array from map is one value', async () => {

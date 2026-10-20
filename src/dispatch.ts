@@ -10,7 +10,7 @@
  */
 
 import { applyTransforms } from './authoring.js';
-import type { ChannelSpec, ClassSpec, ConsumerEdge, TaskNode } from './authoring.js';
+import type { ChannelSpec, ClassSpec, TaskNode } from './authoring.js';
 import { decodeValue, encodeValue, fromStateJson, toStateJson } from './codec.js';
 import { Invocation, NO_ITEM, type CoreBridge } from './ctx.js';
 import { invocation } from './determinism.js';
@@ -21,7 +21,10 @@ import type {
   NativeActivation,
   NativeActivationResult,
   NativeItemEffect,
+  NativeKeyRequest,
   NativePrepareAnswer,
+  NativePreparedValue,
+  NativeWorkItem,
 } from './native.js';
 import { foldRestore, rawState } from './state.js';
 
@@ -288,21 +291,16 @@ async function runWork(
             );
             return;
           }
-          const channel = registered.spec.channels[item.channel ?? 0] as ChannelSpec | undefined;
-          // This node's own edge off the channel: a transform chain declared
-          // before one `into` belongs to that consumer and to no other. It
-          // runs only on a payload the core marks untransformed: a flow
-          // producer already ran it, and running it again would compose the
-          // chain with itself.
-          const edge =
-            item.form === 'untransformed'
-              ? channel?.consumers.find((each) => each.tasklet === node.index)
-              : undefined;
-          const values = entryValues(channel, edge, item.payload ?? Buffer.alloc(0));
+          // The prepare crossing decoded a keyed payload and ran this node's
+          // edge already; each value comes encoded as a value between tasklets.
+          const values =
+            item.form === 'prepared'
+              ? (item.values ?? []).map((bytes) => decodeValue(bytes))
+              : entryValues(registered, node, item);
           // A filtered value is consumed and reaches no handler, and a fanned
           // one reaches it once per value. Either way the input produces one
           // effect, so its offset advances once and nothing is retried.
-          for (const input of valuesForCell(edge, definition, activation.cellKey, values)) {
+          for (const input of values) {
             await ctx.handle(input);
           }
         },
@@ -353,67 +351,32 @@ function failureOf(error: unknown): Pick<NativeItemEffect, 'verdict' | 'message'
 }
 
 /**
- * `edgeValues` for a delivered item: a failure on an entry channel (the wire's
- * bytes, not a producer's) is the entrance's, and is reported as such.
+ * A delivered payload as the handler sees it: decoded, then through this
+ * node's own edge off the channel when the core marks it untransformed. A flow
+ * producer already ran that edge, and running it again would compose the
+ * chain with itself. A failure on an entry channel (the wire's bytes, not a
+ * producer's) is the entrance's, and is reported as such.
  */
-function entryValues(
-  channel: ChannelSpec | undefined,
-  edge: ConsumerEdge | undefined,
-  payload: Uint8Array,
-): unknown[] {
+function entryValues(registered: RegisteredClass, node: TaskNode, item: NativeWorkItem): unknown[] {
+  const channel = registered.spec.channels[item.channel ?? 0] as ChannelSpec | undefined;
+  const edge =
+    item.form === 'untransformed'
+      ? channel?.consumers.find((each) => each.tasklet === node.index)
+      : undefined;
   try {
-    return edgeValues(channel, edge, payload);
+    return applyTransforms(
+      edge?.transforms ?? [],
+      decoded(channel, item.payload ?? Buffer.alloc(0)),
+    );
   } catch (error) {
     if (channel === undefined || channel.kind === 'entry') throw new UnreadableEntry(error);
     throw error;
   }
 }
 
-/**
- * What one payload becomes on `edge`: decoded as its channel reads it, then run
- * through the edge's transforms. The crossing and the delivery both start here,
- * so a cell keeps exactly the values the crossing keyed.
- */
-function edgeValues(
-  channel: ChannelSpec | undefined,
-  edge: ConsumerEdge | undefined,
-  payload: Uint8Array,
-): unknown[] {
-  const decoded = channel?.decode ? channel.decode(payload) : decodeValue(payload);
-  return applyTransforms(edge?.transforms ?? [], decoded);
-}
-
-/**
- * The cell keys one value routes to: the edge's key, else the tasklet's
- * static fan-out, else null for a consumer that routes by neither.
- */
-function keysOf(
-  edge: ConsumerEdge | undefined,
-  definition: TaskNode['tasklet']['definition'] | undefined,
-  value: unknown,
-): string[] | null {
-  if (edge?.keyBy) return [edge.keyBy(value)];
-  const cellsFor = definition?.cells?.cellsFor;
-  return cellsFor ? cellsFor(value) : null;
-}
-
-/**
- * The values of one delivered payload that belong to this cell. The core
- * hands the whole payload to every key its crossing answered, so each cell
- * keeps the values the crossing keyed to it. With no edge evaluated here, the
- * producer already keyed the payload to this cell.
- */
-function valuesForCell(
-  edge: ConsumerEdge | undefined,
-  definition: TaskNode['tasklet']['definition'],
-  cellKey: string | undefined,
-  values: unknown[],
-): unknown[] {
-  if (edge === undefined || cellKey === undefined) return values;
-  return values.filter((value) => {
-    const keys = keysOf(edge, definition, value);
-    return keys === null || keys.includes(cellKey);
-  });
+/** A payload as its channel reads it: the crossing and the delivery both start here. */
+function decoded(channel: ChannelSpec | undefined, payload: Uint8Array): unknown {
+  return channel?.decode ? channel.decode(payload) : decodeValue(payload);
 }
 
 function restoreFold(
@@ -456,35 +419,9 @@ function prepare(
     return failed(activation.token, 'a key request carried no payloads', true);
   }
   const channel = registered.spec.channels[request.channel] as ChannelSpec | undefined;
-  // The crossing answers one key set for the whole payload, which the core
-  // hands every keyed consumer, so it reads the first keyed consumer's edge:
-  // an unkeyed one's filter must not drop the key.
-  const tasklets = registered.spec.tasklets;
-  const consumers = channel?.consumers ?? [];
-  const edge =
-    consumers.find(
-      (e) => e.keyBy !== undefined || tasklets[e.tasklet]?.tasklet.definition.cells?.cellsFor,
-    ) ?? consumers[0];
-  const node = edge === undefined ? undefined : tasklets[edge.tasklet];
-  const definition = node?.tasklet.definition;
-
   const answers: NativePrepareAnswer[] = request.payloads.map((payload) => {
     try {
-      const values = edgeValues(channel, edge, payload);
-      // A filtered payload answers no key. For a dynamic consumer that is what
-      // tells the core not to route it at all — the drop happens before an
-      // cell is minted rather than inside one.
-      if (values.length === 0) return { keys: [] };
-
-      // A fanned payload reaches every cell one of its values keys to.
-      const keys = request.wantKeys
-        ? [...new Set(values.flatMap((value) => keysOf(edge, definition, value) ?? []))]
-        : [];
-      const eventTime =
-        request.wantEventTime && definition?.eventTime
-          ? BigInt(definition.eventTime(values[0] as never))
-          : undefined;
-      return { keys, eventTime };
+      return prepared(registered, channel, request, decoded(channel, payload));
     } catch (error) {
       // A per-payload refusal enters the input channel's retry ladder; it is
       // not a failure of the crossing, whose other payloads still have answers.
@@ -493,6 +430,37 @@ function prepare(
   });
 
   return { token: activation.token, outcome: 'prepared', prepared: answers };
+}
+
+/**
+ * One decoded payload's answer: every value each keyed consumer's own edge
+ * yields, with the Cells it names, and the event time the first timed consumer
+ * reads off its first value. A payload its chains filter answers no value, so
+ * the core mints no Cell for it.
+ */
+function prepared(
+  registered: RegisteredClass,
+  channel: ChannelSpec | undefined,
+  request: NativeKeyRequest,
+  value: unknown,
+): NativePrepareAnswer {
+  const values: NativePreparedValue[] = [];
+  let eventTime: bigint | undefined;
+  for (const edge of channel?.consumers ?? []) {
+    const definition = registered.spec.tasklets[edge.tasklet]!.tasklet.definition;
+    const cellsFor = definition.cells?.cellsFor;
+    const keyed = request.wantKeys && (edge.keyBy !== undefined || cellsFor !== undefined);
+    const timed = request.wantEventTime && eventTime === undefined && definition.eventTime;
+    if (!keyed && !timed) continue;
+    const yielded = applyTransforms(edge.transforms, value);
+    if (timed && yielded.length > 0) eventTime = BigInt(definition.eventTime!(yielded[0] as never));
+    if (!keyed) continue;
+    for (const each of yielded) {
+      const keys = edge.keyBy ? [edge.keyBy(each)] : cellsFor!(each);
+      values.push({ consumer: edge.tasklet, keys, bytes: encodeValue(each) });
+    }
+  }
+  return { values, eventTime };
 }
 
 async function compensate(

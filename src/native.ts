@@ -33,7 +33,9 @@ export interface NativeWorkItem {
   /** The core-evaluated declared clock for this item; what `ctx.now()` serves. */
   now?: bigint;
   /** Whether the consuming edge's chain still applies to the payload. */
-  form?: 'untransformed' | 'transformed';
+  form?: 'untransformed' | 'transformed' | 'prepared';
+  /** A `prepared` payload's values for this Cell, each encoded as a value between tasklets. */
+  values?: Buffer[];
   timerKind?: 'event_time' | 'processing_time';
   scheduledAt?: bigint;
 }
@@ -132,11 +134,18 @@ export interface NativeItemEffect {
 }
 
 export interface NativePrepareAnswer {
-  keys?: string[];
+  values?: NativePreparedValue[];
   eventTime?: bigint;
   /** Present when this payload's prepare failed; the retry ladder takes it. */
   error?: string;
   nonRetryable?: boolean;
+}
+
+/** One value a keyed consumer's edge yielded at the crossing, and the Cells it reaches. */
+export interface NativePreparedValue {
+  consumer: number;
+  keys: string[];
+  bytes: Uint8Array;
 }
 
 export type NativeOutcome =

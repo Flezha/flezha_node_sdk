@@ -101,6 +101,7 @@ const RECORDS = {
   DLQ_ENTRY: 'NativeDlqEntry',
   ITEM_EFFECT: 'NativeItemEffect',
   PREPARE_ANSWER: 'NativePrepareAnswer',
+  PREPARED_VALUE: 'NativePreparedValue',
   RESULT: 'NativeActivationResult',
 };
 
