@@ -46,8 +46,8 @@ const WithCodec = defineTasklet({
 
 test('a live input runs the function and a replay is served its result', async () => {
   const harness = TaskletTestHarness.of(Asks);
-  const live = await harness.input('live-q');
-  const replayed = await harness.input('live-q', { replay: true });
+  const live = await harness.feed('live-q');
+  const replayed = await harness.feed('live-q', { replay: true });
 
   assert.equal(calls.get('live-q'), 1, 'the replay did not run the function');
   assert.deepEqual(live.emits, [{ answer: 'live-q', call: 1 }]);
@@ -56,8 +56,8 @@ test('a live input runs the function and a replay is served its result', async (
 
 test('an async function is awaited', async () => {
   const harness = TaskletTestHarness.of(AsksAsync);
-  const live = await harness.input('async-q');
-  const replayed = await harness.input('async-q', { replay: true });
+  const live = await harness.feed('async-q');
+  const replayed = await harness.feed('async-q', { replay: true });
 
   assert.equal(calls.get('async-q'), 1);
   assert.deepEqual(live.emits, [{ answer: 'async-q', call: 1 }]);
@@ -66,7 +66,7 @@ test('an async function is awaited', async () => {
 
 test('a codec encodes and decodes the result', async () => {
   const harness = TaskletTestHarness.of(WithCodec);
-  assert.deepEqual((await harness.input('Hammer')).emits, ['hammer']);
+  assert.deepEqual((await harness.feed('Hammer')).emits, ['hammer']);
 });
 
 test('a replay that runs a function fails naming the effect', async () => {
@@ -79,9 +79,9 @@ test('a replay that runs a function fails naming the effect', async () => {
     },
   });
   const harness = TaskletTestHarness.of(OneMore);
-  await harness.input('q');
+  await harness.feed('q');
   await assert.rejects(
-    harness.input('q', { replay: true }),
+    harness.feed('q', { replay: true }),
     (error) =>
       error instanceof EffectReplayMismatch &&
       /effect 'model' ran its function/.test(error.message),
@@ -102,9 +102,9 @@ test('a call made around the effect on replay fails naming it', async () => {
     },
   });
   const harness = TaskletTestHarness.of(Around);
-  await harness.input('q');
+  await harness.feed('q');
   await assert.rejects(
-    harness.input('q', { replay: true }),
+    harness.feed('q', { replay: true }),
     (error) =>
       error instanceof EffectReplayMismatch &&
       /effect 'model' was never asked for/.test(error.message),
@@ -118,7 +118,7 @@ for (const name of ['', 'm'.repeat(256)]) {
       run: (_input, ctx) => ctx.effect(name, () => assert.fail('a refused call runs nothing')),
     });
     await assert.rejects(
-      TaskletTestHarness.of(BadName).input('q'),
+      TaskletTestHarness.of(BadName).feed('q'),
       (error) =>
         error instanceof FlezhaError &&
         error.code === 'effect.bad_name' &&
@@ -133,7 +133,7 @@ test('an effect inside an effect is refused', async () => {
     run: (_input, ctx) => ctx.effect('outer', () => ctx.effect('inner', () => 1)),
   });
   await assert.rejects(
-    TaskletTestHarness.of(Nested).input('q'),
+    TaskletTestHarness.of(Nested).feed('q'),
     (error) => error instanceof FlezhaError && error.code === 'effect.nested',
   );
 });
@@ -153,8 +153,8 @@ test('a failing function keeps nothing and its error propagates', async () => {
     },
   });
   const harness = TaskletTestHarness.of(Fails);
-  await assert.rejects(harness.input('q'), /down/);
-  assert.deepEqual((await harness.input('q')).emits, ['second'], 'the failed call kept nothing');
+  await assert.rejects(harness.feed('q'), /down/);
+  assert.deepEqual((await harness.feed('q')).emits, ['second'], 'the failed call kept nothing');
 });
 
 test('a result the controller kept first is what the call returns, and the run is ended once', async () => {

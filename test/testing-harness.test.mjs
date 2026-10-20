@@ -36,11 +36,11 @@ test('a defined handler runs with no runner and no controller', async () => {
 
 test('inputs, emits and the recorded change log are inspectable', async () => {
   const harness = TaskletTestHarness.of(Window, { cellKey: 'AAPL' });
-  assert.deepEqual((await harness.input(3)).emits, []);
-  assert.deepEqual((await harness.input(6)).emits, []);
-  assert.deepEqual((await harness.input(9)).emits, [6]);
-  assert.deepEqual((await harness.input(12)).emits, [9]);
-  assert.deepEqual(harness.currentState.samples, [6, 9, 12]);
+  assert.deepEqual((await harness.feed(3)).emits, []);
+  assert.deepEqual((await harness.feed(6)).emits, []);
+  assert.deepEqual((await harness.feed(9)).emits, [6]);
+  assert.deepEqual((await harness.feed(12)).emits, [9]);
+  assert.deepEqual(harness.state.samples, [6, 9, 12]);
   assert.deepEqual(harness.recordedChanges, [
     { push: 3 },
     { push: 6 },
@@ -70,8 +70,8 @@ test('the replay gate reports both states when the fold does not rebuild one', a
     },
   });
   const harness = TaskletTestHarness.of(Impure);
-  await harness.input(2);
-  await harness.input(2);
+  await harness.feed(2);
+  await harness.feed(2);
   assert.throws(
     () => harness.replayEquals(),
     (error) =>
@@ -98,21 +98,21 @@ test('a timer fires with ctx.now() at its scheduled time', async () => {
     },
   });
   const harness = TaskletTestHarness.of(Session, { now: 1_000n });
-  const applied = await harness.input('hello');
+  const applied = await harness.feed('hello');
   assert.deepEqual(applied.timers, [
     { kind: 'processing_time', scheduledAt: 6_000n, register: true },
   ]);
   await harness.fireTimer('processing_time', 6_000n);
-  assert.equal(harness.currentState.closedAt, 6_000n);
+  assert.equal(harness.state.closedAt, 6_000n);
   harness.replayEquals();
 });
 
 test('the clock the next input is served at can be advanced', async () => {
   const Clocked = defineTasklet({ name: 'clocked', run: (_i, ctx) => ctx.emit(ctx.now()) });
   const harness = TaskletTestHarness.of(Clocked, { now: 10n });
-  assert.deepEqual((await harness.input(1)).emits, [10n]);
+  assert.deepEqual((await harness.feed(1)).emits, [10n]);
   harness.advanceBy(5n);
-  assert.deepEqual((await harness.input(1)).emits, [15n]);
+  assert.deepEqual((await harness.feed(1)).emits, [15n]);
   harness.advanceTo(100n);
   assert.equal(harness.now, 100n);
 });
@@ -122,8 +122,8 @@ test('a harness can be built from a restore payload', async () => {
     snapshot: encodeValue({ samples: [1, 2] }),
     changes: [encodeValue({ push: 3 })],
   });
-  assert.deepEqual(harness.currentState.samples, [1, 2, 3]);
-  assert.deepEqual((await harness.input(4)).emits, [3]);
+  assert.deepEqual(harness.state.samples, [1, 2, 3]);
+  assert.deepEqual((await harness.feed(4)).emits, [3]);
 });
 
 test('a payload stamped at an older version reaches the declared migration', () => {
@@ -145,7 +145,7 @@ test('a payload stamped at an older version reaches the declared migration', () 
     snapshot: new Uint8Array([1, 2, 3]),
     fromVersion: 1,
   });
-  assert.deepEqual(harness.currentState, { items: 3, currency: 'EUR' });
+  assert.deepEqual(harness.state, { items: 3, currency: 'EUR' });
 });
 
 test('stableId is distinct within an invocation and stable across a replay', async () => {
@@ -156,8 +156,8 @@ test('stableId is distinct within an invocation and stable across a replay', asy
       seen.push(ctx.stableId(), ctx.stableId());
     },
   });
-  await TaskletTestHarness.of(Ids, { cellKey: 'k' }).input(1);
-  await TaskletTestHarness.of(Ids, { cellKey: 'k' }).input(1);
+  await TaskletTestHarness.of(Ids, { cellKey: 'k' }).feed(1);
+  await TaskletTestHarness.of(Ids, { cellKey: 'k' }).feed(1);
   assert.notEqual(seen[0], seen[1], 'two calls in one invocation differ');
   assert.equal(seen[0], seen[2], 'the first call of a replayed invocation matches');
   assert.equal(seen[1], seen[3]);
@@ -172,7 +172,7 @@ test('a reserved metadata key is refused naming the key', async () => {
     },
   });
   await assert.rejects(
-    () => TaskletTestHarness.of(Meta).input(1),
+    () => TaskletTestHarness.of(Meta).feed(1),
     (error) => error.code === 'runtime.reserved_metadata_key' && error.details.key === 'flz.key',
   );
 });
@@ -188,7 +188,7 @@ test('a string and an object output are reported exactly as emitted', async () =
     },
   });
   const harness = TaskletTestHarness.of(Emitter);
-  assert.deepEqual((await harness.input('hi')).emits, [{ said: 'hi' }, 'echo: hi']);
+  assert.deepEqual((await harness.feed('hi')).emits, [{ said: 'hi' }, 'echo: hi']);
 });
 
 test('a spawn answers a handle already resolved to a new instance', async () => {
@@ -201,7 +201,7 @@ test('a spawn answers a handle already resolved to a new instance', async () => 
         await ctx.spawnSteps('worker', input, { id: 'w1' }).wait(),
       ]),
   });
-  const { emits } = await TaskletTestHarness.of(Spawner).input('p');
+  const { emits } = await TaskletTestHarness.of(Spawner).feed('p');
   assert.deepEqual(emits, [
     [
       { id: 'worker-aaaaaaaaaaaaaaab', outcome: 'spawned' },

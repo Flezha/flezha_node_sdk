@@ -124,13 +124,13 @@ export interface RestorePayload {
   fromVersion?: number;
 }
 
-export interface InputOptions {
+export interface FeedOptions {
   /** Replay the next live input, in order: its `ctx.effect` calls are served what it kept. */
   replay?: boolean;
 }
 
 /** One invocation's recorded effects. */
-export interface Invoked<TOut, TChange> {
+export interface Outcome<TOut, TChange> {
   emits: TOut[];
   changes: TChange[];
   timers: Array<{ kind: TimerKind; scheduledAt: bigint; register: boolean }>;
@@ -138,13 +138,13 @@ export interface Invoked<TOut, TChange> {
 }
 
 /**
- * A `ctx.effect` keeps its result on a live `input`; the n-th
- * `input(value, { replay: true })` replays the n-th live input and is served
+ * A `ctx.effect` keeps its result on a live `feed`; the n-th
+ * `feed(value, { replay: true })` replays the n-th live input and is served
  * what it kept, and throws `EffectReplayMismatch` when a function runs there
  * or a kept result is never asked for.
  */
 export class TaskletTestHarness<TIn, TOut, TState, TChange> {
-  private state: TState;
+  private cellState: TState;
   private time: bigint;
   private readonly log: TChange[] = [];
   private readonly emitted: TOut[] = [];
@@ -170,7 +170,7 @@ export class TaskletTestHarness<TIn, TOut, TState, TChange> {
     private readonly options: HarnessOptions<TState>,
     state: TState,
   ) {
-    this.state = state;
+    this.cellState = state;
     this.time = options.now ?? 0n;
     // Wired by the production builder rather than by a hand-written topology
     // literal: one entry channel in, one plugin channel out. A field the
@@ -239,15 +239,15 @@ export class TaskletTestHarness<TIn, TOut, TState, TChange> {
       changeSeq: BigInt(this.log.length),
       now,
       replay,
-      state: this.state,
+      state: this.cellState,
       token: 0n,
       item: 0,
       bridge: this.bridge,
     });
   }
 
-  private collect(ctx: Invocation): Invoked<TOut, TChange> {
-    this.state = rawState(ctx.currentState) as TState;
+  private collect(ctx: Invocation): Outcome<TOut, TChange> {
+    this.cellState = rawState(ctx.currentState) as TState;
 
     const emits = ctx.outputs.map((output) => decodeValue<TOut>(output.payload));
     const changes = ctx.changes.map((bytes) =>
@@ -272,7 +272,7 @@ export class TaskletTestHarness<TIn, TOut, TState, TChange> {
    * that reads an ambient clock is reported here rather than only in
    * production.
    */
-  async input(value: TIn, options: InputOptions = {}): Promise<Invoked<TOut, TChange>> {
+  async feed(value: TIn, options: FeedOptions = {}): Promise<Outcome<TOut, TChange>> {
     if (options.replay) {
       const kept = this.keptEffects[this.replays++] ?? new Map();
       this.effects = { ...liveEffects(), kept, replaying: true };
@@ -322,7 +322,7 @@ export class TaskletTestHarness<TIn, TOut, TState, TChange> {
   }
 
   /** Fire a timer. `ctx.now()` inside the callback is the scheduled time. */
-  async fireTimer(kind: TimerKind, scheduledAt: bigint): Promise<Invoked<TOut, TChange>> {
+  async fireTimer(kind: TimerKind, scheduledAt: bigint): Promise<Outcome<TOut, TChange>> {
     const onTimer = this.tasklet.definition.onTimer;
     if (!onTimer) {
       throw flezhaError('runtime.timer_without_on_timer', { tasklet: this.tasklet.name });
@@ -348,8 +348,8 @@ export class TaskletTestHarness<TIn, TOut, TState, TChange> {
   }
 
   /** The cell's state as the handler left it. */
-  get currentState(): TState {
-    return this.state;
+  get state(): TState {
+    return this.cellState;
   }
 
   /** Every change recorded so far, in order. */
@@ -374,8 +374,8 @@ export class TaskletTestHarness<TIn, TOut, TState, TChange> {
     const definition = this.tasklet.definition;
     const replayed = definition.initState?.(this.options.cellKey) as TState;
     for (const change of this.log) definition.applyChange?.(replayed, change);
-    if (!isDeepStrictEqual(replayed, this.state)) {
-      throw new ReplayMismatch(this.tasklet.name, this.state, replayed);
+    if (!isDeepStrictEqual(replayed, this.cellState)) {
+      throw new ReplayMismatch(this.tasklet.name, this.cellState, replayed);
     }
   }
 }

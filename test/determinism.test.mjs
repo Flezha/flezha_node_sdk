@@ -31,7 +31,7 @@ test('an ambient clock read names the file, the line and the replacement', async
         return undefined;
       },
     });
-    await TaskletTestHarness.of(Ambient).input(1);
+    await TaskletTestHarness.of(Ambient).feed(1);
     const warning = lines.find((line) => line.includes('Date.now()'));
     assert.ok(warning, `expected a warning, got ${JSON.stringify(lines)}`);
     assert.match(warning, /ambient_clock/);
@@ -55,7 +55,7 @@ test('new Date() with no argument is reported, and with one is not', async () =>
         return undefined;
       },
     });
-    await TaskletTestHarness.of(Mixed).input(1);
+    await TaskletTestHarness.of(Mixed).feed(1);
     assert.equal(lines.filter((line) => line.includes('new Date()')).length, 1);
   } finally {
     uninstallDeterminismWarnings();
@@ -74,7 +74,7 @@ test('random identifiers are reported and the invocation still completes', async
         ctx.emit('finished');
       },
     });
-    const applied = await TaskletTestHarness.of(Random).input(1);
+    const applied = await TaskletTestHarness.of(Random).feed(1);
     assert.deepEqual(applied.emits, ['finished'], 'the warning does not abort the invocation');
     assert.ok(lines.some((line) => line.includes('Math.random()')));
     assert.ok(lines.some((line) => line.includes('crypto.randomUUID()')));
@@ -95,7 +95,7 @@ test('one site reports once, however hot the loop', async () => {
         return undefined;
       },
     });
-    await TaskletTestHarness.of(Hot).input(1);
+    await TaskletTestHarness.of(Hot).feed(1);
     assert.equal(lines.filter((line) => line.includes('Math.random()')).length, 1);
   } finally {
     uninstallDeterminismWarnings();

@@ -370,8 +370,8 @@ test('state read but never folded is allowed; recording a change is not', async 
     },
   });
   const harness = TaskletTestHarness.of(ReadOnly);
-  assert.deepEqual((await harness.input('default')).emits, ['default']);
-  assert.deepEqual((await harness.input('other')).emits, []);
+  assert.deepEqual((await harness.feed('default')).emits, ['default']);
+  assert.deepEqual((await harness.feed('other')).emits, []);
 
   const Recording = defineTasklet({
     name: 'recording',
@@ -379,7 +379,7 @@ test('state read but never folded is allowed; recording a change is not', async 
     run: (_input, ctx) => ctx.change({ by: 1 }),
   });
   await assert.rejects(
-    () => TaskletTestHarness.of(Recording).input(1),
+    () => TaskletTestHarness.of(Recording).feed(1),
     coded('runtime.change_without_apply_change'),
   );
 });
@@ -918,7 +918,7 @@ test('the router hands each key each document once, on that key’s own traffic'
   const document = { limit: 5 };
 
   // Traffic before any document has nothing to hand on.
-  assert.deepEqual((await harness.input({ key: 'A' })).emits, []);
+  assert.deepEqual((await harness.feed({ key: 'A' })).emits, []);
 
   const emits = [];
   for (const input of [
@@ -929,15 +929,15 @@ test('the router hands each key each document once, on that key’s own traffic'
     { document: { limit: 5 } },
     { key: 'A' },
   ]) {
-    emits.push((await harness.input(input)).emits);
+    emits.push((await harness.feed(input)).emits);
   }
   assert.deepEqual(emits, [[], [{ key: 'A', document }], [{ key: 'B', document }], [], []]);
-  assert.deepEqual(harness.currentState, { document, version: 1, delivered: { A: 1, B: 1 } });
+  assert.deepEqual(harness.state, { document, version: 1, delivered: { A: 1, B: 1 } });
 
   const changed = { limit: 7 };
-  assert.deepEqual((await harness.input({ document: changed })).emits, []);
-  assert.deepEqual((await harness.input({ key: 'A' })).emits, [{ key: 'A', document: changed }]);
-  assert.equal(harness.currentState.version, 2);
+  assert.deepEqual((await harness.feed({ document: changed })).emits, []);
+  assert.deepEqual((await harness.feed({ key: 'A' })).emits, [{ key: 'A', document: changed }]);
+  assert.equal(harness.state.version, 2);
   harness.replayEquals();
 });
 
@@ -1042,8 +1042,8 @@ test('a short form with no output wires its entry into the tasklet and no plugin
   assert.equal(stateOnly.channels[0].decode(Buffer.from('tick')), 'tick', 'a codec needs no sink');
 
   const harness = TaskletTestHarness.of(stateOnly.tasklets[0].tasklet);
-  await harness.input('one');
-  assert.deepEqual(harness.currentState, { seen: ['one'] });
+  await harness.feed('one');
+  assert.deepEqual(harness.state, { seen: ['one'] });
 });
 
 test('every tasklet field a short form carries reaches its generated tasklet', () => {
@@ -1204,7 +1204,7 @@ test('a short form under a factory id already held is refused across runs', () =
 
 test("a tasklet's body is its run field", async () => {
   const Upcase = defineTasklet({ name: 'upcase', run: upper });
-  assert.deepEqual((await TaskletTestHarness.of(Upcase).input('abc')).emits, ['ABC']);
+  assert.deepEqual((await TaskletTestHarness.of(Upcase).feed('abc')).emits, ['ABC']);
 });
 
 test('a tasklet carrying the old handle field is refused, naming run', () => {

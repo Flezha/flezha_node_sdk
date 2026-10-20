@@ -114,5 +114,5 @@ test('a harness restore fills the cell it reads', async () => {
     { relay: 'order_a' },
   );
 
-  assert.deepEqual(harness.currentState, { seen: ['r'] });
+  assert.deepEqual(harness.state, { seen: ['r'] });
 });

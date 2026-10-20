@@ -20,9 +20,9 @@ const Counter = defineTasklet({
 
 test('a change folds live and the handler reads the folded state', async () => {
   const harness = TaskletTestHarness.of(Counter);
-  assert.deepEqual((await harness.input(3)).emits, [3]);
-  assert.deepEqual((await harness.input(4)).emits, [7]);
-  assert.equal(harness.currentState.total, 7);
+  assert.deepEqual((await harness.feed(3)).emits, [3]);
+  assert.deepEqual((await harness.feed(4)).emits, [7]);
+  assert.equal(harness.state.total, 7);
 });
 
 test('a direct assignment is refused naming the field and the change path', async () => {
@@ -38,7 +38,7 @@ test('a direct assignment is refused naming the field and the change path', asyn
   });
   const harness = TaskletTestHarness.of(Bad);
   await assert.rejects(
-    () => harness.input(1),
+    () => harness.feed(1),
     (error) =>
       error instanceof FlezhaError &&
       error.code === 'runtime.state_mutated' &&
@@ -60,16 +60,16 @@ test('the guard reaches a nested field, where the loss is the same', async () =>
   });
   const harness = TaskletTestHarness.of(Nested);
   await assert.rejects(
-    () => harness.input(1),
+    () => harness.feed(1),
     (error) => error.code === 'runtime.state_mutated' && error.details.path === 'tags.last',
   );
 });
 
 test('applyChange retains its ability to mutate', async () => {
   const harness = TaskletTestHarness.of(Counter);
-  await harness.input(5);
+  await harness.feed(5);
   harness.replayEquals();
-  assert.equal(harness.currentState.total, 5);
+  assert.equal(harness.state.total, 5);
 });
 
 test('deleting a field is refused too', async () => {
@@ -84,7 +84,7 @@ test('deleting a field is refused too', async () => {
     },
   });
   await assert.rejects(
-    () => TaskletTestHarness.of(Deleter).input(1),
+    () => TaskletTestHarness.of(Deleter).feed(1),
     (error) => error instanceof FlezhaError && error.code === 'runtime.state_mutated',
   );
 });

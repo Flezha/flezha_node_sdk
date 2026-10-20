@@ -78,8 +78,8 @@ test('a value leaves a tasklet only through the context, under the dispatcher', 
 
 test('a value leaves a tasklet only through the context, under the harness', async () => {
   const harness = TaskletTestHarness.of(TwiceThenNothing);
-  assert.deepEqual((await harness.input('first')).emits, ['a', 'b']);
-  assert.deepEqual((await harness.input('second')).emits, []);
+  assert.deepEqual((await harness.feed('first')).emits, ['a', 'b']);
+  assert.deepEqual((await harness.feed('second')).emits, []);
 });
 
 // Plain JavaScript runs no type checker, so each of these loads and runs.
@@ -105,7 +105,7 @@ test('a value run, onTimer or compensate returns is ignored under the dispatcher
 });
 
 test('a value run returns is ignored under the harness', async () => {
-  assert.deepEqual((await TaskletTestHarness.of(Returning).input('hello')).emits, []);
+  assert.deepEqual((await TaskletTestHarness.of(Returning).feed('hello')).emits, []);
 });
 
 // --- the tasklet's settings are fields of its definition --------------------
@@ -199,7 +199,7 @@ test('the initial state comes from initState, with the cell key a keyed cell has
     applyChange: () => {},
     ...emitting,
   });
-  assert.deepEqual(TaskletTestHarness.of(Totals, { cellKey: 'A' }).currentState, {
+  assert.deepEqual(TaskletTestHarness.of(Totals, { cellKey: 'A' }).state, {
     key: 'A',
     total: 0,
   });
@@ -208,7 +208,7 @@ test('the initial state comes from initState, with the cell key a keyed cell has
     depsFor(keyedInto(Totals)),
   );
   assert.deepEqual(jsonOf(read.json), { key: 'A', total: 0 });
-  assert.deepEqual(TaskletTestHarness.of(Totals).currentState, { key: undefined, total: 0 });
+  assert.deepEqual(TaskletTestHarness.of(Totals).state, { key: undefined, total: 0 });
 });
 
 test('a fold with no initial state is refused, naming the tasklet', () => {
@@ -230,12 +230,12 @@ test('a change is plain data, folded live and folded again on restore', async ()
     run: (at, ctx) => ctx.change({ kind: 'event', at }),
   });
   const live = TaskletTestHarness.of(Events);
-  const { changes } = await live.input(5);
+  const { changes } = await live.feed(5);
   assert.deepEqual(changes, [{ kind: 'event', at: 5 }]);
   live.replayEquals();
 
   const restored = TaskletTestHarness.withPayload(Events, { changes: changes.map(encodeValue) });
-  assert.deepEqual(restored.currentState, live.currentState);
+  assert.deepEqual(restored.state, live.state);
 });
 
 test('a retired or unknown tasklet field is refused, naming it and the tasklet', () => {
@@ -453,7 +453,7 @@ test('a short form keeps a hook it inherits, as it keeps its own', () => {
 
 test('a short form keeps a run it inherits', async () => {
   const { tasklet } = defineRelay(new InheritedShortForm()).tasklets[0];
-  assert.deepEqual((await TaskletTestHarness.of(tasklet).input('v')).emits, [
+  assert.deepEqual((await TaskletTestHarness.of(tasklet).feed('v')).emits, [
     { value: 'v', state: { n: 1 } },
   ]);
 });

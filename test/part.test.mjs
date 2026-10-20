@@ -121,10 +121,10 @@ test('a refused part fails the invocation as any throw does', async () => {
 
 test('the harness encodes a part and drops it', async () => {
   const harness = TaskletTestHarness.of(Parts([]));
-  assert.deepEqual((await harness.input(2)).emits, ['done:2']);
+  assert.deepEqual((await harness.feed(2)).emits, ['done:2']);
 
   const loop = {};
   loop.self = loop;
   const Unencodable = defineTasklet({ name: 'unencodable', run: (_, ctx) => ctx.part(loop) });
-  await assert.rejects(TaskletTestHarness.of(Unencodable).input(1));
+  await assert.rejects(TaskletTestHarness.of(Unencodable).feed(1));
 });
