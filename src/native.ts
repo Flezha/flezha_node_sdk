@@ -196,7 +196,8 @@ export interface NativeHostStats {
 /**
  * The addon's exports. Every blocking entry point is a promise whose work runs
  * on a thread the addon owns — never on this event loop, and never on libuv's
- * shared pool. `poll` and `waitStarvation` are absent by design.
+ * shared pool. `poll` and the pool supervisor are absent by design: the addon's
+ * own fetchers poll, sized by the core's pool governor.
  */
 export interface Native {
   schemaVersion(): number;

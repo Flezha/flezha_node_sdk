@@ -56,12 +56,12 @@ test('the addon exports exactly its surface table, each row an entry point or ho
   );
 });
 
-test('poll and the starvation wait are not reachable from JavaScript at all', () => {
+test('poll and the pool supervisor are not reachable from JavaScript at all', () => {
   // The rule this closes: under the default overflow policy a completion parks
   // until the consumer's mailbox drains, and the consumer drains only when its
   // handler runs. An event loop parked inside the core is the one thread that
   // could run it.
-  for (const forbidden of ['poll', 'waitStarvation', 'flzCorePoll']) {
+  for (const forbidden of ['poll', 'poolSupervise', 'flzCorePoll']) {
     assert.equal(native[forbidden], undefined, `${forbidden} must not be exported`);
   }
 });
