@@ -483,6 +483,34 @@ export const sessionTimeout = defineRelay({
   },
 });
 
+// -- timer_cap --------------------------------------------------------------
+//
+// The core's refusal of a Cell's timers when the item settles (`cell_timers`):
+// past the cap of two pending timers, or an event-time timer under a tasklet
+// whose clock is not event time. `event` asks for the event-time timer, a
+// number `n` for a processing-time one `n` hours ahead; the change follows.
+
+const TimerCap = defineTasklet({
+  name: 'timer_cap_tasklet',
+  maxTimersPerCell: 2,
+  initState: () => ({ touched: [] }),
+  applyChange: (state, change) => {
+    state.touched.push(change.touched);
+  },
+  run: (input, ctx) => {
+    if (input === 'event') ctx.timerAtEventTime(1);
+    else ctx.timerAfter(Number(input) * 3_600_000);
+    ctx.change({ touched: input });
+  },
+});
+
+export const timerCap = defineRelay({
+  factoryId: 'timer_cap',
+  channels: (c) => {
+    c.input('input', { codec: 'text' }).into(TimerCap).output('kafka');
+  },
+});
+
 // -- bounded_mailbox_{drop_nothing,drop_newest,drop_oldest} -----------------
 
 const boundedMailboxTasklet = (name) =>

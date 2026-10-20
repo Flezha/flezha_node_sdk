@@ -122,6 +122,7 @@ function taskletJson(spec: ClassSpec, node: TaskNode): Record<string, unknown> {
     compensate_overridden: def.compensate !== undefined,
     clock: clockOf(node),
     mailbox_capacity: def.mailboxCapacity,
+    max_timers_per_cell: def.maxTimersPerCell,
     // A tasklet that folds no change has the empty Change type, so a logical
     // clock over it would never advance; a class that keeps nothing has it
     // for every tasklet.

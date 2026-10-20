@@ -120,6 +120,7 @@ const TASKLET_FIELDS = Object.keys({
   eventTime: true,
   logicalClock: true,
   mailboxCapacity: true,
+  maxTimersPerCell: true,
   schemaVersion: true,
   minReadableSchemaVersion: true,
   migrateState: true,

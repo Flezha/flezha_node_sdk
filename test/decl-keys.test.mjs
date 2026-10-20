@@ -39,6 +39,7 @@ function fullyDeclaredFlow() {
     maxCells: 64,
     eventTime: (input) => BigInt(input.at),
     mailboxCapacity: 512,
+    maxTimersPerCell: 16,
     schemaVersion: 2,
     minReadableSchemaVersion: 1,
     migrateState: (_from, bytes) => ({ seen: bytes.length }),

@@ -211,6 +211,8 @@ export interface TaskletDefinition<TIn, TOut, TState, TChange> {
   logicalClock?: boolean;
 
   mailboxCapacity?: number;
+  /** The pending timers one cell may hold. Unset is 10 000. */
+  maxTimersPerCell?: number;
 
   /** Stamped into every durable record this tasklet writes. */
   schemaVersion?: number;

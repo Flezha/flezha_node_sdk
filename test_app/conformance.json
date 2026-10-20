@@ -83,7 +83,7 @@
       "checkpoint_batched_store",
       "bench_checkpoint"
     ],
-    "cell_timers": ["session_timeout"],
+    "cell_timers": ["session_timeout", "timer_cap"],
     "correction_window": ["candle"],
     "keyed_channels": ["partition_pass"],
     "steps": [
