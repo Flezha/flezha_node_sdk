@@ -686,13 +686,13 @@ test('the same graph on a flow class releases one output per consumer', async ()
 // producer already applied the edge, so delivery applies nothing; a steps relay
 // stage released the value raw, so delivery is the one application.
 
-/** Hand `payload` to `tasklet` on the `handoff` channel and answer what it saw. */
-async function delivered(spec, tasklet, payload) {
+/** Hand `[payload, form]` items to `tasklet` on the `handoff` channel and answer what it saw. */
+async function delivered(spec, tasklet, ...items) {
   const { effects, handed } = await ran(spec, {
     tasklet,
-    items: [inputItem(0, { channel: 1, payload })],
+    items: items.map(([payload, form]) => inputItem(0, { channel: 1, payload, form })),
   });
-  assert.equal(effects[0].verdict, 'ok');
+  assert.ok(effects.every((effect) => effect.verdict === 'ok'));
   return handed;
 }
 
@@ -702,7 +702,18 @@ test('a flow inter-task edge applies its map exactly once', async () => {
     depsFor(FlowTwinSpec),
   );
   const mapped = produced.effects[0].outputs[0];
-  assert.deepEqual(await delivered(FlowTwinSpec, 1, mapped.payload), [11]);
+  assert.deepEqual(await delivered(FlowTwinSpec, 1, [mapped.payload, 'transformed']), [11]);
+});
+
+// The consumer applies its edge to what the core marks untransformed only,
+// whatever the relay's run: an entry payload and a steps release arrive so, a
+// stream producer's output arrives transformed.
+test('the input form comes from the core', async () => {
+  const value = Buffer.from(encodeValue(10));
+  assert.deepEqual(
+    await delivered(FlowTwinSpec, 1, [value, 'untransformed'], [value, 'transformed']),
+    [11, 10],
+  );
 });
 
 test('a steps consumer applies its own edge exactly once, at delivery', async () => {
@@ -713,8 +724,8 @@ test('a steps consumer applies its own edge exactly once, at delivery', async ()
   const released = stage.effects[0].outputs[0].payload;
   // One released value reaches BOTH children — the driver's fan-out — and each
   // evaluates its own edge here.
-  assert.deepEqual(await delivered(StepsSpec, 1, released), [11]);
-  assert.deepEqual(await delivered(StepsSpec, 2, released), [10]);
+  assert.deepEqual(await delivered(StepsSpec, 1, [released, 'untransformed']), [11]);
+  assert.deepEqual(await delivered(StepsSpec, 2, [released, 'untransformed']), [10]);
 });
 
 // `ctx.complete` rides the item's effect on either kind: which kind runs the

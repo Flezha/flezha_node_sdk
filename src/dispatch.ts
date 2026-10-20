@@ -9,7 +9,7 @@
  * a rejected promise and an encoding failure all reach the same guard.
  */
 
-import { applyTransforms, runsInSteps } from './authoring.js';
+import { applyTransforms } from './authoring.js';
 import type { ChannelSpec, ClassSpec, ConsumerEdge, TaskNode } from './authoring.js';
 import { decodeValue, encodeValue, fromStateJson, toStateJson } from './codec.js';
 import { Invocation, NO_ITEM, type CoreBridge } from './ctx.js';
@@ -290,17 +290,14 @@ async function runWork(
           }
           const channel = registered.spec.channels[item.channel ?? 0] as ChannelSpec | undefined;
           // This node's own edge off the channel: a transform chain declared
-          // before one `into` belongs to that consumer and to no other. It is
-          // evaluated here only for a payload that reached us untransformed —
-          // an entry payload, whose producer is the wire, or a steps relay
-          // stage's released value. A flow producer evaluated it as its
-          // activation completed, and evaluating it again would compose the
+          // before one `into` belongs to that consumer and to no other. It
+          // runs only on a payload the core marks untransformed: a flow
+          // producer already ran it, and running it again would compose the
           // chain with itself.
-          const untransformed =
-            channel === undefined || channel.kind === 'entry' || runsInSteps(registered.spec);
-          const edge = untransformed
-            ? channel?.consumers.find((each) => each.tasklet === node.index)
-            : undefined;
+          const edge =
+            item.form === 'untransformed'
+              ? channel?.consumers.find((each) => each.tasklet === node.index)
+              : undefined;
           const values = entryValues(channel, edge, item.payload ?? Buffer.alloc(0));
           // A filtered value is consumed and reaches no handler, and a fanned
           // one reaches it once per value. Either way the input produces one

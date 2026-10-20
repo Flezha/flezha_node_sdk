@@ -103,6 +103,7 @@ export const inputItem = (value, overrides = {}) => ({
   metadata: [],
   replay: false,
   now: 1_000n,
+  form: 'untransformed',
   ...overrides,
 });
 

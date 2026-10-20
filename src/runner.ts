@@ -29,7 +29,7 @@ import { WorkerPool } from './workers.js';
  * creation and compared with the native binary's, so a skewed pair fails
  * naming both versions before any controller connection is attempted.
  */
-export const ACTIVATION_SCHEMA_VERSION = 6;
+export const ACTIVATION_SCHEMA_VERSION = 7;
 
 /**
  * Import a handler module, naming the specifier and chaining the cause. A

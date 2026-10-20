@@ -32,6 +32,8 @@ export interface NativeWorkItem {
   replay?: boolean;
   /** The core-evaluated declared clock for this item; what `ctx.now()` serves. */
   now?: bigint;
+  /** Whether the consuming edge's chain still applies to the payload. */
+  form?: 'untransformed' | 'transformed';
   timerKind?: 'event_time' | 'processing_time';
   scheduledAt?: bigint;
 }
