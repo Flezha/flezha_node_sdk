@@ -461,111 +461,12 @@ test('a duplicate factory id fails at the second declaration, naming it', () => 
   );
 });
 
-// --- output identity stamps -------------------------------------------------
+// --- a keyed plugin output ---------------------------------------------------
 //
-// One invocation, several emits: the per-emit ordinal is the half a single-emit
-// assertion cannot see, and the e2e golden checks stamp NAMES only.
+// The core stamps a keyed output's identity at settle; the host hands it the
+// key and the user's metadata only.
 
-const StampEmitter = defineTasklet({
-  name: 'stamp_emitter',
-  run: (input, ctx) => {
-    if (input === 'twice') {
-      ctx.emitTo('keyed_out', 'a');
-      ctx.emitTo('keyed_out', 'b');
-    } else {
-      ctx.emitTo('plain_out', 'p');
-      ctx.emitTo('keyed_out', 'k');
-    }
-  },
-});
-
-// One keyed plugin channel: the topology every SDK can express, and where the
-// per-emit ordinal has to be right.
-const StampSpec = defineRelay({
-  factoryId: 'stamps',
-  channels: (c) => {
-    c.input('in')
-      .keyBy(() => 'ek')
-      .into(StampEmitter)
-      .keyed()
-      .output('keyed_out');
-  },
-});
-
-// A tasklet owns ONE output channel, so a keyed and a non-keyed plugin
-// channel are two tasklets. The unkeyed one carries no stamps at all.
-const PlainEmitter = defineTasklet({
-  name: 'plain_emitter',
-  run: (_input, ctx) => {
-    ctx.emitTo('plain_out', 'p');
-  },
-});
-
-const MixedSpec = defineRelay({
-  factoryId: 'stamps_mixed',
-  channels: (c) => {
-    c.input('in')
-      .keyBy(() => 'ek')
-      .branch([
-        (edge) => edge.into(PlainEmitter).output('plain_out'),
-        (edge) => edge.into(StampEmitter).keyed().output('keyed_out'),
-      ]);
-  },
-});
-
-const stampActivation = activationFor('stamps');
-const mixedActivation = activationFor('stamps_mixed');
-const metaOf = (output) => Object.fromEntries(output.metadata.map((m) => [m.key, m.value]));
-
-test('a keyed plugin emit carries the identity stamps, and the ordinal advances per emit', async () => {
-  const result = await answer(
-    stampActivation({ cellKey: 'ek', changeSeq: 5n, items: [inputItem('twice')] }),
-    depsFor(StampSpec),
-  );
-  assert.equal(result.outcome, 'work');
-  const outputs = result.effects[0].outputs;
-  assert.equal(outputs.length, 2);
-  assert.deepEqual(metaOf(outputs[0]), {
-    'flz.cell': 'op-1/stamp_emitter/ek',
-    'flz.seq': '5.0',
-    'flz.key': 'ek',
-  });
-  assert.deepEqual(metaOf(outputs[1]), {
-    'flz.cell': 'op-1/stamp_emitter/ek',
-    'flz.seq': '5.1',
-    'flz.key': 'ek',
-  });
-});
-
-test('a non-keyed plugin emit carries no stamps', async () => {
-  const result = await answer(
-    mixedActivation({ cellKey: 'ek', changeSeq: 5n, items: [inputItem('mixed')] }),
-    depsFor(MixedSpec),
-  );
-  const [plain] = result.effects[0].outputs;
-  assert.equal(plain.pluginChannel, 'plain_out');
-  assert.deepEqual(plain.metadata, []);
-});
-
-test('a fresh work item restarts the emit ordinal', async () => {
-  const result = await answer(
-    stampActivation({
-      cellKey: 'ek',
-      changeSeq: 5n,
-      items: [inputItem('twice'), inputItem('twice')],
-    }),
-    depsFor(StampSpec),
-  );
-  assert.deepEqual(
-    result.effects.map((effect) => effect.outputs.map((o) => metaOf(o)['flz.seq'])),
-    [
-      ['5.0', '5.1'],
-      ['5.0', '5.1'],
-    ],
-  );
-});
-
-test('user metadata survives beside the stamps and cannot spoof one', async () => {
+test('a keyed plugin output carries its key and the user metadata, and cannot spoof a stamp', async () => {
   const UserMeta = defineTasklet({
     name: 'stamp_user_meta',
     run: (input, ctx) => {
@@ -592,12 +493,9 @@ test('user metadata survives beside the stamps and cannot spoof one', async () =
     activation({ cellKey: 'ek', changeSeq: 2n, items: [inputItem('plain')] }),
     depsFor(spec),
   );
-  assert.deepEqual(metaOf(ok.effects[0].outputs[0]), {
-    user: 'meta',
-    'flz.cell': 'op-1/stamp_user_meta/ek',
-    'flz.seq': '2.0',
-    'flz.key': 'ek',
-  });
+  const [output] = ok.effects[0].outputs;
+  assert.equal(output.key, 'ek');
+  assert.deepEqual(output.metadata, [{ key: 'user', value: 'meta' }]);
 
   const spoofed = await answer(
     activation({ cellKey: 'ek', changeSeq: 2n, items: [inputItem('spoof')] }),

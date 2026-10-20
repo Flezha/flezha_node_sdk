@@ -678,17 +678,3 @@ function branchOf(tree: unknown): string | undefined {
 export function runsInSteps(spec: ClassSpec): boolean {
   return branchOf(spec.run) === 'steps';
 }
-
-/**
- * Whether each invocation's output rides one effect record the controller
- * stamps at flush: under the effectively-once tier, and for a durable steps
- * relay, whose stage commit names the record.
- */
-export function recordsEffects(spec: ClassSpec): boolean {
-  const flow = branchOf(spec.run) === 'flow' ? (spec.run as { flow?: unknown }).flow : undefined;
-  const exactly = (flow as { exactly?: unknown } | undefined)?.exactly;
-  return (
-    branchOf(exactly) === 'effectively_once' ||
-    (runsInSteps(spec) && branchOf(spec.durable) !== 'false')
-  );
-}

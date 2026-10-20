@@ -9,7 +9,7 @@
  */
 
 import { encodeValue, plainPayload, plainValue, type Codec } from './codec.js';
-import { applyTransforms, runsInSteps, recordsEffects } from './authoring.js';
+import { applyTransforms, runsInSteps } from './authoring.js';
 import type { ChannelSpec, ClassSpec, ConsumerEdge, TaskNode } from './authoring.js';
 import type {
   Native,
@@ -34,11 +34,6 @@ import type {
 
 /** Metadata keys the runtime owns. A handler that sets one is refused. */
 export const RESERVED_PREFIX = 'flz.';
-
-/** The identity stamps a keyed plugin output carries when no effect record does. */
-export const CELL_STAMP = 'flz.cell';
-export const SEQ_STAMP = 'flz.seq';
-export const KEY_STAMP = 'flz.key';
 
 /** The addon entries a spawn, a part and an effect reach. */
 export type CoreBridge = Pick<
@@ -141,7 +136,6 @@ export class Invocation implements Ctx<unknown, unknown, unknown> {
   checkpointed = false;
 
   private ordinal = 0;
-  private emitOrdinal = 0;
   private identityBytes: Uint8Array | null = null;
   private live: unknown;
   private completion: Uint8Array | undefined;
@@ -328,8 +322,6 @@ export class Invocation implements Ctx<unknown, unknown, unknown> {
     if (channel.keyed && key === undefined) {
       throw flezhaError('runtime.key_required_on_keyed_channel', { channel: channel.name });
     }
-    const metadata = metaList(options?.metadata);
-    this.stampIdentity(metadata, channel, key);
     return {
       target: 'plugin',
       channel: undefined,
@@ -337,34 +329,10 @@ export class Invocation implements Ctx<unknown, unknown, unknown> {
       pluginChannel: channel.name,
       key,
       eventTime: undefined,
-      metadata,
+      metadata: metaList(options?.metadata),
       // A plugin output leaves only on an output, and every `output` sets its encoder.
       payload: Buffer.from(channel.sinkEncode!(value)),
     };
-  }
-
-  /**
-   * Output identity for one plugin frame, appended after the user's metadata.
-   * Written only when the class records no effects: under the tier, and for a
-   * durable steps relay, the controller derives the identity from the durable
-   * effect record, and a second answer here would contradict it. The ordinal
-   * advances on every plugin output, stamped or not, so hosts of one topology
-   * agree on the sequence.
-   */
-  private stampIdentity(
-    metadata: NativeMeta[],
-    channel: ChannelSpec,
-    key: string | undefined,
-  ): void {
-    if (channel.keyed && !recordsEffects(this.input.spec)) {
-      const cell = `${this.input.relay}/${this.input.node.name}/${this.input.cellKey ?? ''}`;
-      metadata.push(
-        { key: CELL_STAMP, value: cell },
-        { key: SEQ_STAMP, value: `${this.input.changeSeq}.${this.emitOrdinal}` },
-        { key: KEY_STAMP, value: key ?? '' },
-      );
-    }
-    this.emitOrdinal += 1;
   }
 
   /** A rollback is no place to arm a deadline: a `compensate` hook refuses every timer call. */
