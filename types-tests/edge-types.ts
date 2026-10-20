@@ -166,6 +166,32 @@ const BadEmit = defineTasklet<Trade, Candle>({
   },
 });
 
+// One spelling per concept: the routing key is `emit`'s option, the key set
+// and the compaction size are the definition's own fields.
+const OneSpelling = defineTasklet<Trade, Candle>({
+  name: 'one_spelling',
+  cellKeys: ['a', 'b'],
+  cellsFor: (trade) => [trade.symbol],
+  compactAfterBytes: 1_048_576,
+  run: (trade, ctx) => {
+    ctx.emit({ symbol: trade.symbol, close: trade.price }, { key: trade.symbol });
+    // @ts-expect-error a named channel is `emit`'s `channel` option
+    ctx.emitTo('out', { symbol: trade.symbol, close: trade.price });
+  },
+});
+
+// @ts-expect-error the key set is `cellKeys`, not a `cells` record
+defineTasklet<Trade>({ name: 'old_cells', cells: { keys: ['a'] }, run: () => {} });
+
+export const compactionOnTheTasklet = defineRelay({
+  factoryId: 'compaction_on_the_tasklet',
+  channels: (c) => {
+    // @ts-expect-error compaction is the tasklet's `compactAfterBytes`
+    c.compactAfterBytes(1_048_576);
+    c.input<Trade>('in').into(OneSpelling).output();
+  },
+});
+
 const NoOutput = defineTasklet({
   name: 'no_output',
   run: (trade: Trade, ctx) => {

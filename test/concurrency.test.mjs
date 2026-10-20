@@ -12,12 +12,8 @@ import { join } from 'node:path';
 import test from 'node:test';
 import { Worker } from 'node:worker_threads';
 
-import {
-  ACTIVATION_SCHEMA_VERSION,
-  defineRelay,
-  defineTasklet,
-  loadNative,
-} from '../dist/esm/index.js';
+import { ACTIVATION_SCHEMA_VERSION, defineRelay, defineTasklet } from '../dist/esm/index.js';
+import { loadNative } from '../dist/esm/native.js';
 import { answer } from '../dist/esm/dispatch.js';
 
 import {
@@ -203,7 +199,7 @@ test('a spawn returns on the event loop, and its wait runs off it', async () => 
 });
 
 test('the documented delay threshold is below the controller stall verdict', async () => {
-  const { DELAY_WARN_MS } = await import('../dist/esm/index.js');
+  const { DELAY_WARN_MS } = await import('../dist/esm/loop-watch.js');
   assert.equal(typeof DELAY_WARN_MS, 'number');
   assert.ok(DELAY_WARN_MS >= 100, 'above scheduling noise and a GC pause');
   assert.ok(DELAY_WARN_MS <= 5_000, 'the host warns before the controller mints a verdict');

@@ -112,14 +112,20 @@ function channelJson(channel: ChannelSpec): Record<string, unknown> {
   });
 }
 
+/** The smallest size any tasklet of the class declares: the class compacts at the first. */
+function smallestCompactAfterBytes(spec: ClassSpec): number | undefined {
+  const declared = spec.tasklets.flatMap((node) => node.tasklet.definition.compactAfterBytes ?? []);
+  return declared.length === 0 ? undefined : Math.min(...declared);
+}
+
 function taskletJson(spec: ClassSpec, node: TaskNode): Record<string, unknown> {
   const def = node.tasklet.definition;
   return compact({
     name: node.name,
-    cell_keys: def.cells?.keys ?? [],
+    cell_keys: def.cellKeys ?? [],
     idle_ttl_ms: def.idleTtlSeconds === undefined ? undefined : def.idleTtlSeconds * 1000,
     max_cells: def.maxCells,
-    cells_for_overridden: def.cells?.cellsFor !== undefined,
+    cells_for_overridden: def.cellsFor !== undefined,
     compensate_overridden: def.compensate !== undefined,
     clock: clockOf(node),
     mailbox_capacity: def.mailboxCapacity,
@@ -149,7 +155,7 @@ export function toHostClassDecl(spec: ClassSpec): Record<string, unknown> {
     sdk_lang: SDK_LANG_NODE,
     sdk_version: SDK_VERSION,
     change_format_id: FORMAT_ID_MSGPACK,
-    compact_after_bytes: spec.compactAfterBytes,
+    compact_after_bytes: smallestCompactAfterBytes(spec),
     channels: spec.channels.map(channelJson),
     tasklets: spec.tasklets.map((node) => taskletJson(spec, node)),
   });

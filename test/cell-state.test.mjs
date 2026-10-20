@@ -15,8 +15,8 @@ import {
   defineTasklet,
   defineRelay,
   encodeValue,
-  loadNative,
 } from '../dist/esm/index.js';
+import { loadNative } from '../dist/esm/native.js';
 import { answer } from '../dist/esm/dispatch.js';
 import { TaskletTestHarness } from '../dist/esm/testing.js';
 

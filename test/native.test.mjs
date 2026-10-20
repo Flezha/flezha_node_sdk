@@ -13,9 +13,9 @@ import {
   defineRelay,
   defineTasklet,
   FlezhaError,
-  loadNative,
-  toHostClassDecl,
 } from '../dist/esm/index.js';
+import { toHostClassDecl } from '../dist/esm/graph.js';
+import { loadNative } from '../dist/esm/native.js';
 
 import { read } from './contract.mjs';
 

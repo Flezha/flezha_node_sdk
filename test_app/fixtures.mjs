@@ -108,7 +108,8 @@ const staticCellsFor = (input) => {
 const staticEntry = (name) =>
   defineTasklet({
     name,
-    cells: { keys: STATIC_KEYS, cellsFor: staticCellsFor },
+    cellKeys: STATIC_KEYS,
+    cellsFor: staticCellsFor,
     initState: () => ({ seen: [] }),
     applyChange: (state, change) => {
       state.seen.push(change.push);
@@ -338,7 +339,8 @@ const STRESS_KEYS = ['p0', 'p1', 'p2', 'p3', 'p4', 'p5', 'p6', 'p7'];
 const stress = (name, cellsFor) =>
   defineTasklet({
     name,
-    cells: { keys: STRESS_KEYS, cellsFor },
+    cellKeys: STRESS_KEYS,
+    cellsFor,
     run: (input, ctx) => ctx.emit(input),
   });
 
@@ -508,6 +510,37 @@ export const timerCap = defineRelay({
   factoryId: 'timer_cap',
   channels: (c) => {
     c.input('input', { codec: 'text' }).into(TimerCap).output('kafka');
+  },
+});
+
+// -- timer_churn ------------------------------------------------------------
+//
+// The bench factory for `mix bench --shape timer`: each input arms a 1 ms
+// processing-time timer and cancels the one the previous input armed; the
+// input is echoed, and a firing emits `fired:<at>`.
+
+const TimerChurn = defineTasklet({
+  name: 'timer_churn_tasklet',
+  initState: () => ({ last: 0 }),
+  applyChange: (state, change) => {
+    state.last = change.armed;
+  },
+  run: (input, ctx) => {
+    const at = ctx.timerAfter(1);
+    const last = ctx.state.last;
+    if (last !== 0 && BigInt(last) !== at) ctx.cancelTimer('processing_time', BigInt(last));
+    ctx.change({ armed: Number(at) });
+    ctx.emit(input);
+  },
+  onTimer: (firing, ctx) => {
+    ctx.emit(`fired:${firing.scheduledAt}`);
+  },
+});
+
+export const timerChurn = defineRelay({
+  factoryId: 'timer_churn',
+  channels: (c) => {
+    c.input('input', { codec: 'text' }).into(TimerChurn).output('echo');
   },
 });
 

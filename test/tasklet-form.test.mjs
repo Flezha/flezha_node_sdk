@@ -10,10 +10,9 @@ import {
   defineTasklet,
   defineRelay,
   encodeValue,
-  loadNative,
-  toHostClassDecl,
-  validate,
 } from '../dist/esm/index.js';
+import { toHostClassDecl, validate } from '../dist/esm/graph.js';
+import { loadNative } from '../dist/esm/native.js';
 import { answer } from '../dist/esm/dispatch.js';
 import { TaskletTestHarness } from '../dist/esm/testing.js';
 
@@ -321,7 +320,8 @@ test('a static key set fed by keyBy is refused as topology.key_by_on_unkeyable_t
     keyedInto(
       defineTasklet({
         name: 'fixed',
-        cells: { keys: ['a', 'b'], cellsFor: () => ['a'] },
+        cellKeys: ['a', 'b'],
+        cellsFor: () => ['a'],
         ...emitting,
       }),
     ),

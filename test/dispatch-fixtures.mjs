@@ -2,7 +2,8 @@
 // depends on, the activation the core hands out, and a declaration's refusal.
 import assert from 'node:assert/strict';
 
-import { FlezhaError, defineRelay, defineTasklet, validate } from '../dist/esm/index.js';
+import { FlezhaError, defineRelay, defineTasklet } from '../dist/esm/index.js';
+import { validate } from '../dist/esm/graph.js';
 import { Registry, answer } from '../dist/esm/dispatch.js';
 
 /**

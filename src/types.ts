@@ -94,8 +94,6 @@ export interface Ctx<TOut = never, TState = void, TChange = never> {
 
   /** Emit one output value on the tasklet's declared output. */
   emit(value: TOut, options?: EmitOptions): void;
-  /** Emit onto a named channel — the spelling for a tasklet with several. */
-  emitTo(channel: string, value: unknown, options?: EmitOptions): void;
   /**
    * Send a part: a preview of the output this invocation is producing, which
    * leaves now rather than when the handler returns. It previews the tasklet's
@@ -185,12 +183,6 @@ export interface Ctx<TOut = never, TState = void, TChange = never> {
   effect<T>(name: string, fn: () => T | Promise<T>, options?: EffectOptions<T>): Promise<T>;
 }
 
-/** Static cell mode: a fixed key set, plus the fan-out an input belongs to. */
-export interface StaticCells<TIn> {
-  keys: string[];
-  cellsFor?: (input: TIn) => string[];
-}
-
 export interface TaskletDefinition<TIn, TOut, TState, TChange> {
   /** The tasklet's node identity within its relay, and where its state is filed. */
   name: string;
@@ -199,7 +191,9 @@ export interface TaskletDefinition<TIn, TOut, TState, TChange> {
    * Fixed key set. Without it, a tasklet reached by a `keyBy` edge gets a
    * cell per key, and any other has one cell.
    */
-  cells?: StaticCells<TIn>;
+  cellKeys?: string[];
+  /** The cells of `cellKeys` an input belongs to; unset, every one. */
+  cellsFor?: (input: TIn) => string[];
   /** Seconds a keyed cell may sit idle before it is evicted. Unset never evicts. */
   idleTtlSeconds?: number;
   /** The most keyed cells held at once. */
@@ -213,6 +207,8 @@ export interface TaskletDefinition<TIn, TOut, TState, TChange> {
   mailboxCapacity?: number;
   /** The pending timers one cell may hold. Unset is 10 000. */
   maxTimersPerCell?: number;
+  /** The cell log size, in bytes, that asks for a snapshot. Unset is the controller's default. */
+  compactAfterBytes?: number;
 
   /** Stamped into every durable record this tasklet writes. */
   schemaVersion?: number;
@@ -230,7 +226,7 @@ export interface TaskletDefinition<TIn, TOut, TState, TChange> {
   changeCodec?: Codec<TChange>;
 
   /**
-   * The body. A value leaves only through `ctx.emit` or `ctx.emitTo`; what
+   * The body. A value leaves only through `ctx.emit`; what
    * `run` returns is ignored, and TypeScript refuses a `run` that returns one.
    */
   run: (input: TIn, ctx: Ctx<TOut, TState, TChange>) => void | Promise<void>;
@@ -347,7 +343,6 @@ export interface RoutedDocument<D> {
 }
 
 export interface ChannelBuilder {
-  compactAfterBytes(bytes: number): ChannelBuilder;
   /**
    * Declare a controller-fed entry channel carrying values of type `T`.
    * `{ codec }` names the payload's format instead of a decoder; with neither,

@@ -267,10 +267,6 @@ export class Invocation implements Ctx<unknown, unknown, unknown> {
     this.input.bridge.part(this.input.token, this.input.item, payload);
   }
 
-  emitTo(channel: string, value: unknown, options?: EmitOptions): void {
-    this.emit(value, { ...options, channel });
-  }
-
   /**
    * One consumer's frames, one per value its transforms leave: its own key,
    * its own clock. A dropped value leaves none.

@@ -3,7 +3,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { Control, FlezhaError, Runner, loadNative } from '../dist/esm/index.js';
+import { Control, FlezhaError, Runner } from '../dist/esm/index.js';
+import { loadNative } from '../dist/esm/native.js';
 
 /** An addon whose one control call is recorded and answered with `answer`. */
 function answering(answer) {
@@ -70,7 +71,7 @@ test('a plugin is enabled by name, and bound and unbound by relay', async () => 
     ],
     ['PluginManager.unbind', ['writer', { relay_id: 'my_echo' }]],
     ['PluginManager.disable', ['writer', {}]],
-    ['PluginManager.list', []],
+    ['PluginManager.enabled', []],
   ]);
 });
 

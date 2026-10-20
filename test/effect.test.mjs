@@ -6,12 +6,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import {
-  ACTIVATION_SCHEMA_VERSION,
-  FlezhaError,
-  defineTasklet,
-  loadNative,
-} from '../dist/esm/index.js';
+import { ACTIVATION_SCHEMA_VERSION, FlezhaError, defineTasklet } from '../dist/esm/index.js';
+import { loadNative } from '../dist/esm/native.js';
 import { EffectReplayMismatch, TaskletTestHarness } from '../dist/esm/testing.js';
 
 import { handleOnce, spawnBridge } from './dispatch-fixtures.mjs';

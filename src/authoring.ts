@@ -137,7 +137,6 @@ export interface ClassSpec {
    */
   run?: unknown;
   durable?: unknown;
-  compactAfterBytes?: number;
   tasklets: TaskNode[];
   channels: ChannelSpec[];
 }
@@ -164,16 +163,10 @@ interface PendingEdge {
 class Builder implements ChannelBuilder {
   readonly tasklets: TaskNode[] = [];
   readonly channels: ChannelSpec[] = [];
-  compactAfterBytesValue?: number;
   /** The next merge's group id, which ties its sources together across channels. */
   mergeGroups = 0;
 
   constructor(readonly factoryId: string) {}
-
-  compactAfterBytes(bytes: number): ChannelBuilder {
-    this.compactAfterBytesValue = bytes;
-    return this;
-  }
 
   input<T>(
     name: string,
@@ -607,7 +600,6 @@ export function defineRelay(definition: EitherForm<RelayDefinition>): ClassSpec 
   return {
     factoryId: definition.factoryId,
     ...settingsOf(definition),
-    compactAfterBytes: builder.compactAfterBytesValue,
     tasklets: builder.tasklets,
     channels: builder.channels,
   };

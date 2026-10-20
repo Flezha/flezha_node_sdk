@@ -5,14 +5,9 @@ import test from 'node:test';
 
 import { z } from 'zod';
 
-import {
-  ACTIVATION_SCHEMA_VERSION,
-  defineRelay,
-  defineTasklet,
-  loadNative,
-  toHostClassDecl,
-  validate,
-} from '../dist/esm/index.js';
+import { ACTIVATION_SCHEMA_VERSION, defineRelay, defineTasklet } from '../dist/esm/index.js';
+import { toHostClassDecl, validate } from '../dist/esm/graph.js';
+import { loadNative } from '../dist/esm/native.js';
 
 import { codesOf, refusal } from './dispatch-fixtures.mjs';
 

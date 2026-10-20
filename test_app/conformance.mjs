@@ -18,15 +18,10 @@ import { readFileSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import {
-  ACTIVATION_SCHEMA_VERSION,
-  FlezhaError,
-  defineRelay,
-  defineTasklet,
-  loadNative,
-  Registry,
-  validate,
-} from '@flezha/sdk';
+import { ACTIVATION_SCHEMA_VERSION, FlezhaError, defineRelay, defineTasklet } from '@flezha/sdk';
+import { Registry } from '../dist/esm/dispatch.js';
+import { validate } from '../dist/esm/graph.js';
+import { loadNative } from '../dist/esm/native.js';
 
 import { ascendTo } from '../test/contract.mjs';
 import { manifest } from '../test/test-app.mjs';
@@ -95,11 +90,12 @@ function palette(role, mailbox) {
     case 'twin':
       return defineTasklet({ name: 'plain', ...common });
     case 'static':
-      return defineTasklet({ name: role, cells: { keys: ['a', 'b'] }, ...common });
+      return defineTasklet({ name: role, cellKeys: ['a', 'b'], ...common });
     case 'routed':
       return defineTasklet({
         name: role,
-        cells: { keys: ['a', 'b'], cellsFor: () => ['a'] },
+        cellKeys: ['a', 'b'],
+        cellsFor: () => ['a'],
         ...common,
       });
     // A logical clock over a tasklet that journals nothing: no `applyChange`

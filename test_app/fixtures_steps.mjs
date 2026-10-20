@@ -593,7 +593,8 @@ export const eventTimerSteps = defineRelay({
 
 const StaticCellStep = defineTasklet({
   name: 'static_cell_step',
-  cells: { keys: ['a', 'b', 'c'], cellsFor: () => ['a', 'b'] },
+  cellKeys: ['a', 'b', 'c'],
+  cellsFor: () => ['a', 'b'],
   run: (input, ctx) => ctx.emit(`${ctx.cellKey}:${input}`),
 });
 

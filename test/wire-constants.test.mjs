@@ -1,7 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { ACTIVATION_SCHEMA_VERSION, FORMAT_ID_MSGPACK, SDK_LANG_NODE } from '../dist/esm/index.js';
+import { ACTIVATION_SCHEMA_VERSION } from '../dist/esm/index.js';
+import { FORMAT_ID_MSGPACK, SDK_LANG_NODE } from '../dist/esm/graph.js';
 import { RESERVED_PREFIX } from '../dist/esm/ctx.js';
 
 import { read } from './contract.mjs';

@@ -10,10 +10,9 @@ import {
   FlezhaError,
   defineTasklet,
   defineRelay,
-  loadNative,
-  toHostClassDecl,
-  validate,
 } from '../dist/esm/index.js';
+import { toHostClassDecl, validate } from '../dist/esm/graph.js';
+import { loadNative } from '../dist/esm/native.js';
 import { answer } from '../dist/esm/dispatch.js';
 
 import { member, read } from './contract.mjs';

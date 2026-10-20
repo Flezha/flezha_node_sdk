@@ -19,6 +19,5 @@ const runner = createRunner(process.argv[2] ?? 'trading');
 await runner.registerFactory('./trade_watcher_relay.mjs');
 await runner.registerFactory('./order_executor_relay.mjs');
 
-// Resolves once the runner is connected and serving. The process then keeps
-// running until a SIGTERM, Ctrl-C, or its standard input closing.
+// Serves until a SIGTERM, Ctrl-C, or its standard input closing.
 await runner.run();

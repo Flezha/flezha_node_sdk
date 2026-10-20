@@ -240,9 +240,10 @@ function installAndLoad({ withPlatformPackage }) {
 
     writeFileSync(
       resolve(app, 'probe.mjs'),
-      "import { loadNative } from '@flezha/sdk';\n" +
+      "import { ACTIVATION_SCHEMA_VERSION, createRunner } from '@flezha/sdk';\n" +
         'try {\n' +
-        '  console.log(JSON.stringify({ ok: true, schema: loadNative().schemaVersion() }));\n' +
+        '  createRunner("probe");\n' +
+        '  console.log(JSON.stringify({ ok: true, schema: ACTIVATION_SCHEMA_VERSION }));\n' +
         '} catch (error) {\n' +
         '  console.log(JSON.stringify({ ok: false, message: error.message }));\n' +
         '}\n',

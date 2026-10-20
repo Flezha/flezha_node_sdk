@@ -5,7 +5,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { ACTIVATION_SCHEMA_VERSION, FlezhaError, loadNative } from '../dist/esm/index.js';
+import { ACTIVATION_SCHEMA_VERSION, FlezhaError } from '../dist/esm/index.js';
+import { loadNative } from '../dist/esm/native.js';
 
 import { handleOnce, spawnBridge } from './dispatch-fixtures.mjs';
 

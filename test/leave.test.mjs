@@ -2,7 +2,8 @@
 import assert from 'node:assert/strict';
 import test, { after } from 'node:test';
 
-import { ACTIVATION_SCHEMA_VERSION, encodeValue, loadNative } from '../dist/esm/index.js';
+import { ACTIVATION_SCHEMA_VERSION, encodeValue } from '../dist/esm/index.js';
+import { loadNative } from '../dist/esm/native.js';
 import { answer } from '../dist/esm/dispatch.js';
 
 import { Counters, activationFor, depsFor } from './dispatch-fixtures.mjs';

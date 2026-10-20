@@ -104,14 +104,20 @@ export class Control {
     return this.call('PluginManager.disable', name, {});
   }
 
-  /** The relay ids running in this namespace. */
+  /**
+   * The relays in this namespace, one row each: its id, health, runner and node, and a partition
+   * group's width and members.
+   */
   async listRelays(): Promise<unknown> {
-    return this.call('Relay.list_relays');
+    return this.call('Relay.list');
   }
 
-  /** The plugins enabled in this namespace: name, provider, single, bound relays. */
+  /**
+   * The plugins enabled in this namespace, one row each: name, provider, single, bound relays and
+   * where it runs.
+   */
   async listPlugins(): Promise<unknown> {
-    return this.call('PluginManager.list');
+    return this.call('PluginManager.enabled');
   }
 
   /**

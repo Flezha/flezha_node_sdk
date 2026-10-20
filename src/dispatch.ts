@@ -448,7 +448,7 @@ function prepared(
   let eventTime: bigint | undefined;
   for (const edge of channel?.consumers ?? []) {
     const definition = registered.spec.tasklets[edge.tasklet]!.tasklet.definition;
-    const cellsFor = definition.cells?.cellsFor;
+    const cellsFor = definition.cellsFor;
     const keyed = request.wantKeys && (edge.keyBy !== undefined || cellsFor !== undefined);
     const timed = request.wantEventTime && eventTime === undefined && definition.eventTime;
     if (!keyed && !timed) continue;

@@ -13,8 +13,8 @@ import {
   defineRelay,
   defineTasklet,
   encodeValue,
-  loadNative,
 } from '../dist/esm/index.js';
+import { loadNative } from '../dist/esm/native.js';
 import { Registry, answer, dispatch } from '../dist/esm/dispatch.js';
 import { stableId } from '../dist/esm/identity.js';
 import { createRunner, importModule, loadRegistry, specsFrom } from '../dist/esm/runner.js';
@@ -114,6 +114,28 @@ test('a throwing handler is a retryable verdict and stops the batch', async () =
   assert.equal(result.effects.length, 2, 'items after the failure are re-handed by the core');
   assert.equal(result.effects[1].verdict, 'retryable');
   assert.match(result.effects[1].message, /handler exploded/);
+});
+
+test('emit names a channel the tasklet produces on, and fails the item on one it does not', async () => {
+  const Routed = defineTasklet({
+    name: 'routed',
+    run: (input, ctx) => ctx.emit(input, { channel: input === 'astray' ? 'elsewhere' : 'out' }),
+  });
+  const spec = defineRelay({
+    factoryId: 'routed_op',
+    channels: (c) => c.input('in').into(Routed).output('out'),
+  });
+  const result = await answer(
+    activation({
+      factory: 'routed_op',
+      cellKey: undefined,
+      items: [inputItem('here'), inputItem('astray')],
+    }),
+    depsFor(spec),
+  );
+  assert.equal(result.effects[0].outputs[0].pluginChannel, 'out');
+  assert.notEqual(result.effects[1].verdict, 'ok');
+  assert.match(result.effects[1].message, /channel 'elsewhere', which it does not produce on/);
 });
 
 test('a rejected promise is answered the same way a throw is', async () => {
@@ -996,7 +1018,7 @@ test('a fan into a static consumer answers each value with the cells it names', 
     channels: (c) => {
       c.input('trades', { codec: 'text' })
         .flatMap((line) => line.split(','))
-        .into(record('static_fan_record', { cells: { keys, cellsFor } }));
+        .into(record('static_fan_record', { cellKeys: keys, cellsFor }));
     },
   });
   const [{ values }] = await preparedAt(spec, 0, 'a:1,b:2,z:3,a:4');

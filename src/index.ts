@@ -23,20 +23,13 @@ export type { ChannelSpec, ClassSpec, Link, TaskNode } from './authoring.js';
 export type { SpawnHandle } from './ctx.js';
 export { assertRepresentable, decodeValue, encodeValue, msgpack } from './codec.js';
 export type { Codec } from './codec.js';
-// The runner's declared-class registry. Exported because it owns "a runner
-// declares each factory id once", and the conformance run drives that rule
-// rather than restating it.
-export { Registry } from './dispatch.js';
-export { FORMAT_ID_MSGPACK, SDK_LANG_NODE, toHostClassDecl, validate } from './graph.js';
 export type { DerivedChannel, DerivedDecl, DerivedEdge } from './graph.js';
 export { LocalRelay } from './local.js';
 export type { LocalOutput } from './local.js';
 export { consoleLogger, setLogger } from './logger.js';
 export type { Logger, LogLevel } from './logger.js';
-export { loadNative, nativePackageName } from './native.js';
 export type { Native } from './native.js';
 export { ACTIVATION_SCHEMA_VERSION, createRunner, Runner } from './runner.js';
-export { DELAY_WARN_MS } from './loop-watch.js';
 export { FlezhaError } from './errors.js';
 export type { ErrorClass, ErrorFields } from './errors.js';
 export type {
@@ -69,7 +62,6 @@ export type {
   SpawnOptions,
   SpawnOutcome,
   SpawnResult,
-  StaticCells,
   StepsSettings,
   Stream,
   TimerFiring,

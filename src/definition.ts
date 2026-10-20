@@ -84,7 +84,7 @@ export function defineTasklet<TIn, TOut = never, TState = void, TChange = never>
   if (definition.eventTime && definition.logicalClock) {
     throw flezhaError('topology.two_clocks', { tasklet });
   }
-  if (definition.cells && definition.cells.keys.length === 0) {
+  if (definition.cellKeys && definition.cellKeys.length === 0) {
     throw flezhaError('topology.static_tasklet_without_cell_keys', { tasklet });
   }
   // A state that cannot be encoded cannot be restored, and the first anyone
@@ -114,13 +114,15 @@ const SHORT_FORM_KEYS = [
  * field the tasklet definition gains is listed here or does not compile.
  */
 const TASKLET_FIELDS = Object.keys({
-  cells: true,
+  cellKeys: true,
+  cellsFor: true,
   idleTtlSeconds: true,
   maxCells: true,
   eventTime: true,
   logicalClock: true,
   mailboxCapacity: true,
   maxTimersPerCell: true,
+  compactAfterBytes: true,
   schemaVersion: true,
   minReadableSchemaVersion: true,
   migrateState: true,

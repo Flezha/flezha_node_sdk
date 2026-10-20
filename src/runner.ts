@@ -107,10 +107,16 @@ export class Runner {
   private registry: Registry | null = null;
   private dispatchId: number | null = null;
   private pool: WorkerPool | null = null;
-  private stopping: Promise<void> | null = null;
+  private closing: Promise<void> | null = null;
   private readonly teardown: Array<() => void> = [];
+  private readonly terminated: Promise<void>;
+  private terminate!: () => void;
 
-  constructor(readonly namespace: string) {}
+  constructor(readonly namespace: string) {
+    this.terminated = new Promise((resolve) => {
+      this.terminate = resolve;
+    });
+  }
 
   /**
    * Register a module's relays, of either kind — the kind is read from what
@@ -254,7 +260,12 @@ export class Runner {
     return (this.native ?? loadNative()).relays();
   }
 
-  async run(): Promise<void> {
+  /**
+   * Declare, connect and start serving, resolving once the runner is up: a
+   * host that owns its own waiting works between this and
+   * {@link awaitTermination}, making control calls for one.
+   */
+  async start(): Promise<this> {
     const native = loadNative();
     this.native = native;
 
@@ -281,7 +292,7 @@ export class Runner {
     // A controller-requested stop reaches the host as every fetcher ending.
     native.setHostDrainedCallback(() => {
       log().info('the core stopped handing out work; draining');
-      void this.stop();
+      void this.close();
     });
 
     native.startHost(this.fetcherCount);
@@ -292,6 +303,19 @@ export class Runner {
         `${this.workerCount === 0 ? 'the main loop' : `${this.workerCount} worker loops`}, ` +
         `${native.hostStats().fetchers} fetchers`,
     );
+    return this;
+  }
+
+  /** Resolve once the runner has shut down and released the core. */
+  async awaitTermination(): Promise<void> {
+    if (!this.native && !this.closing) throw flezhaError('runtime.runner_not_started');
+    await this.terminated;
+  }
+
+  /** Declare, connect and serve until shutdown: {@link start}, then {@link awaitTermination}. */
+  async run(): Promise<void> {
+    await this.start();
+    await this.awaitTermination();
   }
 
   /**
@@ -345,14 +369,16 @@ export class Runner {
     }
   }
 
-  /** Stop fetching, drain what is in flight, and release the core. */
-  stop(): Promise<void> {
-    if (this.stopping) return this.stopping;
-    this.stopping = this.doStop();
-    return this.stopping;
+  /**
+   * Stop fetching, drain what is in flight, release the core and resolve
+   * {@link awaitTermination}. Idempotent: every call answers the one close.
+   */
+  close(): Promise<void> {
+    this.closing ??= this.release().finally(this.terminate);
+    return this.closing;
   }
 
-  private async doStop(): Promise<void> {
+  private async release(): Promise<void> {
     const native = this.native;
     if (!native) return;
     log().info('draining');

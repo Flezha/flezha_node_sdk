@@ -16,11 +16,10 @@ import {
   defineRelay,
   defineTasklet,
   encodeValue,
-  loadNative,
-  Registry,
-  toHostClassDecl,
-  validate,
 } from '../dist/esm/index.js';
+import { Registry } from '../dist/esm/dispatch.js';
+import { toHostClassDecl, validate } from '../dist/esm/graph.js';
+import { loadNative } from '../dist/esm/native.js';
 import * as sdk from '../dist/esm/index.js';
 import { TaskletTestHarness } from '../dist/esm/testing.js';
 
@@ -1050,7 +1049,8 @@ test('a short form with no output wires its entry into the tasklet and no plugin
 test('every tasklet field a short form carries reaches its generated tasklet', () => {
   const codec = { encode: (value) => encodeValue(value), decode: () => ({ n: 0 }) };
   const keyed = {
-    cells: { keys: ['a', 'b'], cellsFor: () => ['a'] },
+    cellKeys: ['a', 'b'],
+    cellsFor: () => ['a'],
     logicalClock: true,
     mailboxCapacity: 7,
     schemaVersion: 3,

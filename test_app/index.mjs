@@ -69,7 +69,7 @@ if (refusalFixture) {
 }
 
 try {
-  await runner.run();
+  await runner.start();
 } catch (error) {
   // A refused declaration names itself: the error's code, and every issue's
   // code the core listed, ride the exception as data, and the drill reads them

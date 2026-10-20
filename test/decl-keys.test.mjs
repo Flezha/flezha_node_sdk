@@ -6,14 +6,9 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
 
-import {
-  ACTIVATION_SCHEMA_VERSION,
-  defineRelay,
-  defineTasklet,
-  loadNative,
-  toHostClassDecl,
-  validate,
-} from '../dist/esm/index.js';
+import { ACTIVATION_SCHEMA_VERSION, defineRelay, defineTasklet } from '../dist/esm/index.js';
+import { toHostClassDecl, validate } from '../dist/esm/graph.js';
+import { loadNative } from '../dist/esm/native.js';
 
 import { member } from './contract.mjs';
 
@@ -40,6 +35,7 @@ function fullyDeclaredFlow() {
     eventTime: (input) => BigInt(input.at),
     mailboxCapacity: 512,
     maxTimersPerCell: 16,
+    compactAfterBytes: 1_048_576,
     schemaVersion: 2,
     minReadableSchemaVersion: 1,
     migrateState: (_from, bytes) => ({ seen: bytes.length }),
@@ -69,7 +65,6 @@ function fullyDeclaredFlow() {
     durable: { local: { sleepAfter: 2_000 } },
     maxDurationMs: 120_000,
     channels: (c) => {
-      c.compactAfterBytes(1_048_576);
       c.input('in', { description: 'every key', schema: { type: 'object' } })
         .retryMax(3)
         .retryBackoffMs(300)
@@ -85,7 +80,8 @@ function fullyDeclaredFlow() {
 function fullyDeclaredStatic() {
   const statik = defineTasklet({
     name: 'full_static',
-    cells: { keys: ['a', 'b'], cellsFor: () => ['a'] },
+    cellKeys: ['a', 'b'],
+    cellsFor: () => ['a'],
     run: (input, ctx) => ctx.emit(input),
   });
   return defineRelay({
