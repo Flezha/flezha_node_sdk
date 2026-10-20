@@ -66,6 +66,7 @@ export interface NativeActivation {
   cellKey?: string;
   changeSeq: bigint;
   factory: string;
+  cellIdentity?: Buffer;
   kind: NativeActivationKind;
   items?: NativeWorkItem[];
   snapshot?: NativeRestoreBody;

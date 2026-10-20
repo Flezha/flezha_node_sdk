@@ -20,7 +20,7 @@ import type {
   NativeTimerOp,
 } from './native.js';
 import { flezhaError, isFlezhaError } from './errors.js';
-import { cellIdentity, stableId } from './identity.js';
+import { stableId } from './identity.js';
 import { readOnlyState } from './state.js';
 import type {
   Ctx,
@@ -95,7 +95,8 @@ export interface InvocationInput {
   node: TaskNode;
   /** Channels this tasklet produces on, in declaration order. */
   outgoing: ChannelSpec[];
-  relay: string;
+  /** Where the identity bytes the core handed for this cell are kept. */
+  cell: { identities: Map<string, Uint8Array>; key: string };
   cellKey: string | undefined;
   changeSeq: bigint;
   now: bigint;
@@ -136,7 +137,6 @@ export class Invocation implements Ctx<unknown, unknown, unknown> {
   checkpointed = false;
 
   private ordinal = 0;
-  private identityBytes: Uint8Array | null = null;
   private live: unknown;
   private completion: Uint8Array | undefined;
 
@@ -166,16 +166,9 @@ export class Invocation implements Ctx<unknown, unknown, unknown> {
   }
 
   stableId(): string {
-    if (!this.identityBytes) {
-      // Lazily, because most invocations never ask and the identity is the
-      // one part of the derivation that costs an allocation.
-      this.identityBytes = cellIdentity(
-        this.input.relay,
-        this.input.node.name,
-        this.input.cellKey ?? '',
-      );
-    }
-    return stableId(this.identityBytes, this.input.changeSeq, this.ordinal++);
+    const identity = this.input.cell.identities.get(this.input.cell.key);
+    if (!identity) throw new Error('the core handed no identity for this cell');
+    return stableId(identity, this.input.changeSeq, this.ordinal++);
   }
 
   change(change: unknown): void {

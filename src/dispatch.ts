@@ -33,7 +33,15 @@ import { foldRestore, rawState } from './state.js';
  */
 export interface CellAddress {
   table: Map<string, unknown>;
+  /** The relay's identity bytes, as the core hands them with a cell's first activation. */
+  identities: Map<string, Uint8Array>;
   key: string;
+}
+
+function tableOf<V>(tables: Map<string, Map<string, V>>, relay: string): Map<string, V> {
+  let table = tables.get(relay);
+  if (!table) tables.set(relay, (table = new Map()));
+  return table;
 }
 
 /** A declared class, with the lookups dispatch needs on the hot path. */
@@ -42,6 +50,7 @@ export class RegisteredClass {
   readonly outgoing: ChannelSpec[][];
   /** Live cell state: one table per relay, keyed by tasklet index and cell key. */
   private readonly relays = new Map<string, Map<string, unknown>>();
+  private readonly identities = new Map<string, Map<string, Uint8Array>>();
 
   constructor(readonly spec: ClassSpec) {
     this.outgoing = spec.tasklets.map((node) =>
@@ -49,17 +58,20 @@ export class RegisteredClass {
     );
   }
 
-  /** The address of the cell an activation names. */
+  /** The address of the cell an activation names, keeping the identity bytes it carries. */
   address(activation: NativeActivation, node: TaskNode): CellAddress {
-    let table = this.relays.get(activation.relay);
-    if (!table) this.relays.set(activation.relay, (table = new Map()));
-    return { table, key: `${node.index}\0${activation.cellKey ?? ''}` };
+    const key = `${node.index}\0${activation.cellKey ?? ''}`;
+    const identities = tableOf(this.identities, activation.relay);
+    if (activation.cellIdentity) identities.set(key, activation.cellIdentity);
+    return { table: tableOf(this.relays, activation.relay), identities, key };
   }
 
   /** Drop a cell that left this runner, or with `wholeRelay` every cell of its relay. */
   forget(activation: NativeActivation, node: TaskNode): void {
-    if (activation.wholeRelay) this.relays.delete(activation.relay);
-    else this.relays.get(activation.relay)?.delete(`${node.index}\0${activation.cellKey ?? ''}`);
+    for (const tables of [this.relays, this.identities]) {
+      if (activation.wholeRelay) tables.delete(activation.relay);
+      else tables.get(activation.relay)?.delete(`${node.index}\0${activation.cellKey ?? ''}`);
+    }
   }
 
   /** The cell's live state, created from the declaration on first touch. */
@@ -224,7 +236,7 @@ async function invoke(
     spec: registered.spec,
     node,
     outgoing: registered.outgoing[node.index] as ChannelSpec[],
-    relay: activation.relay,
+    cell: address,
     cellKey: activation.cellKey,
     changeSeq: activation.changeSeq,
     now: at.now,

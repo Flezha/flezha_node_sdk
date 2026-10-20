@@ -16,7 +16,7 @@ import {
   loadNative,
 } from '../dist/esm/index.js';
 import { Registry, answer, dispatch } from '../dist/esm/dispatch.js';
-import { cellIdentity } from '../dist/esm/identity.js';
+import { stableId } from '../dist/esm/identity.js';
 import { createRunner, importModule, loadRegistry, specsFrom } from '../dist/esm/runner.js';
 
 import {
@@ -1091,12 +1091,9 @@ test('an unregister the core refuses for one relay leaves the whole module regis
   assert.deepEqual(runner.specifiers, [module]);
 });
 
-test('an identity part over its length is refused naming it', () => {
-  assert.throws(
-    () => cellIdentity('op', 't'.repeat(256), ''),
-    (error) =>
-      error.code === 'runtime.identity_too_long' &&
-      error.details.part === 'tasklet name' &&
-      error.details.limit === 255,
-  );
+test('stableId matches the cross-language vector', () => {
+  const identity = Buffer.from('instance/op/key');
+  assert.equal(stableId(identity, 42n, 0), 'bbf81fd4955afd1724203700a240e822');
+  assert.equal(stableId(identity, 42n, 1), 'bbf81fd4965afd1724203700a240e95d');
+  assert.equal(stableId(Buffer.alloc(0), 0n, 0), '15915375576d2f389a938dc3a9940c9d');
 });

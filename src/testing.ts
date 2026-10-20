@@ -15,7 +15,7 @@ import { isDeepStrictEqual } from 'node:util';
 
 import { defineRelay, type ChannelSpec, type ClassSpec, type TaskNode } from './authoring.js';
 import { decodeValue } from './codec.js';
-import { Invocation, type CoreBridge } from './ctx.js';
+import { Invocation, type CoreBridge, type InvocationInput } from './ctx.js';
 import { invocation } from './determinism.js';
 import { flezhaError } from './errors.js';
 import { foldRestore, rawState, type RestoreBody } from './state.js';
@@ -151,6 +151,7 @@ export class TaskletTestHarness<TIn, TOut, TState, TChange> {
   private readonly spec: ClassSpec;
   private readonly node: TaskNode;
   private readonly outgoing: ChannelSpec[];
+  private readonly cell: InvocationInput['cell'];
   private readonly bridge: CoreBridge = {
     ...resolvedSpawns(),
     effectBegin: (_token, _item, name) => this.effectBegin(name),
@@ -186,6 +187,9 @@ export class TaskletTestHarness<TIn, TOut, TState, TChange> {
     });
     this.node = this.spec.tasklets[0] as TaskNode;
     this.outgoing = this.spec.channels.filter((channel) => channel.producer !== undefined);
+    // No core runs here, so the harness names the cell's identity itself.
+    const identity = Buffer.from(`${options.relay}/${tasklet.name}/${options.cellKey}`);
+    this.cell = { identities: new Map([['', identity]]), key: '' };
   }
 
   /** A harness over the tasklet's declared starting state. */
@@ -230,7 +234,7 @@ export class TaskletTestHarness<TIn, TOut, TState, TChange> {
       spec: this.spec,
       node: this.node,
       outgoing: this.outgoing,
-      relay: this.options.relay ?? `harness_${this.tasklet.name}`,
+      cell: this.cell,
       cellKey: this.options.cellKey,
       changeSeq: BigInt(this.log.length),
       now,
