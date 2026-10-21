@@ -11,3 +11,4 @@ contract/
 
 # The starter is a project of its own and commits its lock; this repository does not.
 /examples/starter/package-lock.json
+/examples/session/package-lock.json

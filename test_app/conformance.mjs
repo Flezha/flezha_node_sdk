@@ -10,7 +10,7 @@
 // The palette lives here rather than in `fixtures.mjs`: these tasklets exist
 // only for the conformance run and are not part of the app's declared set.
 //
-// `flz_core/src/host/check_tests.rs` is the same interpreter written against
+// `crates/flz_core/src/host/check_tests.rs` is the same interpreter written against
 // the record instead of a builder, and is the reference for what each step
 // means.
 

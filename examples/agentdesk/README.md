@@ -104,7 +104,7 @@ controller's image:
 
 ```sh
 scripts/build-node-sdk.sh --release
-docker build -f docker/prod/Dockerfile.controller -t flezha/flezha:0.1.0 .
+docker build -f deploy/docker/prod/Dockerfile.controller -t flezha/flezha:0.1.0 .
 ```
 
 The first needs a Rust toolchain. Then, in this folder, install the checkout's package
