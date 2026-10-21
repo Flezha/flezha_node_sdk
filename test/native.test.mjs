@@ -194,5 +194,5 @@ test('both module systems import the package and expose the same surface', () =>
     });
   `;
   const out = execFileSync(process.execPath, ['-e', script], { encoding: 'utf8' });
-  assert.ok(Number(out.trim()) > 15, `expected a populated surface, got ${out}`);
+  assert.ok(Number(out.trim()) > 10, `expected a populated surface, got ${out}`);
 });

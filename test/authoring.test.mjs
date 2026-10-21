@@ -1121,7 +1121,7 @@ test('a short-form key or a tasklet field beside a channels body is refused, nam
       ['codec', 'text'],
       ['mailboxCapacity', 8],
       ['initState', () => ({ n: 0 })],
-      ['cells', { keys: ['a'] }],
+      ['cellKeys', ['a']],
     ]) {
       const error = refusal(() =>
         defineRelay({
