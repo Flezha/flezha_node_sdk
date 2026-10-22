@@ -1,8 +1,9 @@
 # @flezha/sdk
 
-A poll host over `flz_core`, the runner kernel the Rust and Java SDKs also
-drive. The kernel owns transport, ordering, per-cell exclusivity, durability,
-retries, timers, credit, routing and steps runs. This package supplies
+A poll host over `flz_core`, the runner kernel the Rust, Java, Python, Ruby,
+PHP, Elixir and Go SDKs also drive. The kernel owns transport, ordering,
+per-cell exclusivity, durability, retries, timers, credit, routing and steps
+runs. This package supplies
 threads and user code, and nothing else.
 
 **Support tier:**
