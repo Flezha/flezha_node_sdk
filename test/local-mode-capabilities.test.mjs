@@ -127,10 +127,17 @@ test('dynamic_cell: the declared filter runs before keying and nothing else is l
     'a:2',
   ]);
 
+  // Keys a and b are separate Cells: only the order within one key is promised.
+  const payloads = released.map((output) => utf8(output.payload));
   assert.deepEqual(
-    released.map((output) => utf8(output.payload)),
-    ['a:1', 'b:1', 'a:2'],
+    [...payloads].sort(),
+    ['a:1', 'a:2', 'b:1'],
     'the filter dropped `drop` before it was keyed, and every other value reached its Cell',
+  );
+  assert.deepEqual(
+    payloads.filter((payload) => payload.startsWith('a:')),
+    ['a:1', 'a:2'],
+    'one key releases in arrival order',
   );
   assert.deepEqual(
     released.map((output) => output.metadata.channel),
