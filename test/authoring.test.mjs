@@ -624,8 +624,18 @@ test('the durability reaches the declaration as the tree, its members as the cor
   assert.deepEqual(durable({ durable: { local: { sleepAfter: false } } }), {
     local: { sleep_after: false },
   });
+  assert.deepEqual(durable({ durable: { remote: { keepFinished: 24 } } }), {
+    remote: { keep_finished: 24 },
+  });
   validate(
     defineRelay({ factoryId: 'awake', durable: { local: { sleepAfter: 2_000 } }, channels }),
+  );
+  validate(
+    defineRelay({
+      factoryId: 'kept_finished',
+      durable: { local: { keepFinished: true } },
+      channels,
+    }),
   );
 });
 

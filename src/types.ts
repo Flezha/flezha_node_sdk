@@ -420,14 +420,16 @@ export type SleepAfter = number | false;
  * Where an instance keeps its work: nowhere (`false`), on this node's disk
  * (`local`, the default) or shipped to the durability backend (`remote`).
  * Unless `sleepAfter` says otherwise a kept flow instance never sleeps and a
- * kept steps instance sleeps after six idle hours.
+ * kept steps instance sleeps after six idle hours. A finished instance keeps
+ * nothing unless `keepFinished` gives hours, or `true` for the controller's
+ * window.
  */
 export type Durable =
   | false
   | 'local'
   | 'remote'
-  | { local: { sleepAfter?: SleepAfter } }
-  | { remote: { sleepAfter?: SleepAfter } };
+  | { local: { sleepAfter?: SleepAfter; keepFinished?: number | boolean } }
+  | { remote: { sleepAfter?: SleepAfter; keepFinished?: number | boolean } };
 
 /** The class settings every form takes but `run`, which `flow` or `steps` stands for. */
 export interface ClassSettings {

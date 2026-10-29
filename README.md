@@ -146,7 +146,10 @@ may take `exactly: 'effectively_once'`, or
 `'per_input'` or `{ checkpoint: { every, maxDelayMs, outputs } }`. `durable` is
 `false`, `'local'` (the default) or `'remote'`; unless `sleepAfter` names an
 interval or `false`, a kept flow instance never sleeps and a kept steps instance
-sleeps after six idle hours. The core
+sleeps after six idle hours. A finished instance keeps nothing unless
+`keepFinished` gives hours, or `true` for the controller's window
+(`FLEZHA_STEPS_RETENTION_HOURS`, 72 by default), so `flz relay info` can still
+show its Cells and result; it is refused under `durable: false`. The core
 reads the tree when the class registers: a setting under a parent that does not
 carry it is refused as `topology.unknown_field`, naming both.
 
