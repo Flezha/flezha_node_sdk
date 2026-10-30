@@ -1,5 +1,5 @@
-# The runner's image: the project and the packages `npm install` put in node_modules/, on Node 24.
-FROM node:24-bookworm-slim
+# The runner's image: the project and the packages `npm install` put in node_modules/, on Node 26.
+FROM node:26.13.0-bookworm-slim
 COPY . /agentdesk
 WORKDIR /agentdesk
 # The runner stops when its standard input closes, and a container's is closed: it reads a pipe

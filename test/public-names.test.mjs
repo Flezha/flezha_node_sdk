@@ -9,9 +9,9 @@
 
 import assert from 'node:assert/strict';
 import { fileURLToPath } from 'node:url';
-import test from 'node:test';
+import test, { after } from 'node:test';
 
-import ts from 'typescript';
+import { API, ModifierFlags, SymbolFlags } from 'typescript/unstable/sync';
 
 import { read } from './contract.mjs';
 
@@ -36,8 +36,13 @@ const declarations = Object.fromEntries(
     fileURLToPath(new URL(`../dist/types/${file}.d.ts`, import.meta.url)),
   ]),
 );
-const program = ts.createProgram(Object.values(declarations), { noEmit: true });
-const checker = program.getTypeChecker();
+// The declarations belong to no tsconfig, so they open as one inferred project.
+const api = new API({ cwd: fileURLToPath(new URL('..', import.meta.url)) });
+const project = api
+  .updateSnapshot({ openFiles: Object.values(declarations) })
+  .getDefaultProjectForFile(declarations['']);
+const { checker, program } = project;
+after(() => api.close());
 
 function exportsOf(entry) {
   const module = checker.getSymbolAtLocation(program.getSourceFile(declarations[entry]));
@@ -46,17 +51,16 @@ function exportsOf(entry) {
 
 const exported = Object.fromEntries(Object.keys(ENTRIES).map((entry) => [entry, exportsOf(entry)]));
 
+const declarationOf = (symbol) => (symbol.valueDeclaration ?? symbol.declarations?.[0])?.resolve();
+
 function isPrivate(symbol) {
-  const declaration = symbol.valueDeclaration ?? symbol.declarations?.[0];
-  if (!declaration) return false;
-  const flags = ts.getCombinedModifierFlags(declaration);
-  return (flags & (ts.ModifierFlags.Private | ts.ModifierFlags.Protected)) !== 0;
+  const flags = declarationOf(symbol)?.modifierFlags ?? 0;
+  return (flags & (ModifierFlags.Private | ModifierFlags.Protected)) !== 0;
 }
 
 function memberOf(symbol, name) {
-  const declaration = symbol.valueDeclaration ?? symbol.declarations?.[0];
   const instance = checker.getDeclaredTypeOfSymbol(symbol);
-  const statics = checker.getTypeOfSymbolAtLocation(symbol, declaration);
+  const statics = checker.getTypeOfSymbolAtLocation(symbol, declarationOf(symbol));
   return checker.getPropertyOfType(instance, name) ?? checker.getPropertyOfType(statics, name);
 }
 
@@ -66,7 +70,7 @@ function resolves(path) {
   let symbol = exported[entry]?.get(name);
   for (const member of members) {
     if (!symbol) return false;
-    if (symbol.flags & ts.SymbolFlags.Alias) symbol = checker.getAliasedSymbol(symbol);
+    if (symbol.flags & SymbolFlags.Alias) symbol = checker.getAliasedSymbol(symbol);
     symbol = memberOf(symbol, member);
     if (symbol && isPrivate(symbol)) return false;
   }

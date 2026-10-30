@@ -26,7 +26,7 @@ the session's answer as it is written, and each user has a daily token budget.
 | `watch.mjs` | answers a request for a session's events with its stream, and any other request with 404 |
 | `budget.mjs` | keeps the tokens each user's answers used today, and admits a message while they are under the day's budget |
 | `admit.mjs` | answers a message 202 when it goes on to the session, and 429 when its user is over the budget |
-| `Dockerfile` | the runner's image: the project and its `node_modules/` on Node 24 |
+| `Dockerfile` | the runner's image: the project and its `node_modules/` on Node 26 |
 | `controller/Dockerfile` | the controller's image: Flezha's own, with the plugin packages in `controller/plugins/` |
 | `compose.yaml` | one controller and one runner, in Docker Compose, with the gateway's HTTP port published on this machine only |
 | `cluster.yaml` | a second controller with its runner, and a PostgreSQL database both controllers copy their state to; read on top of `compose.yaml` |

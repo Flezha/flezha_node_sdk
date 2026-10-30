@@ -42,6 +42,7 @@ try {
     execFileSync(
       tsc,
       [
+        '--ignoreConfig',
         '--noEmit',
         '--strict',
         '--target',

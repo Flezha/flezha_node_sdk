@@ -33,7 +33,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        node: ["20", "24"]
+        node: ["20", "26"]
     steps:
       - uses: actions/checkout@v5
 
@@ -51,7 +51,7 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: "22"
+          node-version: "26"
 
       - run: npm ci --no-audit --no-fund
 
@@ -137,7 +137,7 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: "22"
+          node-version: "26"
 
       - run: npm ci --no-audit --no-fund
       - run: npm run build

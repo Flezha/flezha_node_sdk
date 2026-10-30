@@ -39,7 +39,7 @@ run([
   '--module',
   'CommonJS',
   '--moduleResolution',
-  'node10',
+  'bundler',
   '--outDir',
   'dist/cjs',
   '--declaration',
