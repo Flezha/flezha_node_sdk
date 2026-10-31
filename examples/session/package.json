@@ -3,12 +3,9 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "description": "A worked Flezha Node relay: state, keying, a timer and an emit",
+  "description": "A two-tasklet Flezha Node relay run in local mode, with no controller",
   "scripts": {
-    "start": "node run.mjs",
-    "start:workers": "FLEZHA_NODE_WORKERS=4 node run.mjs",
-    "local": "node local_word_count.mjs",
-    "test": "node --test session.test.mjs"
+    "local": "node local_word_count.mjs"
   },
   "dependencies": {
     "@flezha/sdk": "file:../.."

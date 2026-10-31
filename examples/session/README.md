@@ -1,20 +1,12 @@
-# Flezha Node example
+# Flezha Node local-mode example
 
-One relay: a per-user session with journaled state, an idle timer and an
-emit on close. It exercises the four things every Flezha relay is built
-from — a change fold, the deterministic clock, keying declared on the wiring,
-and an emit — and it is the same code under both dispatch configurations.
+A two-tasklet word count run in this process with no controller. `Split` and
+`Tally` are ordinary tasklets: the same definition deploys against a controller
+unchanged. Local mode only supplies the output, so nothing here is durable.
 
 ```bash
 npm install
-npm test          # the handler, with no runner and no controller
-npm start         # dispatch on the main event loop
-npm run start:workers   # dispatch on four worker threads
-npm run local     # a second relay, run with no controller at all
+npm run local
 ```
 
-Running it needs a Flezha controller on the configured transport. The test does
-not: a defined handler is an ordinary function, and `TaskletTestHarness`
-supplies the parts a runtime would otherwise own.
-
-See [`docs/internal/sdk/node_sdk.md`](https://github.com/flezha/flezha/blob/main/docs/internal/sdk/node_sdk.md).
+See [Local mode](https://github.com/flezha/flezha/blob/main/docs/public/topics/core/running_and_testing.md#local-mode).
