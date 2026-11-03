@@ -15,25 +15,21 @@
 // means.
 
 import { readFileSync, writeFileSync } from 'node:fs';
-import { dirname, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
 
 import { ACTIVATION_SCHEMA_VERSION, FlezhaError, defineRelay, defineTasklet } from '@flezha/sdk';
 import { Registry } from '../dist/esm/dispatch.js';
 import { validate } from '../dist/esm/graph.js';
 import { loadNative } from '../dist/esm/native.js';
 
-import { ascendTo } from '../test/contract.mjs';
+import { member } from '../test/contract.mjs';
 import { manifest } from '../test/test-app.mjs';
 import { hybridChannel } from './fixtures.mjs';
 import { tierCommitBlockSteps } from './fixtures_steps.mjs';
 import { render } from './fixtures_call.mjs';
 
-const HERE = dirname(fileURLToPath(import.meta.url));
-// Walked up to rather than counted: this module runs from its real path, and
-// the tree that carries the table sits a different depth above each layout.
+// A member of the contract set, found wherever this layout keeps it: the
+// core's tree around a checkout inside it, or `contract/` beside the package.
 const TABLE = 'test/fixtures/reference_topologies.txt';
-const FIXTURE = resolve(ascendTo(HERE, TABLE) ?? HERE, TABLE);
 
 /** The authoring surfaces this builder carries, as the manifest declares them. */
 const SURFACES = manifest().topology_surfaces;
@@ -50,7 +46,7 @@ const CITED = {
 
 /** The four-column refusal table, as data. */
 export function rows() {
-  return readFileSync(FIXTURE, 'utf8')
+  return readFileSync(member(TABLE), 'utf8')
     .split('\n')
     .map((line) => line.trim())
     .filter((line) => line !== '' && !line.startsWith('#'))
@@ -280,7 +276,7 @@ export function specForTopology(topology) {
   const cited = CITED[topology];
   if (cited) return cited;
   const row = rows().find((candidate) => candidate.topology === topology);
-  if (!row) throw new Error(`${FIXTURE} has no row for topology \`${topology}\``);
+  if (!row) throw new Error(`${TABLE} has no row for topology \`${topology}\``);
   return specOf(row);
 }
 
