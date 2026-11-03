@@ -8,6 +8,6 @@
     "local": "node local_word_count.mjs"
   },
   "dependencies": {
-    "@flezha/sdk": "file:../.."
+    "@flezha/sdk": "0.1.0"
   }
 }

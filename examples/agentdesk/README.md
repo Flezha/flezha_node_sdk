@@ -98,9 +98,9 @@ builds the images and deploys `k8s/agentdesk.yaml` on k3s.
 
 ## Building from a checkout
 
-`@flezha/sdk` is not on npm yet, and the controller's image `flezha/flezha:0.1.0` has to
-be built. From the repository root, build the SDK and its native part, and the
-controller's image:
+The controller's image `flezha/flezha:0.1.0` has to be built. To run the project against
+a Flezha checkout instead of the published package, also build the SDK and its native
+part. From the repository root:
 
 ```sh
 scripts/build-node-sdk.sh --release
@@ -117,8 +117,7 @@ mkdir -p node_modules/@flezha/sdk/native
 cp ../../native/flz_core_ffi.node node_modules/@flezha/sdk/native/
 ```
 
-`--no-save` keeps `package.json` as it is. Once the package is published, the step goes
-away.
+`--no-save` keeps `package.json` as it is.
 
 ## Where to go next
 

@@ -18,7 +18,7 @@ deployment, so a defect specific to it is likely to be found by its users first.
 npm install @flezha/sdk
 ```
 
-`@flezha/sdk` 0.1.0 is not on npm yet. Until it is, build it from a checkout as
+To work on the SDK itself, build it from a checkout as
 [`examples/echo`](examples/echo/README.md#building-from-a-checkout) shows.
 
 TypeScript-first, usable from plain JavaScript with no build step, and importable
