@@ -302,10 +302,11 @@ export function nativePackageName(
 
 /**
  * Where the addon is looked for, in order: an explicitly configured binary
- * first, so this repository's own suites run against a freshly built core;
- * then the installed per-platform package; then a locally built binary beside
- * the package. The published package carries no binary of its own, so that
- * last candidate resolves in a checkout and nowhere else.
+ * first; then a locally built binary beside the package; then the installed
+ * per-platform package. The published package carries no binary of its own,
+ * so the local one resolves in a checkout and nowhere else, and a checkout's
+ * suites run against the core it just built even when npm has installed the
+ * published binary for this platform.
  */
 export function nativeCandidates(
   platform: NodeJS.Platform = process.platform,
@@ -315,8 +316,8 @@ export function nativeCandidates(
   const pkg = nativePackageName(platform, arch);
   return [
     ...(configured ? [configured] : []),
-    ...(pkg ? [pkg] : []),
     `${runtimeDir}/../../native/flz_core_ffi.node`,
+    ...(pkg ? [pkg] : []),
   ];
 }
 

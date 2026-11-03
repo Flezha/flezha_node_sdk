@@ -59,7 +59,9 @@ node scripts/install-native.mjs
 ```
 
 `npm run build:native` runs both. `FLEZHA_NATIVE_BINARY` points the loader at an
-already-built addon from anywhere, and is consulted before the platform package.
+already-built addon from anywhere. It, and then a binary installed into `native/`,
+are consulted before the platform package, so a source build wins over a
+published binary.
 
 One caution about installs: npm treats an optional dependency it cannot resolve
 as a non-event, so an install that fetched no binary succeeds and prints

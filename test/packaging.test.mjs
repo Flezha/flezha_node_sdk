@@ -78,13 +78,13 @@ test('every published platform has a package name, and nothing else does', () =>
 
 test('a supported platform resolves one binary package, not five', () => {
   const candidates = nativeCandidates('linux', 'x64', undefined);
-  assert.equal(candidates[0], platformPackageName('linux-x64-gnu'));
+  assert.match(candidates[0], /native\/flz_core_ffi\.node$/);
+  assert.equal(candidates.at(-1), platformPackageName('linux-x64-gnu'));
   assert.equal(
     candidates.filter((candidate) => candidate.startsWith(`${SDK_PACKAGE_NAME}-`)).length,
     1,
     'exactly one per-platform package is consulted',
   );
-  assert.match(candidates.at(-1), /native\/flz_core_ffi\.node$/);
 });
 
 test('an unsupported platform is told what a source build needs', () => {
@@ -232,9 +232,18 @@ function installAndLoad({ withPlatformPackage }) {
     );
     // Not a `file:` link: a link would resolve the working tree's `native/`
     // directory and prove nothing. `--prefer-offline` keeps the registry out
-    // of the loop for everything the SDK's own install already cached.
+    // of the loop for everything the SDK's own install already cached. With
+    // no staged platform package, optional dependencies are left out, as npm
+    // leaves out one it cannot resolve, since the registry now has them.
     const installed = npm(
-      ['install', '--no-audit', '--no-fund', '--prefer-offline', ...tarballs],
+      [
+        'install',
+        '--no-audit',
+        '--no-fund',
+        '--prefer-offline',
+        ...(withPlatformPackage ? [] : ['--omit=optional']),
+        ...tarballs,
+      ],
       app,
     );
 
