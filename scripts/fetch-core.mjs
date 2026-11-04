@@ -9,7 +9,7 @@
 // here: its unit suite, its local-mode suite and its smoke tier all run
 // against binaries someone else built, at a version this package names.
 //
-//   node scripts/fetch-core.mjs --from <dir|url> [--version 0.1.0]
+//   node scripts/fetch-core.mjs --from <dir|url> [--version 0.1.1]
 //
 // `--from` is a staged release directory (what `scripts/build-dist.sh
 // --stage-release` writes in the core's tree) or the base URL a GitHub release
@@ -30,7 +30,7 @@ const valueOf = (name, fallback = null) => {
 };
 
 const from = valueOf('--from');
-const version = valueOf('--version', '0.1.0');
+const version = valueOf('--version', '0.1.1');
 const scratch = resolve(root, '.core/download');
 
 const refuse = (message) => {

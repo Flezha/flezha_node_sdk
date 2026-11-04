@@ -27,7 +27,7 @@ export const SDK_LANG_NODE = 4;
  * manifest sits at three different depths and any bundler that inlines the
  * module loses it entirely. The core packs it.
  */
-export const SDK_VERSION = '0.1.0';
+export const SDK_VERSION = '0.1.1';
 
 /** MessagePack, shared with every SDK whose codec is MessagePack. */
 export const FORMAT_ID_MSGPACK = 5;
